@@ -1,4 +1,6 @@
 ﻿"""Tests for create_client() and all API resource classes."""
+from urllib.parse import parse_qs, urlparse
+
 import pytest
 import responses as rsps_lib
 
@@ -192,6 +194,16 @@ class TestTasksApi:
         assert TasksApi(_make_client()).get_project_tasks("p1") == []
 
     @rsps_lib.activate
+    def test_get_project_tasks_maps_type_id_to_odata_filter(self):
+        _reg(rsps_lib.GET, "/5.2/projects/p1/tasks", body=[])
+        TasksApi(_make_client()).get_project_tasks(
+            "p1",
+            params={"typeId": "177352982697"},
+        )
+        query = parse_qs(urlparse(rsps_lib.calls[0].request.url).query)
+        assert query == {"$filter": ["data/type/typeId eq '177352982697'"]}
+
+    @rsps_lib.activate
     def test_get_all_project_tasks_follows_pagination(self):
         page1 = {
             "items": [{"data": {"taskId": "t1"}}],
@@ -211,6 +223,32 @@ class TestTasksApi:
         assert len(result) == 2
         assert result[0]["data"]["taskId"] == "t1"
         assert result[1]["data"]["taskId"] == "t2"
+
+    @rsps_lib.activate
+    def test_get_all_project_tasks_keeps_type_id_filter_during_pagination(self):
+        page1 = {
+            "items": [{"data": {"taskId": "t1"}}],
+            "links": [
+                {"rel": "nextPage", "href": f"{BASE_URL}/5.2/projects/p1/tasks?bookmark=bm1", "method": "GET"}
+            ],
+        }
+        page2 = {
+            "items": [{"data": {"taskId": "t2"}}],
+            "links": [],
+        }
+        rsps_lib.add(rsps_lib.GET, f"{BASE_URL}/5.2/projects/p1/tasks", json=page1, status=200)
+        rsps_lib.add(rsps_lib.GET, f"{BASE_URL}/5.2/projects/p1/tasks", json=page2, status=200)
+        TasksApi(_make_client()).get_all_project_tasks(
+            "p1",
+            params={"typeId": "177352982697"},
+        )
+        first_query = parse_qs(urlparse(rsps_lib.calls[0].request.url).query)
+        second_query = parse_qs(urlparse(rsps_lib.calls[1].request.url).query)
+        assert first_query == {"$filter": ["data/type/typeId eq '177352982697'"]}
+        assert second_query == {
+            "$filter": ["data/type/typeId eq '177352982697'"],
+            "bookmark": ["bm1"],
+        }
 
     @rsps_lib.activate
     def test_get_task(self):

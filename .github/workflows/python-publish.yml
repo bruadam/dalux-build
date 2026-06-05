@@ -1,7 +1,8 @@
 name: Publish Python Package
 
 # After CI succeeds on a push to main: bump python/pyproject.toml from the commit message,
-# test, build, publish to PyPI, then push a [skip pypi] sync commit (patch Z unless vX.Y or vX.Y.Z in message).
+# test, build, publish to PyPI, then push a [skip pypi] sync commit (patch Z unless vX.Y or vX.Y.Z in message),
+# push tag, and create a GitHub Release for that tag.
 # Manual: workflow_dispatch (patch/minor/major) or release (published) → test, build, publish (no auto bump).
 
 on:
@@ -147,3 +148,17 @@ jobs:
           TAG="${{ steps.ver.outputs.tag }}"
           git tag "$TAG"
           git push origin "$TAG"
+
+      - name: Create GitHub Release
+        if: steps.ver.outputs.skip != 'true' && steps.ver.outputs.bump == 'true' && github.event_name != 'release'
+        env:
+          # Use RELEASE_PAT if set so release events can trigger other workflows (e.g. npm publish) that ignore GITHUB_TOKEN-created releases.
+          GH_TOKEN: ${{ secrets.RELEASE_PAT || secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          TAG="${{ steps.ver.outputs.tag }}"
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            echo "Release $TAG already exists, skipping."
+            exit 0
+          fi
+          gh release create "$TAG" --title "$TAG" --generate-notes

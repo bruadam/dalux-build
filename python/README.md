@@ -288,16 +288,16 @@ pytest tests/ --cov=dalux_build
    - **Patch `Z`** in `X.Y.Z` is incremented by default (from the last line `version = "…"` in `python/pyproject.toml`).
    - If the **commit message** contains a **full** version token `vX.Y.Z`, that exact version is used (unless it is not greater than the current version, in which case the workflow falls back to a patch bump).
    - If the message contains **`vX.Y`** (two numbers only, no third segment), the version becomes **`X.Y.0`** (same fallback rule if that would not increase semver).
-3. The workflow runs tests again, builds, publishes to PyPI, then pushes a sync commit: `chore: release vX.Y.Z [skip pypi]`. That marker makes **CI** skip redundant runs and tells this workflow not to publish again for that commit.
+3. The workflow runs tests again, builds, publishes to PyPI, then pushes a sync commit: `chore: release vX.Y.Z [skip pypi]`, pushes tag `vX.Y.Z`, and opens a **GitHub Release** for that tag (auto-generated release notes). That marker makes **CI** skip redundant runs and tells this workflow not to publish again for that commit.
 
 Put an explicit line in the subject or body when you want a new **X.Y** line, for example: `feat: add filters v1.2` or `release v2.0`.
 
 ### Manual
 
-- **Actions → Publish Python Package → Run workflow** for a fixed **patch / minor / major** bump (same test → build → publish → sync commit flow, except **release** events below).
+- **Actions → Publish Python Package → Run workflow** for a fixed **patch / minor / major** bump (same test → build → publish → sync commit → tag → **GitHub Release** flow, except **release** events below).
 - **GitHub Release (published)** still triggers publish **without** changing `pyproject.toml` (the tag must already match the packaged version).
 
-If branch protection blocks pushes from `GITHUB_TOKEN`, set secret **`RELEASE_PAT`** (`contents:write`).
+If branch protection blocks pushes from `GITHUB_TOKEN`, set secret **`RELEASE_PAT`** (`contents:write`). Use the same token for **`GH_TOKEN`** in the release step when you need other workflows (for example **npm publish** on `release`) to run; releases created with the default `GITHUB_TOKEN` do not start new workflow runs.
 
 Configure [PyPI Trusted Publishing](https://docs.pypi.org/trusted-publishers/) for this repo, workflow `python-publish.yml`, environment `pypi`. Remove **`PYPI_API_TOKEN`** when OIDC is active; if the secret remains set, uploads use the token.
 

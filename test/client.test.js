@@ -1,6 +1,7 @@
 'use strict';
 
 const axios = require('axios');
+const path = require('path');
 const MockAdapter = require('axios-mock-adapter');
 const {
   createClient,
@@ -336,6 +337,24 @@ describe('TasksApi', () => {
     expect(await api.getProjectTasks('p1')).toEqual([]);
   });
 
+  it('getProjectTasks maps typeId to OData $filter', async () => {
+    mock.onGet('/5.2/projects/p1/tasks', { params: { $filter: "data/type/typeId eq 't1'" } }).reply(200, { items: [] });
+    await api.getProjectTasks('p1', { typeId: 't1' });
+  });
+
+  it('getProjectTasks leaves $filter unchanged and drops typeId', async () => {
+    mock
+      .onGet('/5.2/projects/p1/tasks', { params: { $filter: 'custom eq 1' } })
+      .reply(200, { items: [] });
+    await api.getProjectTasks('p1', { typeId: 'ignored', $filter: 'custom eq 1' });
+  });
+
+  it('normalizeTaskParams escapes single quotes in typeId', () => {
+    expect(TasksApi.normalizeTaskParams({ typeId: "a'b" }).$filter).toBe(
+      "data/type/typeId eq 'a''b'",
+    );
+  });
+
   it('getAllProjectTasks follows nextPage bookmark pagination', async () => {
     const page1 = {
       items: [{ data: { taskId: 't1' } }],
@@ -410,14 +429,64 @@ describe('FilesApi', () => {
 
   afterEach(() => mock.restore());
 
-  it('listFiles calls GET /6.0/projects/:id/file_areas/:faId/files', async () => {
-    mock.onGet('/6.0/projects/p1/file_areas/fa1/files').reply(200, []);
+  it('listFiles calls GET /6.1/projects/:id/file_areas/:faId/files', async () => {
+    mock.onGet('/6.1/projects/p1/file_areas/fa1/files').reply(200, []);
     expect(await api.listFiles('p1', 'fa1')).toEqual([]);
   });
 
   it('getFile calls correct URL', async () => {
     mock.onGet('/5.0/projects/p1/file_areas/fa1/files/f1').reply(200, { id: 'f1' });
     expect(await api.getFile('p1', 'fa1', 'f1')).toEqual({ id: 'f1' });
+  });
+
+  it('getAllFiles follows bookmark until totalRemainingItems is 0', async () => {
+    const page1 = {
+      items: [{ data: { fileId: 'a' } }],
+      metadata: { totalRemainingItems: 1 },
+      links: [{ rel: 'nextPage', href: `${BASE_URL}/6.1/projects/p1/file_areas/fa1/files?bookmark=b1` }],
+    };
+    const page2 = {
+      items: [{ data: { fileId: 'b' } }],
+      metadata: { totalRemainingItems: 0 },
+      links: [],
+    };
+    mock.onGet('/6.1/projects/p1/file_areas/fa1/files', { params: {} }).reply(200, page1);
+    mock.onGet('/6.1/projects/p1/file_areas/fa1/files', { params: { bookmark: 'b1' } }).reply(200, page2);
+    const all = await api.getAllFiles('p1', 'fa1');
+    expect(all).toHaveLength(2);
+    expect(all[0].data.fileId).toBe('a');
+    expect(all[1].data.fileId).toBe('b');
+  });
+
+  it('getFile with download streams to disk', async () => {
+    const axiosMod = require('axios');
+    const { Readable } = require('stream');
+    const os = require('os');
+    const fs = require('fs');
+
+    const dlSpy = jest.spyOn(axiosMod, 'get').mockResolvedValue({
+      status: 200,
+      data: Readable.from([Buffer.from('hello')]),
+    });
+    mock.onGet('/5.0/projects/p1/file_areas/fa1/files/f1').reply(200, {
+      data: { fileName: 't.bin', downloadLink: 'https://files.example/download/1' },
+    });
+    const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'dalux-dl-'));
+    try {
+      const out = await api.getFile('p1', 'fa1', 'f1', { download: true, savePath: tmp });
+      expect(out.downloadedFilePath).toContain('t.bin');
+      expect(fs.readFileSync(out.downloadedFilePath, 'utf8')).toBe('hello');
+      expect(dlSpy).toHaveBeenCalledWith(
+        'https://files.example/download/1',
+        expect.objectContaining({
+          headers: { 'X-API-KEY': API_KEY },
+          responseType: 'stream',
+        }),
+      );
+    } finally {
+      fs.rmSync(tmp, { recursive: true, force: true });
+      dlSpy.mockRestore();
+    }
   });
 
   it('getFilePropertiesMapping calls correct URL', async () => {

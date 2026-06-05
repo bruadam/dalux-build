@@ -1,0 +1,10 @@
+# Runtime artifacts
+downloads/
+*.sqlite3
+.venv/
+
+# Environment-specific watch list (commit watchlist.example.json instead)
+watchlist.json
+
+# Re-include the example env file (root .gitignore matches .env.*)
+!.env.example

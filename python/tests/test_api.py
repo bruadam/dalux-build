@@ -412,7 +412,7 @@ class TestFileAreasApi:
 class TestFilesApi:
     @rsps_lib.activate
     def test_list_files(self):
-        _reg(rsps_lib.GET, "/6.0/projects/p1/file_areas/fa1/files", body=[])
+        _reg(rsps_lib.GET, "/6.1/projects/p1/file_areas/fa1/files", body=[])
         assert FilesApi(_make_client()).list_files("p1", "fa1") == []
 
     @rsps_lib.activate

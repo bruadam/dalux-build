@@ -10,7 +10,7 @@ jobs:
   test-js:
     name: Test Node.js
     runs-on: ubuntu-latest
-    if: ${{ github.event_name != 'push' || github.event.head_commit == null || !contains(github.event.head_commit.message, '[skip pypi]') }}
+    if: ${{ github.event_name != 'push' || github.event.head_commit == null || (!contains(github.event.head_commit.message, '[skip pypi]') && !contains(github.event.head_commit.message, '[skip npm]')) }}
     steps:
       - uses: actions/checkout@v4
 
@@ -25,7 +25,7 @@ jobs:
   test-python:
     name: Test Python
     runs-on: ubuntu-latest
-    if: ${{ github.event_name != 'push' || github.event.head_commit == null || !contains(github.event.head_commit.message, '[skip pypi]') }}
+    if: ${{ github.event_name != 'push' || github.event.head_commit == null || (!contains(github.event.head_commit.message, '[skip pypi]') && !contains(github.event.head_commit.message, '[skip npm]')) }}
     defaults:
       run:
         working-directory: python

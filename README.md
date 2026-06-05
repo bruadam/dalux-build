@@ -63,6 +63,37 @@ const tasks = await dalux.tasks.getProjectTasks('my-project-id', {
 console.log(tasks);
 ```
 
+**Tasks: OData `typeId` shorthand and fetch all pages**
+
+`getProjectTasks` forwards OData query options (for example `$filter`). You can also pass `typeId`; it is expanded to `$filter=data/type/typeId eq '<typeId>'` unless you already set `$filter`.
+
+```js
+const byType = await dalux.tasks.getProjectTasks('my-project-id', { typeId: 'some-type-guid' });
+
+// All pages merged (bookmark pagination; matches Python client behaviour)
+const allTasks = await dalux.tasks.getAllProjectTasks('my-project-id', { typeId: 'some-type-guid' }, false);
+```
+
+**Files: browse (6.1), fetch all pages, download**
+
+`listFiles` and `getAllFiles` call **GET `/6.1/projects/{projectId}/file_areas/{fileAreaId}/files`** (Dalux `listFiles`). Supported query parameters include `folderId`, `updatedAfter`, and `includeProperties` (see the official spec). Single-file metadata still uses **GET `/5.0/.../files/{fileId}`** (`getFile`).
+
+```js
+const allFiles = await dalux.files.getAllFiles('my-project-id', 'my-file-area-id', { folderId: 'folder-guid' });
+
+const file = await dalux.files.getFile('my-project-id', 'my-file-area-id', 'file-guid', {
+  download: true,
+  savePath: './downloads',
+});
+
+const saved = await dalux.files.downloadFileFromLink(downloadUrl, 'model.ifc', './downloads');
+
+await dalux.files.bulkDownloadFolder('my-project-id', 'my-file-area-id', 'folder-guid', './out', {
+  filenameExtensions: ['.ifc'],
+  verbose: true,
+});
+```
+
 **Upload a file (chunked)**
 ```js
 const fs = require('fs');
@@ -168,10 +199,13 @@ All API namespaces are accessible on the object returned by `createClient`:
 
 | Method | HTTP | Path |
 |---|---|---|
-| `getProjectTasks(projectId, params?)` | GET | `/5.1/projects/{projectId}/tasks` |
+| `getProjectTasks(projectId, params?)` | GET | `/5.2/projects/{projectId}/tasks` |
+| `getAllProjectTasks(projectId, params?, verbose?)` | GET (paginated) | `/5.2/projects/{projectId}/tasks` — collects all `items` via `nextPage` / `bookmark`; respects `metadata.totalRemainingItems` or `metadata.totalItems` (Python parity) |
 | `getTask(projectId, taskId)` | GET | `/3.3/projects/{projectId}/tasks/{taskId}` |
 | `getProjectTaskChanges(projectId, params?)` | GET | `/2.2/projects/{projectId}/tasks/changes` |
 | `getProjectTaskAttachments(projectId, params?)` | GET | `/1.1/projects/{projectId}/tasks/attachments` |
+
+Query params: pass OData options on `getProjectTasks` / `getAllProjectTasks` (for example `$filter`). Shorthand: `typeId` is translated to `$filter=data/type/typeId eq '…'` when `$filter` is not set. `TasksApi.normalizeTaskParams` applies the same rules if you build requests manually.
 
 ### FileAreasApi
 
@@ -182,10 +216,17 @@ All API namespaces are accessible on the object returned by `createClient`:
 
 ### FilesApi
 
+Browse and paginated helpers use **route version 6.1** for the file collection. `getFile` (one file by id) uses **5.0**, as in the [Dalux Build API](https://app.swaggerhub.com/apis-docs/Dalux/DaluxBuild-api/4.14).
+
 | Method | HTTP | Path |
 |---|---|---|
-| `listFiles(projectId, fileAreaId, params?)` | GET | `/6.0/projects/{projectId}/file_areas/{fileAreaId}/files` |
-| `getFile(projectId, fileAreaId, fileId)` | GET | `/5.0/projects/{projectId}/file_areas/{fileAreaId}/files/{fileId}` |
+| `listFiles(projectId, fileAreaId, params?)` | GET | `/6.1/projects/{projectId}/file_areas/{fileAreaId}/files` |
+| `getAllFiles(projectId, fileAreaId, params?, verbose?)` | GET (paginated) | Same — all file `items` via bookmark / `metadata.totalRemainingItems` |
+| `getAllFilesInFolder(projectId, fileAreaId, folderId, params?, verbose?)` | — | Uses `getAllFiles` then filters by `data.folderId` |
+| `getFile(projectId, fileAreaId, fileId, options?)` | GET | `/5.0/.../files/{fileId}` — optional `{ download: true, savePath }` streams to disk (adds `downloadedFilePath`) |
+| `downloadFileFromLink(downloadLink, fileName, savePath?)` | GET | Direct download URL with `X-API-KEY` |
+| `bulkDownloadFolder(projectId, fileAreaId, folderId, savePath?, opts?)` | — | Optional `filenameKeywords`, `filenameKeywordsMatch` (`any` / `all`), `filenameExtensions`, `params`, `verbose` |
+| `bulkDownloadByIds(projectId, fileAreaId, fileIds, savePath?, options?)` | GET + download | Per-id `getFile` then stream from `downloadLink` |
 | `getFilePropertiesMapping(projectId, fileAreaId, fileId)` | GET | `/1.0/.../files/{fileId}/properties/1.0/mappings` |
 | `getFilePropertyMappingValues(projectId, fileAreaId, filePropertyId)` | GET | `/1.0/.../files/properties/1.0/mappings/{filePropertyId}/values` |
 
@@ -294,6 +335,23 @@ npm install
 # Run tests with coverage
 npm test
 ```
+
+## Maintainer: npm releases
+
+### Automatic (push to `main`)
+
+1. Merge to `main` (or push directly). **CI** must pass.
+2. When **CI** completes successfully for that push, **Publish npm Package** runs:
+   - It only considers commits that change `package.json`, `package-lock.json`, `src/`, or `test/`.
+   - **Patch `Z`** in `X.Y.Z` is taken from `package.json` by default (same `vX.Y.Z` / `vX.Y` commit-message rules as the Python publisher; see [python/README.md](python/README.md#maintainer-pypi-releases)).
+3. The workflow runs tests, publishes to npm, then pushes a sync commit `chore: release vX.Y.Z [skip npm]`, tag `vX.Y.Z`, and a **GitHub Release** (unless the tag already exists). **`[skip npm]`** skips a second publish pass and skips **CI** on that sync commit.
+
+### Manual
+
+- **Actions → Publish npm Package → Run workflow** for **patch / minor / major** (same test → publish → sync commit → tag → **GitHub Release**, except **release** events below).
+- **GitHub Release (published)** publishes the version already in `package.json` at that tag (no version bump in the workflow).
+
+Create a GitHub **environment** named `npm` with secret **`NPM_TOKEN`** (automation token from npmjs.com). If pushes or releases from `GITHUB_TOKEN` are blocked, set **`RELEASE_PAT`** as described in [python/README.md](python/README.md#maintainer-pypi-releases).
 
 ## License
 

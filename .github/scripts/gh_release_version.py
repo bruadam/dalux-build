@@ -1,6 +1,7 @@
 """Compute next package version for GitHub Actions (stdout: KEY=value lines)."""
 from __future__ import annotations
 
+import json
 import os
 import re
 import sys
@@ -18,6 +19,25 @@ def read_pyproject_version(repo_root: Path) -> tuple[int, int, int]:
     return tuple(int(x) for x in cur.split("."))
 
 
+def read_package_json_version(repo_root: Path) -> tuple[int, int, int]:
+    path = repo_root / "package.json"
+    data = json.loads(path.read_text(encoding="utf-8"))
+    cur = data.get("version")
+    if not cur or not isinstance(cur, str):
+        sys.exit("package.json: missing or invalid version")
+    if not re.fullmatch(r"\d+\.\d+\.\d+", cur):
+        sys.exit(f"package.json: expected X.Y.Z version, got {cur!r}")
+    return tuple(int(x) for x in cur.split("."))
+
+
+def read_current_version(repo_root: Path, target: str) -> tuple[int, int, int]:
+    if target == "python":
+        return read_pyproject_version(repo_root)
+    if target == "npm":
+        return read_package_json_version(repo_root)
+    sys.exit(f"Unknown GHA_TARGET={target!r}")
+
+
 def emit(**kwargs: str) -> None:
     for k, v in kwargs.items():
         print(f"{k}={v}")
@@ -26,9 +46,12 @@ def emit(**kwargs: str) -> None:
 def main() -> None:
     repo_root = Path(os.environ.get("GITHUB_WORKSPACE", ".")).resolve()
     mode = os.environ["GHA_MODE"]
+    target = os.environ.get("GHA_TARGET", "python")
+    if target not in ("python", "npm"):
+        sys.exit(f"GHA_TARGET must be python or npm, got {target!r}")
 
     if mode == "dispatch":
-        ma, mi, pa = read_pyproject_version(repo_root)
+        ma, mi, pa = read_current_version(repo_root, target)
         bump = os.environ.get("INPUT_BUMP", "patch")
         if bump == "major":
             ma, mi, pa = ma + 1, 0, 0
@@ -44,11 +67,14 @@ def main() -> None:
         sys.exit(f"Unknown GHA_MODE={mode!r}")
 
     msg = os.environ.get("COMMIT_MESSAGE", "")
-    if "[skip pypi]" in msg:
+    if target == "python" and "[skip pypi]" in msg:
+        emit(skip="true", bump="false")
+        return
+    if target == "npm" and "[skip npm]" in msg:
         emit(skip="true", bump="false")
         return
 
-    ma, mi, pa = read_pyproject_version(repo_root)
+    ma, mi, pa = read_current_version(repo_root, target)
     cur_t = (ma, mi, pa)
 
     new: str | None = None

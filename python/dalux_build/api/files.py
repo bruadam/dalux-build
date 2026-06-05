@@ -22,9 +22,14 @@ class FilesApi:
         file_area_id: str,
         params: Optional[Dict[str, Any]] = None,
     ) -> Any:
-        """GET /6.0/projects/{projectId}/file_areas/{fileAreaId}/files."""
+        """GET /6.1/projects/{projectId}/file_areas/{fileAreaId}/files.
+
+        See ``docs/official-api-docs/Dalux Build API.yaml`` (operationId: listFiles).
+        Pass ``includeProperties=True`` in *params* to return each file's
+        properties array. The files endpoint does not support OData ``$filter``.
+        """
         return self._client.get(
-            f"/6.0/projects/{project_id}/file_areas/{file_area_id}/files",
+            f"/6.1/projects/{project_id}/file_areas/{file_area_id}/files",
             params=params,
         )
 
@@ -53,7 +58,7 @@ class FilesApi:
 
         while has_next_page:
             response = self._client.get(
-                f"/6.0/projects/{project_id}/file_areas/{file_area_id}/files",
+                f"/6.1/projects/{project_id}/file_areas/{file_area_id}/files",
                 params=current_params,
             )
             items = response.get("items") if response else None

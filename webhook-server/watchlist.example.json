@@ -1,0 +1,14 @@
+{
+  "watch": [
+    {
+      "project_id": "your-project-id",
+      "file_area_id": "your-file-area-id",
+      "file_id": "a-file-id-to-watch"
+    },
+    {
+      "project_id": "your-project-id",
+      "file_area_id": "your-file-area-id",
+      "file_id": "another-file-id"
+    }
+  ]
+}

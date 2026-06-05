@@ -1,0 +1,34 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "dalux-build-webhook-server"
+version = "0.1.0"
+description = "Webhook wrapper service that downloads Dalux Build files on change and triggers QA pipelines"
+readme = "README.md"
+requires-python = ">=3.9"
+license = "MIT"
+dependencies = [
+    "fastapi>=0.110",
+    "uvicorn[standard]>=0.27",
+    "httpx>=0.27",
+    "dalux-build>=1.1.1",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=7.4",
+]
+
+[project.scripts]
+dalux-webhook-server = "dalux_webhook.__main__:main"
+dalux-webhook-poll = "dalux_webhook.poller:main"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["dalux_webhook*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["."]

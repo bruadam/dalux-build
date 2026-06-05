@@ -167,10 +167,13 @@ except requests.HTTPError as exc:
 
 ### FilesApi
 
+Browse (`list_files`, `get_all_files`, …) uses **GET `/6.1/projects/{projectId}/file_areas/{fileAreaId}/files`**. `get_file` uses **5.0** for a single file id (Dalux Build API 4.14).
+
 | Method | HTTP | Path |
 |---|---|---|
-| `list_files(project_id, file_area_id, params=None)` | GET | `/6.0/.../files` |
-| `get_file(project_id, file_area_id, file_id)` | GET | `/5.0/.../files/{fileId}` |
+| `list_files(project_id, file_area_id, params=None)` | GET | `/6.1/projects/{projectId}/file_areas/{fileAreaId}/files` |
+| `get_all_files` / `get_all_files_in_folder` / bulk helpers | GET | Same **6.1** browse path (pagination or filtering in the client) |
+| `get_file(project_id, file_area_id, file_id)` | GET | `/5.0/projects/{projectId}/file_areas/{fileAreaId}/files/{fileId}` |
 | `get_file_properties_mapping(project_id, file_area_id, file_id)` | GET | `/1.0/.../files/{fileId}/properties/1.0/mappings` |
 | `get_file_property_mapping_values(project_id, file_area_id, file_property_id)` | GET | `/1.0/.../files/properties/1.0/mappings/{filePropertyId}/values` |
 
@@ -297,7 +300,7 @@ Put an explicit line in the subject or body when you want a new **X.Y** line, fo
 - **Actions → Publish Python Package → Run workflow** for a fixed **patch / minor / major** bump (same test → build → publish → sync commit → tag → **GitHub Release** flow, except **release** events below).
 - **GitHub Release (published)** still triggers publish **without** changing `pyproject.toml` (the tag must already match the packaged version).
 
-If branch protection blocks pushes from `GITHUB_TOKEN`, set secret **`RELEASE_PAT`** (`contents:write`). Use the same token for **`GH_TOKEN`** in the release step when you need other workflows (for example **npm publish** on `release`) to run; releases created with the default `GITHUB_TOKEN` do not start new workflow runs.
+If branch protection blocks pushes from `GITHUB_TOKEN`, set secret **`RELEASE_PAT`** (`contents:write`). Use the same token for checkout and **`GH_TOKEN`** in the release step when you need chained workflows (for example **Publish npm Package** after a release); releases created with the default `GITHUB_TOKEN` do not start new workflow runs.
 
 Configure [PyPI Trusted Publishing](https://docs.pypi.org/trusted-publishers/) for this repo, workflow `python-publish.yml`, environment `pypi`. Remove **`PYPI_API_TOKEN`** when OIDC is active; if the secret remains set, uploads use the token.
 

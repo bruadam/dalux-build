@@ -35,6 +35,11 @@ def read_current_version(repo_root: Path, target: str) -> tuple[int, int, int]:
         return read_pyproject_version(repo_root)
     if target == "npm":
         return read_package_json_version(repo_root)
+    if target == "dual":
+        # max semver of Python + npm manifests (npm publish uses same bump rules as Python)
+        pt = read_pyproject_version(repo_root)
+        nt = read_package_json_version(repo_root)
+        return max(pt, nt, key=lambda t: t)
     sys.exit(f"Unknown GHA_TARGET={target!r}")
 
 
@@ -47,8 +52,8 @@ def main() -> None:
     repo_root = Path(os.environ.get("GITHUB_WORKSPACE", ".")).resolve()
     mode = os.environ["GHA_MODE"]
     target = os.environ.get("GHA_TARGET", "python")
-    if target not in ("python", "npm"):
-        sys.exit(f"GHA_TARGET must be python or npm, got {target!r}")
+    if target not in ("python", "npm", "dual"):
+        sys.exit(f"GHA_TARGET must be python, npm, or dual, got {target!r}")
 
     if mode == "dispatch":
         ma, mi, pa = read_current_version(repo_root, target)
@@ -70,7 +75,7 @@ def main() -> None:
     if target == "python" and "[skip pypi]" in msg:
         emit(skip="true", bump="false")
         return
-    if target == "npm" and "[skip npm]" in msg:
+    if target in ("npm", "dual") and "[skip npm]" in msg:
         emit(skip="true", bump="false")
         return
 

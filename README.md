@@ -341,17 +341,24 @@ npm test
 ### Automatic (push to `main`)
 
 1. Merge to `main` (or push directly). **CI** must pass.
-2. When **CI** completes successfully for that push, **Publish npm Package** runs:
-   - It only considers commits that change `package.json`, `package-lock.json`, `src/`, or `test/`.
-   - **Patch `Z`** in `X.Y.Z` is taken from `package.json` by default (same `vX.Y.Z` / `vX.Y` commit-message rules as the Python publisher; see [python/README.md](python/README.md#maintainer-pypi-releases)).
-3. The workflow runs tests, publishes to npm, then pushes a sync commit `chore: release vX.Y.Z [skip npm]`, tag `vX.Y.Z`, and a **GitHub Release** (unless the tag already exists). **`[skip npm]`** skips a second publish pass and skips **CI** on that sync commit.
+2. After **both** the Node and Python test jobs succeed, **CI** calls **Publish npm Package** via `workflow_call` (same run as CI, so it does not depend on `workflow_run`).
+3. The publish job only runs when that push changes `package.json`, `package-lock.json`, `src/`, or `test/`.
+4. **Version bump** uses the same rules as the Python publisher ([commit message tokens](python/README.md#maintainer-pypi-releases)), but the **current** semver is **`max(python/pyproject.toml, package.json)`** so npm catches up when the Python package is ahead.
+5. It runs tests again, publishes to npm, then pushes `chore: release vX.Y.Z [skip npm]`, tag `vX.Y.Z`, and a **GitHub Release** (unless the tag already exists). **`[skip npm]`** skips a second publish pass and skips **CI** on that sync commit.
 
 ### Manual
 
-- **Actions → Publish npm Package → Run workflow** for **patch / minor / major** (same test → publish → sync commit → tag → **GitHub Release**, except **release** events below).
+- **Actions → Publish npm Package → Run workflow** for **patch / minor / major** (same test → publish → sync commit → tag → **GitHub Release**). The entry workflow is [npm-publish.yml](.github/workflows/npm-publish.yml); it delegates to [npm-publish-reusable.yml](.github/workflows/npm-publish-reusable.yml) (GitHub requires `workflow_call` in its own file).
 - **GitHub Release (published)** publishes the version already in `package.json` at that tag (no version bump in the workflow).
 
-Create a GitHub **environment** named `npm` with secret **`NPM_TOKEN`** (automation token from npmjs.com). If pushes or releases from `GITHUB_TOKEN` are blocked, set **`RELEASE_PAT`** as described in [python/README.md](python/README.md#maintainer-pypi-releases).
+Create a GitHub **environment** named `npm` with secret **`NPM_TOKEN`**. If pushes or releases from `GITHUB_TOKEN` are blocked, set **`RELEASE_PAT`** as described in [python/README.md](python/README.md#maintainer-pypi-releases).
+
+### First publish and `E404` on `npm publish`
+
+If CI fails with **`404 Not Found - PUT …/dalux-build-api`** and **`is not in this registry`**, the name usually does not exist on npm yet **or** your token is not allowed to **create** it.
+
+- **Classic [Automation](https://docs.npmjs.com/about-access-tokens#automation-tokens)** tokens only publish packages your account **already** maintains. They cannot create a **new** package name. Fix: run **`npm publish`** once locally (or use a **Publish** classic token / granular token with write access) while logged in as the owner, then switch CI back to an automation token.
+- Confirm the package is not taken by someone else: [https://www.npmjs.com/package/dalux-build-api](https://www.npmjs.com/package/dalux-build-api).
 
 ## License
 

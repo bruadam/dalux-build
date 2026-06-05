@@ -46,3 +46,18 @@ jobs:
 
       - name: Run tests
         run: pytest --cov=dalux_build --cov-report=term-missing
+
+  # Chained after tests (reliable); npm semver uses max(pyproject, package.json) like Python.
+  publish-npm:
+    name: Publish npm Package
+    needs: [test-js, test-python]
+    if: >
+      github.ref == 'refs/heads/main' &&
+      github.event_name == 'push' &&
+      needs.test-js.result != 'failure' &&
+      needs.test-python.result != 'failure' &&
+      (needs.test-js.result == 'success' || needs.test-python.result == 'success')
+    uses: ./.github/workflows/npm-publish-reusable.yml
+    with:
+      mode: post_ci
+    secrets: inherit

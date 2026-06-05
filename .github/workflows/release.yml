@@ -1,3 +1,8 @@
+# Pushes and releases done with the default GITHUB_TOKEN do not trigger other
+# workflows (e.g. Publish Python Package on `release: published`). Set secret
+# RELEASE_WORKFLOW_PAT to a fine-grained or classic PAT with contents:write so
+# tag push + GitHub Release chain into publish jobs.
+
 name: Release
 
 on:
@@ -32,7 +37,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          token: ${{ secrets.GITHUB_TOKEN }}
+          token: ${{ secrets.RELEASE_WORKFLOW_PAT || secrets.GITHUB_TOKEN }}
           fetch-depth: 0
 
       - name: Configure git
@@ -107,4 +112,4 @@ jobs:
             --title "${{ steps.bump.outputs.tag }}" \
             --generate-notes
         env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_TOKEN: ${{ secrets.RELEASE_WORKFLOW_PAT || secrets.GITHUB_TOKEN }}

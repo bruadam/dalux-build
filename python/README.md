@@ -280,9 +280,26 @@ pytest tests/ --cov=dalux_build
 
 ## Maintainer: PyPI releases
 
-1. In GitHub, run the **Release** workflow (Actions → Release → Run workflow). Choose **patch** / **minor** / **major** and scope **all** (bumps root `package.json` and `python/pyproject.toml`) or **python** (only `pyproject.toml`, for Python-only bumps).
-2. That workflow pushes a version tag and creates a GitHub release, which triggers **Publish Python Package** to build and upload to PyPI.
-3. Prefer [PyPI Trusted Publishing](https://docs.pypi.org/trusted-publishers/) (OIDC) for this repo: add a trusted publisher for `bruadam/Dalux-Build-API` → workflow `python-publish.yml` → environment `pypi`. You can remove the `PYPI_API_TOKEN` secret once OIDC is configured; if the secret is still set, the publish job uses the token instead of OIDC.
+### Automatic (push to `main`)
+
+1. Open a PR and merge to `main` (or push directly). **CI** must pass.
+2. When **CI** completes successfully for that push, **Publish Python Package** runs:
+   - It only considers commits that change files under `python/`.
+   - **Patch `Z`** in `X.Y.Z` is incremented by default (from the last line `version = "…"` in `python/pyproject.toml`).
+   - If the **commit message** contains a **full** version token `vX.Y.Z`, that exact version is used (unless it is not greater than the current version, in which case the workflow falls back to a patch bump).
+   - If the message contains **`vX.Y`** (two numbers only, no third segment), the version becomes **`X.Y.0`** (same fallback rule if that would not increase semver).
+3. The workflow runs tests again, builds, publishes to PyPI, then pushes a sync commit: `chore: release vX.Y.Z [skip pypi]`. That marker makes **CI** skip redundant runs and tells this workflow not to publish again for that commit.
+
+Put an explicit line in the subject or body when you want a new **X.Y** line, for example: `feat: add filters v1.2` or `release v2.0`.
+
+### Manual
+
+- **Actions → Publish Python Package → Run workflow** for a fixed **patch / minor / major** bump (same test → build → publish → sync commit flow, except **release** events below).
+- **GitHub Release (published)** still triggers publish **without** changing `pyproject.toml` (the tag must already match the packaged version).
+
+If branch protection blocks pushes from `GITHUB_TOKEN`, set secret **`RELEASE_PAT`** (`contents:write`).
+
+Configure [PyPI Trusted Publishing](https://docs.pypi.org/trusted-publishers/) for this repo, workflow `python-publish.yml`, environment `pypi`. Remove **`PYPI_API_TOKEN`** when OIDC is active; if the secret remains set, uploads use the token.
 
 ## License
 

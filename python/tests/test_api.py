@@ -204,17 +204,37 @@ class TestTasksApi:
         assert query == {"$filter": ["data/type/typeId eq '177352982697'"]}
 
     @rsps_lib.activate
+    def test_get_project_tasks_type_id_maps_to_odata_path_for_snowflake_ids(self):
+        _reg(rsps_lib.GET, "/5.2/projects/p1/tasks", body=[])
+        TasksApi(_make_client()).get_project_tasks(
+            "p1",
+            params={"typeId": "S410425647911927812"},
+        )
+        query = parse_qs(urlparse(rsps_lib.calls[0].request.url).query)
+        assert query == {"$filter": ["data/type/typeId eq 'S410425647911927812'"]}
+
+    @rsps_lib.activate
+    def test_get_project_tasks_type_id_escapes_single_quotes_in_odata_filter(self):
+        _reg(rsps_lib.GET, "/5.2/projects/p1/tasks", body=[])
+        TasksApi(_make_client()).get_project_tasks(
+            "p1",
+            params={"typeId": "x'y"},
+        )
+        query = parse_qs(urlparse(rsps_lib.calls[0].request.url).query)
+        assert query == {"$filter": ["data/type/typeId eq 'x''y'"]}
+
+    @rsps_lib.activate
     def test_get_all_project_tasks_follows_pagination(self):
         page1 = {
             "items": [{"data": {"taskId": "t1"}}],
-            "metadata": {"totalItems": 2},
+            "metadata": {"totalItems": 2, "totalRemainingItems": 1},
             "links": [
                 {"rel": "nextPage", "href": f"{BASE_URL}/5.2/projects/p1/tasks?bookmark=bm1", "method": "GET"}
             ],
         }
         page2 = {
             "items": [{"data": {"taskId": "t2"}}],
-            "metadata": {"totalItems": 2},
+            "metadata": {"totalItems": 2, "totalRemainingItems": 0},
             "links": [],
         }
         rsps_lib.add(rsps_lib.GET, f"{BASE_URL}/5.2/projects/p1/tasks", json=page1, status=200)
@@ -225,15 +245,122 @@ class TestTasksApi:
         assert result[1]["data"]["taskId"] == "t2"
 
     @rsps_lib.activate
-    def test_get_all_project_tasks_keeps_type_id_filter_during_pagination(self):
+    def test_get_all_project_tasks_stops_when_total_remaining_zero_ignores_next_link(self):
+        """Same idea as get_all_files: remaining=0 ends pagination even if nextPage exists."""
         page1 = {
             "items": [{"data": {"taskId": "t1"}}],
+            "metadata": {"totalRemainingItems": 1},
             "links": [
                 {"rel": "nextPage", "href": f"{BASE_URL}/5.2/projects/p1/tasks?bookmark=bm1", "method": "GET"}
             ],
         }
         page2 = {
             "items": [{"data": {"taskId": "t2"}}],
+            "metadata": {"totalRemainingItems": 0},
+            "links": [
+                {
+                    "rel": "nextPage",
+                    "href": f"{BASE_URL}/5.2/projects/p1/tasks?bookmark=should-not-be-called",
+                    "method": "GET",
+                }
+            ],
+        }
+        rsps_lib.add(rsps_lib.GET, f"{BASE_URL}/5.2/projects/p1/tasks", json=page1, status=200)
+        rsps_lib.add(rsps_lib.GET, f"{BASE_URL}/5.2/projects/p1/tasks", json=page2, status=200)
+        result = TasksApi(_make_client()).get_all_project_tasks("p1")
+        assert len(result) == 2
+        assert len(rsps_lib.calls) == 2
+
+    @rsps_lib.activate
+    def test_get_all_project_tasks_verbose_matches_files_when_total_remaining(self, capsys):
+        page1 = {
+            "items": [{"data": {"taskId": "t1"}}],
+            "metadata": {"totalRemainingItems": 1},
+            "links": [
+                {"rel": "nextPage", "href": f"{BASE_URL}/5.2/projects/p1/tasks?bookmark=bm1", "method": "GET"}
+            ],
+        }
+        page2 = {
+            "items": [{"data": {"taskId": "t2"}}],
+            "metadata": {"totalRemainingItems": 0},
+            "links": [],
+        }
+        rsps_lib.add(rsps_lib.GET, f"{BASE_URL}/5.2/projects/p1/tasks", json=page1, status=200)
+        rsps_lib.add(rsps_lib.GET, f"{BASE_URL}/5.2/projects/p1/tasks", json=page2, status=200)
+        TasksApi(_make_client()).get_all_project_tasks("p1", verbose=True)
+        out = capsys.readouterr().out
+        assert "Retrieved 1 tasks so far, 1 remaining..." in out
+        assert "Retrieved 2 tasks so far, 0 remaining..." in out
+        assert "Done. Total tasks retrieved: 2" in out
+
+    @rsps_lib.activate
+    def test_get_all_project_tasks_verbose_uses_total_items_when_no_total_remaining(
+        self, capsys
+    ):
+        """Tasks list may only return totalItems; last page may report 0."""
+        page1 = {
+            "items": [{"data": {"taskId": "t1"}}],
+            "metadata": {"totalItems": 2},
+            "links": [
+                {"rel": "nextPage", "href": f"{BASE_URL}/5.2/projects/p1/tasks?bookmark=bm1", "method": "GET"}
+            ],
+        }
+        page2 = {
+            "items": [{"data": {"taskId": "t2"}}],
+            "metadata": {"totalItems": 0},
+            "links": [],
+        }
+        rsps_lib.add(rsps_lib.GET, f"{BASE_URL}/5.2/projects/p1/tasks", json=page1, status=200)
+        rsps_lib.add(rsps_lib.GET, f"{BASE_URL}/5.2/projects/p1/tasks", json=page2, status=200)
+        TasksApi(_make_client()).get_all_project_tasks("p1", verbose=True)
+        out = capsys.readouterr().out
+        assert "Retrieved 1 tasks so far, 1 remaining..." in out
+        assert "Retrieved 2 tasks so far, 0 remaining..." in out
+        assert "Done. Total tasks retrieved: 2" in out
+
+    @rsps_lib.activate
+    def test_get_all_project_tasks_total_items_ceiling_stops_when_metadata_stuck(self):
+        """totalItems can stay >0 with nextPage; max(totalItems) caps rows (Dalux quirk)."""
+        page1 = {
+            "items": [{"data": {"taskId": "a"}}],
+            "metadata": {"totalItems": 3},
+            "links": [
+                {"rel": "nextPage", "href": f"{BASE_URL}/5.2/projects/p1/tasks?bookmark=b1", "method": "GET"}
+            ],
+        }
+        page2 = {
+            "items": [{"data": {"taskId": "b"}}],
+            "metadata": {"totalItems": 2},
+            "links": [
+                {"rel": "nextPage", "href": f"{BASE_URL}/5.2/projects/p1/tasks?bookmark=b2", "method": "GET"}
+            ],
+        }
+        page3 = {
+            "items": [{"data": {"taskId": "c"}}],
+            "metadata": {"totalItems": 1},
+            "links": [
+                {"rel": "nextPage", "href": f"{BASE_URL}/5.2/projects/p1/tasks?bookmark=b3", "method": "GET"}
+            ],
+        }
+        rsps_lib.add(rsps_lib.GET, f"{BASE_URL}/5.2/projects/p1/tasks", json=page1, status=200)
+        rsps_lib.add(rsps_lib.GET, f"{BASE_URL}/5.2/projects/p1/tasks", json=page2, status=200)
+        rsps_lib.add(rsps_lib.GET, f"{BASE_URL}/5.2/projects/p1/tasks", json=page3, status=200)
+        result = TasksApi(_make_client()).get_all_project_tasks("p1")
+        assert [x["data"]["taskId"] for x in result] == ["a", "b", "c"]
+        assert len(rsps_lib.calls) == 3
+
+    @rsps_lib.activate
+    def test_get_all_project_tasks_keeps_type_id_filter_during_pagination(self):
+        page1 = {
+            "items": [{"data": {"taskId": "t1"}}],
+            "metadata": {"totalRemainingItems": 1},
+            "links": [
+                {"rel": "nextPage", "href": f"{BASE_URL}/5.2/projects/p1/tasks?bookmark=bm1", "method": "GET"}
+            ],
+        }
+        page2 = {
+            "items": [{"data": {"taskId": "t2"}}],
+            "metadata": {"totalRemainingItems": 0},
             "links": [],
         }
         rsps_lib.add(rsps_lib.GET, f"{BASE_URL}/5.2/projects/p1/tasks", json=page1, status=200)

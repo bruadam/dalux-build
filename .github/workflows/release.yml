@@ -12,6 +12,14 @@ on:
           - patch
           - minor
           - major
+      scope:
+        description: "What to bump (Python-only skips package.json / npm)"
+        required: true
+        default: all
+        type: choice
+        options:
+          - all
+          - python
 
 permissions:
   contents: write
@@ -24,49 +32,79 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          # Use a PAT or the default GITHUB_TOKEN with write access.
-          # Push events from GITHUB_TOKEN do NOT retrigger workflows, which is
-          # fine here — we just need the release to trigger the publish jobs.
           token: ${{ secrets.GITHUB_TOKEN }}
           fetch-depth: 0
-
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 20
 
       - name: Configure git
         run: |
           git config user.name  "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
 
-      # ---------- bump package.json (and package-lock.json) ----------
-      - name: Bump version in package.json
-        id: bump
+      # ---------- all: bump package.json (and package-lock.json) + pyproject ----------
+      - uses: actions/setup-node@v4
+        if: inputs.scope == 'all'
+        with:
+          node-version: 20
+
+      - name: Bump version (npm + Python)
+        id: bump_all
+        if: inputs.scope == 'all'
         run: |
           TAG=$(npm version ${{ inputs.bump }} --no-git-tag-version)
           VERSION=${TAG#v}
           echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
-          echo "tag=${TAG}"         >> "$GITHUB_OUTPUT"
+          echo "tag=${TAG}" >> "$GITHUB_OUTPUT"
+          sed -i "s/^version = \".*\"/version = \"${VERSION}\"/" python/pyproject.toml
 
-      # ---------- bump python/pyproject.toml ----------
-      - name: Bump version in pyproject.toml
+      # ---------- python only: semver bump in pyproject.toml ----------
+      - name: Bump version (Python only)
+        id: bump_python
+        if: inputs.scope == 'python'
         run: |
-          sed -i "s/^version = \".*\"/version = \"${{ steps.bump.outputs.version }}\"/" \
-            python/pyproject.toml
+          set -euo pipefail
+          VER=$(grep -E '^version = ' python/pyproject.toml | head -1 | sed -E 's/^version = "([^"]+)".*/\1/')
+          if ! echo "$VER" | grep -qE '^[0-9]+\.[0-9]+\.[0-9]+$'; then
+            echo "Expected pyproject version like 1.2.3, got: $VER" >&2
+            exit 1
+          fi
+          IFS=. read -r MA MI PA <<< "$VER"
+          case "${{ inputs.bump }}" in
+            major) MA=$((MA + 1)); MI=0; PA=0 ;;
+            minor) MI=$((MI + 1)); PA=0 ;;
+            patch) PA=$((PA + 1)) ;;
+          esac
+          VERSION="${MA}.${MI}.${PA}"
+          TAG="v${VERSION}"
+          echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
+          echo "tag=${TAG}" >> "$GITHUB_OUTPUT"
+          sed -i "s/^version = \".*\"/version = \"${VERSION}\"/" python/pyproject.toml
 
-      # ---------- commit, tag, push ----------
+      - name: Resolve version outputs
+        id: bump
+        run: |
+          if [ "${{ inputs.scope }}" = "all" ]; then
+            echo "version=${{ steps.bump_all.outputs.version }}" >> "$GITHUB_OUTPUT"
+            echo "tag=${{ steps.bump_all.outputs.tag }}" >> "$GITHUB_OUTPUT"
+          else
+            echo "version=${{ steps.bump_python.outputs.version }}" >> "$GITHUB_OUTPUT"
+            echo "tag=${{ steps.bump_python.outputs.tag }}" >> "$GITHUB_OUTPUT"
+          fi
+
       - name: Commit & push version bump
         run: |
-          git add package.json package-lock.json python/pyproject.toml
-          git commit -m "chore: release v${{ steps.bump.outputs.version }}"
-          git tag    v${{ steps.bump.outputs.version }}
+          if [ "${{ inputs.scope }}" = "all" ]; then
+            git add package.json package-lock.json python/pyproject.toml
+          else
+            git add python/pyproject.toml
+          fi
+          git commit -m "chore: release ${{ steps.bump.outputs.tag }}"
+          git tag "${{ steps.bump.outputs.tag }}"
           git push origin HEAD --tags
 
-      # ---------- create GitHub release (triggers publish workflows) ----------
       - name: Create GitHub Release
         run: |
-          gh release create v${{ steps.bump.outputs.version }} \
-            --title "v${{ steps.bump.outputs.version }}" \
+          gh release create "${{ steps.bump.outputs.tag }}" \
+            --title "${{ steps.bump.outputs.tag }}" \
             --generate-notes
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}

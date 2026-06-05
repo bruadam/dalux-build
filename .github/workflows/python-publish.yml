@@ -1,13 +1,22 @@
-
 name: Publish Python Package
 
 on:
   release:
     types: [published]
   workflow_dispatch:
+    inputs:
+      ref:
+        description: "Git ref to build and publish (e.g. v1.2.3 or refs/tags/v1.2.3). Leave empty for the triggering ref."
+        required: false
+        default: ""
 
 permissions:
   contents: read
+  id-token: write
+
+concurrency:
+  group: pypi-publish-${{ github.event_name }}-${{ github.event.release.tag_name || github.ref }}
+  cancel-in-progress: false
 
 jobs:
   test:
@@ -19,7 +28,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          ref: ${{ github.ref }}
+          ref: ${{ github.event_name == 'workflow_dispatch' && inputs.ref != '' && inputs.ref || github.ref }}
 
       - uses: actions/setup-python@v5
         with:
@@ -35,6 +44,9 @@ jobs:
     name: Publish to PyPI
     runs-on: ubuntu-latest
     needs: test
+    environment:
+      name: pypi
+      url: https://pypi.org/project/dalux-build/
     defaults:
       run:
         working-directory: python
@@ -42,20 +54,22 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          ref: ${{ github.ref }}
+          ref: ${{ github.event_name == 'workflow_dispatch' && inputs.ref != '' && inputs.ref || github.ref }}
 
       - uses: actions/setup-python@v5
         with:
           python-version: "3.x"
 
-      - name: Install build tools
-        run: pip install build twine
+      - name: Install build
+        run: pip install build
 
       - name: Build distributions
         run: python -m build
 
+      # Trusted Publishing (OIDC): https://pypi.org/manage/project/dalux-build/settings/publishing/
+      # If PYPI_API_TOKEN is unset, the action uses OIDC. If the secret is set, the token is used instead.
       - name: Publish to PyPI
-        run: twine upload dist/*
-        env:
-          TWINE_USERNAME: __token__
-          TWINE_PASSWORD: ${{ secrets.PYPI_API_TOKEN }}
+        uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          packages-dir: python/dist/
+          password: ${{ secrets.PYPI_API_TOKEN }}

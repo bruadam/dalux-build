@@ -278,6 +278,12 @@ pip install -e ".[dev]"
 pytest tests/ --cov=dalux_build
 ```
 
+## Maintainer: PyPI releases
+
+1. In GitHub, run the **Release** workflow (Actions → Release → Run workflow). Choose **patch** / **minor** / **major** and scope **all** (bumps root `package.json` and `python/pyproject.toml`) or **python** (only `pyproject.toml`, for Python-only bumps).
+2. That workflow pushes a version tag and creates a GitHub release, which triggers **Publish Python Package** to build and upload to PyPI.
+3. Prefer [PyPI Trusted Publishing](https://docs.pypi.org/trusted-publishers/) (OIDC) for this repo: add a trusted publisher for `bruadam/Dalux-Build-API` → workflow `python-publish.yml` → environment `pypi`. You can remove the `PYPI_API_TOKEN` secret once OIDC is configured; if the secret is still set, the publish job uses the token instead of OIDC.
+
 ## License
 
 MIT

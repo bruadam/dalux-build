@@ -20,6 +20,8 @@ on:
 
 jobs:
   publish:
+    permissions:
+      contents: write
     uses: ./.github/workflows/npm-publish-reusable.yml
     with:
       mode: ${{ github.event_name == 'release' && 'release' || 'dispatch' }}

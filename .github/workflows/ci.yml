@@ -57,6 +57,9 @@ jobs:
       needs.test-js.result != 'failure' &&
       needs.test-python.result != 'failure' &&
       (needs.test-js.result == 'success' || needs.test-python.result == 'success')
+    # Reusable workflow needs contents:write (push, tag, release); caller default is often read-only.
+    permissions:
+      contents: write
     uses: ./.github/workflows/npm-publish-reusable.yml
     with:
       mode: post_ci

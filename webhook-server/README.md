@@ -198,6 +198,34 @@ python -m dalux_webhook.poller --mode list --updated-after 2024-01-01
 The files endpoint has no OData `$filter`, so the `list` mode intersects the
 listing with the watch list client-side.
 
+### Scheduling
+
+There are two ways to schedule the poller, both of which avoid adding the poll's
+run time to the gap between checks:
+
+1. **OS cron / systemd timer / Task Scheduler (recommended).** Run the poller in
+   run-once mode (`--interval 0`, the default) and let the scheduler fire it on a
+   fixed wall-clock cadence. Each tick is an independent process, so there is no
+   drift and a slow run never delays the next tick's start.
+
+   Linux crontab (every 5 minutes):
+
+   ```cron
+   */5 * * * * cd /opt/dalux-webhook && /opt/dalux-webhook/.venv/bin/python -m dalux_webhook.poller >> /var/log/dalux-poller.log 2>&1
+   ```
+
+   systemd timer (`dalux-poller.timer` + `dalux-poller.service` with `OnUnitActiveSec=5min`), or Windows Task Scheduler running the same `python -m dalux_webhook.poller` command, work the same way. In Kubernetes use a `CronJob`.
+
+2. **Long-lived `--interval` process.** `python -m dalux_webhook.poller --interval 300`
+   keeps running and wakes every 300 s on a **fixed-rate monotonic schedule** —
+   the next wake-up is anchored to the cycle start, not the cycle end, so a poll
+   that takes 20 s still wakes at the 300 s mark. If a cycle overruns the
+   interval, missed ticks are skipped (logged as a warning) to avoid a burst.
+
+Make sure the cron/timer environment exports the same variables as `.env`
+(cron runs with a minimal environment); load them in the command or a wrapper
+script.
+
 ## Running the tests
 
 ```bash

@@ -105,3 +105,7 @@ class ApiClient:
         response = self._session.delete(self._url(path), params=params)
         response.raise_for_status()
         return response.json() if response.content else None
+
+    @property
+    def configuration(self):
+        return self._configuration

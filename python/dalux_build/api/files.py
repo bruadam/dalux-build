@@ -8,6 +8,7 @@ if TYPE_CHECKING:
 import requests
 
 from ..api_client import ApiClient
+from ..models import File
 
 
 class FilesApi:
@@ -28,10 +29,19 @@ class FilesApi:
         Pass ``includeProperties=True`` in *params* to return each file's
         properties array. The files endpoint does not support OData ``$filter``.
         """
-        return self._client.get(
+        response = self._client.get(
             f"/6.1/projects/{project_id}/file_areas/{file_area_id}/files",
             params=params,
         )
+
+        if self._client.configuration.use_pydantic and isinstance(response, dict):
+            try:
+                from ..models import FilesListResponse
+                return FilesListResponse(**response)
+            except Exception:
+                return response
+
+        return response
 
     def get_all_files(
         self,
@@ -114,6 +124,47 @@ class FilesApi:
         if verbose:
             print(f"Files matching folder {folder_id!r}: {len(filtered)}")
         return filtered
+
+    def get_all_files_in_folder_by_path(
+        self,
+        project_id: str,
+        file_area_id: str,
+        folder_path: str,
+        folders_api: Optional["FoldersApi"] = None,
+        params: Optional[Dict[str, Any]] = None,
+        verbose: bool = False,
+    ) -> list:
+        """Retrieve all files in a folder specified by path.
+
+        Args:
+            project_id: Project ID.
+            file_area_id: File area ID.
+            folder_path: Path like "Folder1/Subfolder" (resolved to folder ID).
+            folders_api: FoldersApi instance for path resolution.
+            params: Optional additional query parameters passed to the API.
+            verbose: If True, print progress information.
+
+        Returns:
+            A list of file items belonging to the specified folder path.
+
+        Raises:
+            ValueError: If folders_api is not provided or folder path cannot be resolved.
+        """
+        if folders_api is None:
+            raise ValueError("folders_api must be provided to resolve folder paths")
+
+        folder_id = folders_api.get_file_area_tree_by_path(
+            project_id, file_area_id, folder_path, verbose=verbose
+        )
+
+        if folder_id is None:
+            if verbose:
+                print(f"Could not resolve folder path: {folder_path}")
+            return []
+
+        return self.get_all_files_in_folder(
+            project_id, file_area_id, folder_id, params=params, verbose=verbose
+        )
 
     def bulk_download_folder(
         self,
@@ -269,11 +320,27 @@ class FilesApi:
         file_info = self._client.get(
             f"/5.0/projects/{project_id}/file_areas/{file_area_id}/files/{file_id}"
         )
-        if download and file_info and "data" in file_info and "downloadLink" in file_info["data"]:
-            file_name = file_info["data"].get("fileName", file_id)
-            download_link = file_info["data"]["downloadLink"]
-            downloaded_path = self.download_file_from_link(download_link, file_name, save_path)
-            file_info["downloaded_file_path"] = downloaded_path
+
+        if self._client.configuration.use_pydantic and isinstance(file_info, dict):
+            try:
+                from ..models import FileResponse
+                file_info = FileResponse(**file_info)
+            except Exception:
+                pass
+
+        if download and file_info:
+            # Handle both FileResponse and dict
+            data = file_info.data if hasattr(file_info, 'data') else file_info.get("data", {})
+            download_link = data.download_link if hasattr(data, 'download_link') else data.get("downloadLink")
+            file_name = data.file_name if hasattr(data, 'file_name') else data.get("fileName", file_id)
+
+            if download_link:
+                downloaded_path = self.download_file_from_link(download_link, file_name, save_path)
+                if hasattr(file_info, 'data'):
+                    # Can't add to Pydantic model directly, return dict instead
+                    file_info = file_info.model_dump()
+                file_info["downloaded_file_path"] = downloaded_path
+
         return file_info
 
     def download_file_from_link(

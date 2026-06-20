@@ -60,13 +60,14 @@ class DaluxClient:
     work_packages: WorkPackagesApi
 
 
-def create_client(base_url: str, api_key: str) -> DaluxClient:
+def create_client(base_url: str, api_key: str, use_pydantic: bool = False) -> DaluxClient:
     """Create a fully configured Dalux Build API client.
 
     Args:
         base_url: The API base URL (obtain from Dalux support).
         api_key: Your ``X-API-KEY``
             (manage via *Settings › Integrations › API Identities*).
+        use_pydantic: If True, return Pydantic model instances instead of raw dicts.
 
     Returns:
         A :class:`DaluxClient` with one attribute per API resource group.
@@ -76,10 +77,11 @@ def create_client(base_url: str, api_key: str) -> DaluxClient:
         dalux = create_client(
             base_url="https://<company>.dalux.com/api",
             api_key="YOUR_API_KEY",
+            use_pydantic=True,
         )
         projects = dalux.projects.list_projects()
     """
-    configuration = Configuration(base_url=base_url, api_key=api_key)
+    configuration = Configuration(base_url=base_url, api_key=api_key, use_pydantic=use_pydantic)
     api_client = ApiClient(configuration)
 
     return DaluxClient(

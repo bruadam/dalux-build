@@ -12,11 +12,29 @@ class CompanyCatalogApi:
 
     def get_companies(self, params: Optional[Dict[str, Any]] = None) -> Any:
         """GET /2.2/companyCatalog — Companies in the catalog."""
-        return self._client.get("/2.2/companyCatalog", params=params)
+        response = self._client.get("/2.2/companyCatalog", params=params)
+
+        if self._client.configuration.use_pydantic and isinstance(response, dict):
+            try:
+                from ..models import CompaniesListResponse
+                return CompaniesListResponse(**response)
+            except Exception:
+                return response
+
+        return response
 
     def get_company(self, catalog_company_id: str) -> Any:
         """GET /1.2/companyCatalog/{catalogCompanyId}."""
-        return self._client.get(f"/1.2/companyCatalog/{catalog_company_id}")
+        response = self._client.get(f"/1.2/companyCatalog/{catalog_company_id}")
+
+        if self._client.configuration.use_pydantic and isinstance(response, dict):
+            try:
+                from ..models import CompanyResponse
+                return CompanyResponse(**response)
+            except Exception:
+                return response
+
+        return response
 
     def create_company(self, body: Dict[str, Any]) -> Any:
         """POST /2.2/companyCatalog."""

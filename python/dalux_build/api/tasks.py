@@ -44,10 +44,19 @@ class TasksApi:
                 You may also pass ``$filter`` directly; other OData query options
                 supported by the API may be included as usual.
         """
-        return self._client.get(
+        response = self._client.get(
             f"/5.2/projects/{project_id}/tasks",
             params=_normalize_task_params(params),
         )
+
+        if self._client.configuration.use_pydantic and isinstance(response, dict):
+            try:
+                from ..models import TasksListResponse
+                return TasksListResponse(**response)
+            except Exception:
+                return response
+
+        return response
 
     def get_all_project_tasks(
         self,
@@ -156,7 +165,16 @@ class TasksApi:
 
     def get_task(self, project_id: str, task_id: str) -> Any:
         """GET /3.3/projects/{projectId}/tasks/{taskId}."""
-        return self._client.get(f"/3.3/projects/{project_id}/tasks/{task_id}")
+        response = self._client.get(f"/3.3/projects/{project_id}/tasks/{task_id}")
+
+        if self._client.configuration.use_pydantic and isinstance(response, dict):
+            try:
+                from ..models import TaskResponse
+                return TaskResponse(**response)
+            except Exception:
+                return response
+
+        return response
 
     def get_project_task_changes(
         self, project_id: str, params: Optional[Dict[str, Any]] = None

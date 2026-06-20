@@ -4,7 +4,8 @@ from typing import TYPE_CHECKING, Any, Dict, List, Optional
 from urllib.parse import parse_qs, urlparse
 
 from ..api_client import ApiClient
-from ..models import Folder
+from ..models import Folder, FoldersListResponse, FolderResponse
+from ..response_converter import convert_to_model
 
 if TYPE_CHECKING:
     from .files import FilesApi
@@ -21,21 +22,17 @@ class FoldersApi:
         project_id: str,
         file_area_id: str,
         params: Optional[Dict[str, Any]] = None,
-    ) -> Any:
-        """GET /5.1/projects/{projectId}/file_areas/{fileAreaId}/folders."""
+    ) -> Optional[FoldersListResponse]:
+        """GET /5.1/projects/{projectId}/file_areas/{fileAreaId}/folders.
+
+        Returns:
+            FoldersListResponse with type-safe access to folders.
+        """
         response = self._client.get(
             f"/5.1/projects/{project_id}/file_areas/{file_area_id}/folders",
             params=params,
         )
-
-        if self._client.configuration.use_pydantic and isinstance(response, dict):
-            try:
-                from ..models import FoldersListResponse
-                return FoldersListResponse(**response)
-            except Exception:
-                return response
-
-        return response
+        return convert_to_model(response, FoldersListResponse)
 
     def get_all_folders(
         self,
@@ -74,20 +71,16 @@ class FoldersApi:
 
     def get_folder(
         self, project_id: str, file_area_id: str, folder_id: str
-    ) -> Any:
-        """GET /5.0/.../folders/{folderId}."""
+    ) -> Optional[FolderResponse]:
+        """GET /5.0/.../folders/{folderId}.
+
+        Returns:
+            FolderResponse with folder details.
+        """
         response = self._client.get(
             f"/5.0/projects/{project_id}/file_areas/{file_area_id}/folders/{folder_id}"
         )
-
-        if self._client.configuration.use_pydantic and isinstance(response, dict):
-            try:
-                from ..models import FolderResponse
-                return FolderResponse(**response)
-            except Exception:
-                return response
-
-        return response
+        return convert_to_model(response, FolderResponse)
 
     def get_folder_files_properties(
         self, project_id: str, file_area_id: str, folder_id: str

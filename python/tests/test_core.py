@@ -1,4 +1,5 @@
 """Tests for Configuration and ApiClient."""
+import os
 import pytest
 import responses as rsps_lib
 
@@ -21,11 +22,23 @@ class TestConfiguration:
         config = Configuration(base_url=BASE_URL + "/", api_key=API_KEY)
         assert config.base_url == BASE_URL
 
-    def test_raises_when_base_url_missing(self):
+    def test_raises_when_base_url_missing(self, monkeypatch):
+        # Clear env vars to ensure they don't interfere
+        monkeypatch.delenv("DALUX_API_BASE_URL", raising=False)
+        monkeypatch.delenv("DALUX_API_KEY", raising=False)
         with pytest.raises(ValueError, match="base_url"):
             Configuration(base_url="", api_key=API_KEY)
 
-    def test_raises_when_api_key_missing(self):
+    def test_raises_when_api_key_missing(self, monkeypatch):
+        # Mock getenv to return None for our env vars to avoid loading from .env
+        def mock_getenv(key, default=None):
+            if key == "DALUX_API_KEY":
+                return None
+            if key == "DALUX_API_BASE_URL":
+                return None
+            return os.environ.get(key, default)
+
+        monkeypatch.setattr("os.getenv", mock_getenv)
         with pytest.raises(ValueError, match="api_key"):
             Configuration(base_url=BASE_URL, api_key="")
 

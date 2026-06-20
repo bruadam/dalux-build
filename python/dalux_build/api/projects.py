@@ -2,7 +2,8 @@
 from typing import Any, Dict, Optional
 
 from ..api_client import ApiClient
-from ..models import Project
+from ..models import ProjectsListResponse, ProjectResponse
+from ..response_converter import convert_to_model
 
 
 class ProjectsApi:
@@ -15,31 +16,51 @@ class ProjectsApi:
     def __init__(self, api_client: ApiClient) -> None:
         self._client = api_client
 
-    def list_projects(self, params: Optional[Dict[str, Any]] = None) -> Any:
-        """GET /5.1/projects — List all available projects."""
+    def list_projects(self, params: Optional[Dict[str, Any]] = None) -> Optional[ProjectsListResponse]:
+        """GET /5.1/projects — List all available projects.
+
+        Returns:
+            ProjectsListResponse with type-safe access to projects.
+        """
         response = self._client.get("/5.1/projects", params=params)
+        return convert_to_model(response, ProjectsListResponse)
 
-        if self._client.configuration.use_pydantic and isinstance(response, dict):
-            try:
-                from ..models import ProjectsListResponse
-                return ProjectsListResponse(**response)
-            except Exception:
-                # If conversion fails, return original dict
-                return response
+    def get_project(self, project_id: str) -> Optional[ProjectResponse]:
+        """GET /5.0/projects/{projectId} — Get a specific project.
 
-        return response
+        Args:
+            project_id: The project ID.
 
-    def get_project(self, project_id: str) -> Any:
-        """GET /5.0/projects/{projectId} — Get a specific project."""
-        return self._client.get(f"/5.0/projects/{project_id}")
+        Returns:
+            ProjectResponse containing the project data.
+        """
+        response = self._client.get(f"/5.0/projects/{project_id}")
+        return convert_to_model(response, ProjectResponse)
 
-    def create_project(self, body: Dict[str, Any]) -> Any:
-        """POST /5.0/projects — Create a new project."""
-        return self._client.post("/5.0/projects", json=body)
+    def create_project(self, body: Dict[str, Any]) -> Optional[ProjectResponse]:
+        """POST /5.0/projects — Create a new project.
 
-    def update_project(self, project_id: str, body: Dict[str, Any]) -> Any:
-        """PATCH /5.0/projects/{projectId} — Update a project."""
-        return self._client.patch(f"/5.0/projects/{project_id}", json=body)
+        Args:
+            body: Project creation payload.
+
+        Returns:
+            ProjectResponse with the created project.
+        """
+        response = self._client.post("/5.0/projects", json=body)
+        return convert_to_model(response, ProjectResponse)
+
+    def update_project(self, project_id: str, body: Dict[str, Any]) -> Optional[ProjectResponse]:
+        """PATCH /5.0/projects/{projectId} — Update a project.
+
+        Args:
+            project_id: The project ID.
+            body: Project update payload.
+
+        Returns:
+            ProjectResponse with the updated project.
+        """
+        response = self._client.patch(f"/5.0/projects/{project_id}", json=body)
+        return convert_to_model(response, ProjectResponse)
 
     def list_metadata_mappings_for_projects(self) -> Any:
         """GET /1.0/projects/metadata/1.0/mappings — Metadata for POST operations."""
@@ -75,22 +96,11 @@ class ProjectsApi:
             The project ID if found, None otherwise.
         """
         response = self.list_projects()
+        if not response or not response.items:
+            return None
 
-        # Handle both dict and ProjectsListResponse
-        if isinstance(response, dict):
-            items = response.get("items", [])
-        else:
-            # Assume it's a ProjectsListResponse or similar
-            items = getattr(response, "items", [])
-
-        for item in items:
-            # Handle both Project models and dicts
-            if isinstance(item, Project):
-                if item.project_name == project_name:
-                    return item.project_id
-            elif isinstance(item, dict):
-                name = item.get("projectName") or item.get("project_name")
-                if name == project_name:
-                    return item.get("projectId") or item.get("project_id")
+        for project in response.items:
+            if project.project_name == project_name:
+                return project.project_id
 
         return None

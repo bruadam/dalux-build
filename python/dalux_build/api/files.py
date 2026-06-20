@@ -8,7 +8,8 @@ if TYPE_CHECKING:
 import requests
 
 from ..api_client import ApiClient
-from ..models import File
+from ..models import File, FilesListResponse, FileResponse
+from ..response_converter import convert_to_model
 
 
 class FilesApi:
@@ -22,26 +23,21 @@ class FilesApi:
         project_id: str,
         file_area_id: str,
         params: Optional[Dict[str, Any]] = None,
-    ) -> Any:
+    ) -> Optional[FilesListResponse]:
         """GET /6.1/projects/{projectId}/file_areas/{fileAreaId}/files.
 
         See ``docs/official-api-docs/Dalux Build API.yaml`` (operationId: listFiles).
         Pass ``includeProperties=True`` in *params* to return each file's
         properties array. The files endpoint does not support OData ``$filter``.
+
+        Returns:
+            FilesListResponse with type-safe access to files.
         """
         response = self._client.get(
             f"/6.1/projects/{project_id}/file_areas/{file_area_id}/files",
             params=params,
         )
-
-        if self._client.configuration.use_pydantic and isinstance(response, dict):
-            try:
-                from ..models import FilesListResponse
-                return FilesListResponse(**response)
-            except Exception:
-                return response
-
-        return response
+        return convert_to_model(response, FilesListResponse)
 
     def get_all_files(
         self,
@@ -301,7 +297,7 @@ class FilesApi:
         file_id: str,
         download: bool = False,
         save_path: Optional[str] = None,
-    ) -> Any:
+    ) -> Optional[Any]:
         """GET /5.0/projects/{projectId}/file_areas/{fileAreaId}/files/{fileId}.
 
         If download=True, will also download the file using the download link in the response.
@@ -314,32 +310,24 @@ class FilesApi:
             save_path: Optional directory to save the file (default: current directory).
 
         Returns:
-            The file info dict. If download=True, the path to the downloaded file is
-            added as 'downloaded_file_path' in the returned dict.
+            FileResponse with type-safe access. If download=True, returns as dict with
+            'downloaded_file_path' added.
         """
-        file_info = self._client.get(
+        response = self._client.get(
             f"/5.0/projects/{project_id}/file_areas/{file_area_id}/files/{file_id}"
         )
-
-        if self._client.configuration.use_pydantic and isinstance(file_info, dict):
-            try:
-                from ..models import FileResponse
-                file_info = FileResponse(**file_info)
-            except Exception:
-                pass
+        file_info = convert_to_model(response, FileResponse)
 
         if download and file_info:
-            # Handle both FileResponse and dict
-            data = file_info.data if hasattr(file_info, 'data') else file_info.get("data", {})
-            download_link = data.download_link if hasattr(data, 'download_link') else data.get("downloadLink")
-            file_name = data.file_name if hasattr(data, 'file_name') else data.get("fileName", file_id)
+            download_link = file_info.data.download_link if file_info.data else None
+            file_name = (file_info.data.file_name if file_info.data else file_id) or file_id
 
             if download_link:
                 downloaded_path = self.download_file_from_link(download_link, file_name, save_path)
-                if hasattr(file_info, 'data'):
-                    # Can't add to Pydantic model directly, return dict instead
-                    file_info = file_info.model_dump()
-                file_info["downloaded_file_path"] = downloaded_path
+                # Convert to dict since we need to add a field
+                result = file_info.model_dump()
+                result["downloaded_file_path"] = downloaded_path
+                return result
 
         return file_info
 

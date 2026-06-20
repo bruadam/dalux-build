@@ -1,4 +1,4 @@
-"""Pydantic models for file related responses."""
+"""Data models for Files endpoint."""
 from datetime import date
 from typing import Any, List, Optional
 

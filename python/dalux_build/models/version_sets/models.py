@@ -1,4 +1,4 @@
-"""Pydantic models for version set related responses."""
+"""Data models for Version Sets endpoint."""
 from typing import Optional
 
 from pydantic import BaseModel, Field

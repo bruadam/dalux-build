@@ -3,6 +3,8 @@ from typing import Any, Dict, List, Optional
 from urllib.parse import parse_qs, urlparse
 
 from ..api_client import ApiClient
+from ..models import TasksListResponse, TaskResponse
+from ..response_converter import convert_to_model
 
 
 def _normalize_task_params(params: Optional[Dict[str, Any]]) -> Dict[str, Any]:
@@ -34,7 +36,7 @@ class TasksApi:
 
     def get_project_tasks(
         self, project_id: str, params: Optional[Dict[str, Any]] = None
-    ) -> Any:
+    ) -> Optional[TasksListResponse]:
         """GET /5.2/projects/{projectId}/tasks.
 
         Args:
@@ -43,20 +45,15 @@ class TasksApi:
                 the OData ``$filter`` on task type (see :func:`_normalize_task_params`).
                 You may also pass ``$filter`` directly; other OData query options
                 supported by the API may be included as usual.
+
+        Returns:
+            TasksListResponse with type-safe access to tasks.
         """
         response = self._client.get(
             f"/5.2/projects/{project_id}/tasks",
             params=_normalize_task_params(params),
         )
-
-        if self._client.configuration.use_pydantic and isinstance(response, dict):
-            try:
-                from ..models import TasksListResponse
-                return TasksListResponse(**response)
-            except Exception:
-                return response
-
-        return response
+        return convert_to_model(response, TasksListResponse)
 
     def get_all_project_tasks(
         self,
@@ -163,18 +160,14 @@ class TasksApi:
             print(f"Done. Total tasks retrieved: {len(all_items)}")
         return all_items
 
-    def get_task(self, project_id: str, task_id: str) -> Any:
-        """GET /3.3/projects/{projectId}/tasks/{taskId}."""
+    def get_task(self, project_id: str, task_id: str) -> Optional[TaskResponse]:
+        """GET /3.3/projects/{projectId}/tasks/{taskId}.
+
+        Returns:
+            TaskResponse with task details.
+        """
         response = self._client.get(f"/3.3/projects/{project_id}/tasks/{task_id}")
-
-        if self._client.configuration.use_pydantic and isinstance(response, dict):
-            try:
-                from ..models import TaskResponse
-                return TaskResponse(**response)
-            except Exception:
-                return response
-
-        return response
+        return convert_to_model(response, TaskResponse)
 
     def get_project_task_changes(
         self, project_id: str, params: Optional[Dict[str, Any]] = None

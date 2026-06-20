@@ -1,4 +1,4 @@
-"""Pydantic models for folder related responses."""
+"""Data models for Folders endpoint."""
 from typing import Optional
 
 from pydantic import BaseModel, Field

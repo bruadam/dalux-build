@@ -1,7 +1,9 @@
 """Base HTTP client that injects the X-API-KEY header on every request."""
 from typing import Any, Dict, Optional
+from dotenv import load_dotenv
 
 import requests
+import os
 
 from .configuration import Configuration
 
@@ -12,14 +14,24 @@ class ApiClient:
     Args:
         configuration: A :class:`~dalux_build.configuration.Configuration`
             instance with *base_url* and *api_key*.
+        (Optional) If *configuration* is not provided, the client will attempt to load
+        settings from environment variables ``DALUX_API_BASE_URL`` and ``DALUX_API_KEY``.
 
     Raises:
         ValueError: If *configuration* is ``None``.
     """
 
-    def __init__(self, configuration: Configuration) -> None:
+    def __init__(self, configuration: Optional[Configuration] = None) -> None:
+
         if configuration is None:
-            raise ValueError("configuration is required")
+            load_dotenv() # Load from .env if available
+            base_url = os.getenv("DALUX_API_BASE_URL")
+            api_key = os.getenv("DALUX_API_KEY")
+            if not base_url:
+                raise ValueError("DALUX_API_BASE_URL environment variable is required")
+            if not api_key:
+                raise ValueError("DALUX_API_KEY environment variable is required")
+            configuration = Configuration(base_url=base_url, api_key=api_key)
 
         self._configuration = configuration
         self._session = requests.Session()

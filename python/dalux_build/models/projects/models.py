@@ -1,4 +1,4 @@
-"""Pydantic models for project-related responses."""
+"""Data models for Projects endpoint."""
 from datetime import datetime
 from typing import List, Optional
 

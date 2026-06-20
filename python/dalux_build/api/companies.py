@@ -14,13 +14,31 @@ class CompaniesApi:
         self, project_id: str, params: Optional[Dict[str, Any]] = None
     ) -> Any:
         """GET /3.1/projects/{projectId}/companies."""
-        return self._client.get(f"/3.1/projects/{project_id}/companies", params=params)
+        response = self._client.get(f"/3.1/projects/{project_id}/companies", params=params)
+
+        if self._client.configuration.use_pydantic and isinstance(response, dict):
+            try:
+                from ..models import CompaniesListResponse
+                return CompaniesListResponse(**response)
+            except Exception:
+                return response
+
+        return response
 
     def get_project_company(self, project_id: str, company_id: str) -> Any:
         """GET /3.0/projects/{projectId}/companies/{companyId}."""
-        return self._client.get(
+        response = self._client.get(
             f"/3.0/projects/{project_id}/companies/{company_id}"
         )
+
+        if self._client.configuration.use_pydantic and isinstance(response, dict):
+            try:
+                from ..models import CompanyResponse
+                return CompanyResponse(**response)
+            except Exception:
+                return response
+
+        return response
 
     def create_project_company(
         self, project_id: str, body: Dict[str, Any]

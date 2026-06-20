@@ -14,9 +14,18 @@ class TestPlansApi:
         self, project_id: str, params: Optional[Dict[str, Any]] = None
     ) -> Any:
         """GET /1.2/projects/{projectId}/testPlans."""
-        return self._client.get(
+        response = self._client.get(
             f"/1.2/projects/{project_id}/testPlans", params=params
         )
+
+        if self._client.configuration.use_pydantic and isinstance(response, dict):
+            try:
+                from ..models import TestPlansListResponse
+                return TestPlansListResponse(**response)
+            except Exception:
+                return response
+
+        return response
 
     def list_test_plan_items(
         self, project_id: str, params: Optional[Dict[str, Any]] = None

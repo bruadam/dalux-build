@@ -2,6 +2,7 @@
 from typing import Any, Dict, Optional
 
 from ..api_client import ApiClient
+from ..models import Project
 
 
 class ProjectsApi:
@@ -16,7 +17,17 @@ class ProjectsApi:
 
     def list_projects(self, params: Optional[Dict[str, Any]] = None) -> Any:
         """GET /5.1/projects — List all available projects."""
-        return self._client.get("/5.1/projects", params=params)
+        response = self._client.get("/5.1/projects", params=params)
+
+        if self._client.configuration.use_pydantic and isinstance(response, dict):
+            try:
+                from ..models import ProjectsListResponse
+                return ProjectsListResponse(**response)
+            except Exception:
+                # If conversion fails, return original dict
+                return response
+
+        return response
 
     def get_project(self, project_id: str) -> Any:
         """GET /5.0/projects/{projectId} — Get a specific project."""
@@ -53,3 +64,33 @@ class ProjectsApi:
         return self._client.get(
             f"/1.0/projects/{project_id}/metadata/1.0/mappings/{key}/values"
         )
+
+    def get_project_by_name(self, project_name: str) -> Optional[str]:
+        """Get project ID by name.
+
+        Args:
+            project_name: Name of the project to search for.
+
+        Returns:
+            The project ID if found, None otherwise.
+        """
+        response = self.list_projects()
+
+        # Handle both dict and ProjectsListResponse
+        if isinstance(response, dict):
+            items = response.get("items", [])
+        else:
+            # Assume it's a ProjectsListResponse or similar
+            items = getattr(response, "items", [])
+
+        for item in items:
+            # Handle both Project models and dicts
+            if isinstance(item, Project):
+                if item.project_name == project_name:
+                    return item.project_id
+            elif isinstance(item, dict):
+                name = item.get("projectName") or item.get("project_name")
+                if name == project_name:
+                    return item.get("projectId") or item.get("project_id")
+
+        return None

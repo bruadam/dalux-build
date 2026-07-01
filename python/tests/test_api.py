@@ -59,7 +59,10 @@ class TestProjectsApi:
     def test_list_projects(self):
         _reg(rsps_lib.GET, "/5.1/projects", body=[{"id": "p1"}])
         api = ProjectsApi(_make_client())
-        assert api.list_projects() == [{"id": "p1"}]
+        result = api.list_projects()
+        assert result is not None
+        assert len(result.items) == 1
+        assert result.items[0].project_id == "p1"
 
     @rsps_lib.activate
     def test_list_projects_with_params(self):
@@ -72,19 +75,25 @@ class TestProjectsApi:
     def test_get_project(self):
         _reg(rsps_lib.GET, "/5.0/projects/p1", body={"id": "p1"})
         api = ProjectsApi(_make_client())
-        assert api.get_project("p1") == {"id": "p1"}
+        result = api.get_project("p1")
+        assert result is not None
+        assert result.data.project_id == "p1"
 
     @rsps_lib.activate
     def test_create_project(self):
         _reg(rsps_lib.POST, "/5.0/projects", body={"id": "p2"}, status=201)
         api = ProjectsApi(_make_client())
-        assert api.create_project({"name": "New"}) == {"id": "p2"}
+        result = api.create_project({"name": "New"})
+        assert result is not None
+        assert result.data.project_id == "p2"
 
     @rsps_lib.activate
     def test_update_project(self):
         _reg(rsps_lib.PATCH, "/5.0/projects/p1", body={"id": "p1", "name": "Updated"})
         api = ProjectsApi(_make_client())
-        assert api.update_project("p1", {"name": "Updated"})["name"] == "Updated"
+        result = api.update_project("p1", {"name": "Updated"})
+        assert result is not None
+        assert result.data.project_name == "Updated"
 
     @rsps_lib.activate
     def test_list_metadata_mappings(self):
@@ -123,17 +132,23 @@ class TestCompaniesApi:
     @rsps_lib.activate
     def test_get_project_company(self):
         _reg(rsps_lib.GET, "/3.0/projects/p1/companies/c1", body={"id": "c1"})
-        assert CompaniesApi(_make_client()).get_project_company("p1", "c1") == {"id": "c1"}
+        result = CompaniesApi(_make_client()).get_project_company("p1", "c1")
+        assert result is not None
+        assert result.data.company_id == "c1"
 
     @rsps_lib.activate
     def test_create_project_company(self):
         _reg(rsps_lib.POST, "/3.1/projects/p1/companies", body={"id": "c2"}, status=201)
-        assert CompaniesApi(_make_client()).create_project_company("p1", {}) == {"id": "c2"}
+        result = CompaniesApi(_make_client()).create_project_company("p1", {})
+        assert result is not None
+        assert result.data.company_id == "c2"
 
     @rsps_lib.activate
     def test_update_project_company(self):
         _reg(rsps_lib.PATCH, "/3.0/projects/p1/companies/c1", body={"id": "c1"})
-        assert CompaniesApi(_make_client()).update_project_company("p1", "c1", {}) == {"id": "c1"}
+        result = CompaniesApi(_make_client()).update_project_company("p1", "c1", {})
+        assert result is not None
+        assert result.data.company_id == "c1"
 
 
 # ---------- CompanyCatalogApi ----------
@@ -147,17 +162,23 @@ class TestCompanyCatalogApi:
     @rsps_lib.activate
     def test_get_company(self):
         _reg(rsps_lib.GET, "/1.2/companyCatalog/cc1", body={"id": "cc1"})
-        assert CompanyCatalogApi(_make_client()).get_company("cc1") == {"id": "cc1"}
+        result = CompanyCatalogApi(_make_client()).get_company("cc1")
+        assert result is not None
+        assert result.data.company_id == "cc1"
 
     @rsps_lib.activate
     def test_create_company(self):
         _reg(rsps_lib.POST, "/2.2/companyCatalog", body={"id": "cc2"}, status=201)
-        assert CompanyCatalogApi(_make_client()).create_company({}) == {"id": "cc2"}
+        result = CompanyCatalogApi(_make_client()).create_company({})
+        assert result is not None
+        assert result.data.company_id == "cc2"
 
     @rsps_lib.activate
     def test_update_company(self):
         _reg(rsps_lib.PATCH, "/2.1/companyCatalog/cc1", body={"id": "cc1"})
-        assert CompanyCatalogApi(_make_client()).update_company("cc1", {}) == {"id": "cc1"}
+        result = CompanyCatalogApi(_make_client()).update_company("cc1", {})
+        assert result is not None
+        assert result.data.company_id == "cc1"
 
     @rsps_lib.activate
     def test_list_company_metadata(self):
@@ -380,7 +401,9 @@ class TestTasksApi:
     @rsps_lib.activate
     def test_get_task(self):
         _reg(rsps_lib.GET, "/3.3/projects/p1/tasks/t1", body={"id": "t1"})
-        assert TasksApi(_make_client()).get_task("p1", "t1") == {"id": "t1"}
+        result = TasksApi(_make_client()).get_task("p1", "t1")
+        assert result is not None
+        assert result.data["taskId"] == "t1"
 
     @rsps_lib.activate
     def test_get_project_task_changes(self):
@@ -412,13 +435,23 @@ class TestFileAreasApi:
 class TestFilesApi:
     @rsps_lib.activate
     def test_list_files(self):
-        _reg(rsps_lib.GET, "/6.1/projects/p1/file_areas/fa1/files", body=[])
-        assert FilesApi(_make_client()).list_files("p1", "fa1") == []
+        _reg(rsps_lib.GET, "/6.1/projects/p1/file_areas/fa1/files", body={"items": []})
+        result = FilesApi(_make_client()).list_files("p1", "fa1")
+        assert result is not None
+        assert result.items == []
 
     @rsps_lib.activate
     def test_get_file(self):
-        _reg(rsps_lib.GET, "/5.0/projects/p1/file_areas/fa1/files/f1", body={"id": "f1"})
-        assert FilesApi(_make_client()).get_file("p1", "fa1", "f1") == {"id": "f1"}
+        _reg(rsps_lib.GET, "/5.0/projects/p1/file_areas/fa1/files/f1", body={"data": {
+            "fileId": "f1", 
+            "fileName": "test.txt", 
+            "fileAreaId": "fa1", 
+            "fileType": "document"
+        }})
+        result = FilesApi(_make_client()).get_file("p1", "fa1", "f1")
+        assert result is not None
+        assert result.data.file_id == "f1"
+        assert result.data.file_name == "test.txt"
 
     @rsps_lib.activate
     def test_get_file_properties_mapping(self):
@@ -436,18 +469,54 @@ class TestFilesApi:
 class TestFoldersApi:
     @rsps_lib.activate
     def test_list_folders(self):
-        _reg(rsps_lib.GET, "/5.1/projects/p1/file_areas/fa1/folders", body=[])
-        assert FoldersApi(_make_client()).list_folders("p1", "fa1") == []
+        _reg(rsps_lib.GET, "/5.1/projects/p1/file_areas/fa1/folders", body={"items": []})
+        result = FoldersApi(_make_client()).list_folders("p1", "fa1")
+        assert result is not None
+        assert result.items == []
 
     @rsps_lib.activate
     def test_get_folder(self):
-        _reg(rsps_lib.GET, "/5.0/projects/p1/file_areas/fa1/folders/fo1", body={"id": "fo1"})
-        assert FoldersApi(_make_client()).get_folder("p1", "fa1", "fo1") == {"id": "fo1"}
+        _reg(rsps_lib.GET, "/5.0/projects/p1/file_areas/fa1/folders/fo1", body={"data": {"folderId": "fo1", "folderName": "Test Folder"}})
+        result = FoldersApi(_make_client()).get_folder("p1", "fa1", "fo1")
+        assert result is not None
+        assert result.data.folder_id == "fo1"
+        assert result.data.folder_name == "Test Folder"
 
     @rsps_lib.activate
     def test_get_folder_files_properties(self):
         _reg(rsps_lib.GET, "/1.0/projects/p1/file_areas/fa1/folders/fo1/files/properties/1.0/mappings", body=[])
         assert FoldersApi(_make_client()).get_folder_files_properties("p1", "fa1", "fo1") == []
+
+    @rsps_lib.activate
+    def test_get_folder_by_name(self):
+        # Mock the list folders endpoint to return a folder with the name we're looking for
+        _reg(rsps_lib.GET, "/5.1/projects/p1/file_areas/fa1/folders", body={
+            "items": [
+                {"data": {"folderId": "fo1", "folderName": "Test Folder", "parentFolderId": None}},
+                {"data": {"folderId": "fo2", "folderName": "Other Folder", "parentFolderId": None}}
+            ]
+        })
+        
+        api = FoldersApi(_make_client())
+        result = api.get_folder_by_name("p1", "fa1", "Test Folder")
+        
+        assert result is not None
+        assert result.data.folder_id == "fo1"
+        assert result.data.folder_name == "Test Folder"
+
+    @rsps_lib.activate
+    def test_get_folder_by_name_not_found(self):
+        # Mock the list folders endpoint to return folders that don't match
+        _reg(rsps_lib.GET, "/5.1/projects/p1/file_areas/fa1/folders", body={
+            "items": [
+                {"data": {"folderId": "fo1", "folderName": "Other Folder", "parentFolderId": None}}
+            ]
+        })
+        
+        api = FoldersApi(_make_client())
+        result = api.get_folder_by_name("p1", "fa1", "Non Existent Folder")
+        
+        assert result is None
 
 
 # ---------- FileUploadApi ----------
@@ -490,7 +559,9 @@ class TestFormsApi:
     @rsps_lib.activate
     def test_get_form(self):
         _reg(rsps_lib.GET, "/1.2/projects/p1/forms/fm1", body={"id": "fm1"})
-        assert FormsApi(_make_client()).get_form("p1", "fm1") == {"id": "fm1"}
+        result = FormsApi(_make_client()).get_form("p1", "fm1")
+        assert result is not None
+        assert result.data["formId"] == "fm1"
 
     @rsps_lib.activate
     def test_get_project_form_attachments(self):
@@ -504,7 +575,9 @@ class TestUsersApi:
     @rsps_lib.activate
     def test_get_user(self):
         _reg(rsps_lib.GET, "/1.1/users/u1", body={"id": "u1"})
-        assert UsersApi(_make_client()).get_user("u1") == {"id": "u1"}
+        result = UsersApi(_make_client()).get_user("u1")
+        assert result is not None
+        assert result.data.user_id == "u1"
 
     @rsps_lib.activate
     def test_list_project_users(self):
@@ -585,7 +658,9 @@ class TestVersionSetsApi:
     @rsps_lib.activate
     def test_get_version_set(self):
         _reg(rsps_lib.GET, "/2.0/projects/p1/version_sets/vs1", body={"id": "vs1"})
-        assert VersionSetsApi(_make_client()).get_version_set("p1", "vs1") == {"id": "vs1"}
+        result = VersionSetsApi(_make_client()).get_version_set("p1", "vs1")
+        assert result is not None
+        assert result.data.version_set_id == "vs1"
 
     @rsps_lib.activate
     def test_list_file_area_version_sets(self):

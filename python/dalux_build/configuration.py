@@ -10,7 +10,7 @@ class Configuration:
     Args:
         base_url: The API base URL provided by Dalux
             (e.g. ``https://<company>.dalux.com/api``).
-            If not provided, loads from DALUX_API_BASE_URL environment variable.
+            If not provided, loads from DALUX_BASE_URL environment variable.
         api_key: Your company-specific ``X-API-KEY``.
             If not provided, loads from DALUX_API_KEY environment variable.
 
@@ -22,12 +22,12 @@ class Configuration:
         load_dotenv()
 
         if not base_url:
-            base_url = os.getenv("DALUX_API_BASE_URL")
+            base_url = os.getenv("DALUX_BASE_URL")
         if not api_key:
             api_key = os.getenv("DALUX_API_KEY")
 
         if not base_url:
-            raise ValueError("base_url is required (or set DALUX_API_BASE_URL env var)")
+            raise ValueError("base_url is required (or set DALUX_BASE_URL env var)")
         if not api_key:
             raise ValueError("api_key is required (or set DALUX_API_KEY env var)")
 

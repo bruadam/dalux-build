@@ -4,6 +4,8 @@ from typing import Any, Dict, Optional
 from ..api_client import ApiClient
 from ..models import ProjectsListResponse, ProjectResponse
 from ..response_converter import convert_to_model
+from ..utils.search import find_by_field
+from ..utils.validation import validate_project_id
 
 
 class ProjectsApi:
@@ -34,6 +36,7 @@ class ProjectsApi:
         Returns:
             ProjectResponse containing the project data.
         """
+        validate_project_id(project_id)
         response = self._client.get(f"/5.0/projects/{project_id}")
         return convert_to_model(response, ProjectResponse)
 
@@ -99,8 +102,6 @@ class ProjectsApi:
         if not response or not response.items:
             return None
 
-        for project in response.items:
-            if project.project_name == project_name:
-                return project.project_id
-
-        return None
+        # Use generic search utility - search by the Pydantic field name "project_name"
+        project = find_by_field(response.items, "project_name", project_name)
+        return project.project_id if project else None

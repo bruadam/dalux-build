@@ -5,6 +5,8 @@ from urllib.parse import parse_qs, urlparse
 from ..api_client import ApiClient
 from ..models import TasksListResponse, TaskResponse
 from ..response_converter import convert_to_model
+from ..utils.pagination import paginate, has_next_page, get_next_page_params
+from ..utils.validation import validate_project_id
 
 
 def _normalize_task_params(params: Optional[Dict[str, Any]]) -> Dict[str, Any]:

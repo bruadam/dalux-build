@@ -10,6 +10,9 @@ import requests
 from ..api_client import ApiClient
 from ..models import File, FilesListResponse, FileResponse
 from ..response_converter import convert_to_model
+from ..utils.pagination import paginate
+from ..utils.search import find_by_field, find_all_by_field
+from ..utils.validation import validate_project_id, validate_file_area_id, validate_folder_id
 
 
 class FilesApi:
@@ -45,52 +48,41 @@ class FilesApi:
         file_area_id: str,
         params: Optional[Dict[str, Any]] = None,
         verbose: bool = False,
-    ) -> list:
+    ) -> List[File]:
         """Retrieve all files by following bookmark pagination automatically.
-
-        Combines all pages into a single list of items.
 
         Args:
             project_id: Project ID.
             file_area_id: File area ID.
             params: Optional additional query parameters.
-            verbose: If True, print progress using totalRemainingItems from metadata.
+            verbose: If True, print progress information.
+
+        Returns:
+            List of all file items as File objects.
         """
-        from urllib.parse import parse_qs, urlparse
-
-        all_items = []
-        current_params = dict(params or {})
-        has_next_page = True
-
-        while has_next_page:
-            response = self._client.get(
-                f"/6.1/projects/{project_id}/file_areas/{file_area_id}/files",
-                params=current_params,
-            )
-            items = response.get("items") if response else None
-            if items:
-                all_items.extend(items)
-            remaining = (response.get("metadata") or {}).get("totalRemainingItems", 0)
-            if verbose:
-                print(f"Retrieved {len(all_items)} files so far, {remaining} remaining...")
-            # Stop if no items were returned or nothing left
-            if not items or remaining == 0:
-                has_next_page = False
+        validate_project_id(project_id)
+        validate_file_area_id(file_area_id)
+        
+        endpoint = f"/6.1/projects/{project_id}/file_areas/{file_area_id}/files"
+        raw_items = paginate(endpoint, self._client, params, verbose)
+        
+        # Convert raw items to File objects
+        files = []
+        for item in raw_items:
+            if isinstance(item, dict) and "data" in item:
+                file_data = item["data"]
+                try:
+                    file_obj = File.model_validate(file_data)
+                    files.append(file_obj)
+                except Exception as e:
+                    # If conversion fails, fall back to raw data for compatibility
+                    files.append(file_data)
+            elif isinstance(item, File):
+                files.append(item)
             else:
-                next_link = next(
-                    (l for l in (response.get("links") or []) if l.get("rel") == "nextPage"),
-                    None,
-                )
-                if next_link:
-                    qs = parse_qs(urlparse(next_link["href"]).query)
-                    bookmark = qs.get("bookmark", [None])[0]
-                    current_params = {**dict(params or {}), "bookmark": bookmark}
-                else:
-                    has_next_page = False
-
-        if verbose:
-            print(f"Done. Total files retrieved: {len(all_items)}")
-        return all_items
+                files.append(item)
+        
+        return files
 
     def get_all_files_in_folder(
         self,
@@ -112,11 +104,17 @@ class FilesApi:
         Returns:
             A list of file items belonging to the specified folder.
         """
+        validate_project_id(project_id)
+        validate_file_area_id(file_area_id)
+        validate_folder_id(folder_id)
+        
         all_files = self.get_all_files(project_id, file_area_id, params=params, verbose=verbose)
-        filtered = [
-            f for f in all_files
-            if (f.get("data") or {}).get("folderId") == folder_id
-        ]
+        filtered = find_all_by_field(
+            all_files,
+            "folderId",
+            folder_id,
+            accessor=lambda x: x
+        )
         if verbose:
             print(f"Files matching folder {folder_id!r}: {len(filtered)}")
         return filtered
@@ -203,10 +201,17 @@ class FilesApi:
                 match_fn = lambda name: all(kw.lower() in name for kw in filename_keywords)
             else:
                 match_fn = lambda name: any(kw.lower() in name for kw in filename_keywords)
-            filtered = [
-                f for f in filtered
-                if match_fn((f.get("data") or {}).get("fileName", "").lower())
-            ]
+            
+            def get_file_name(file_item):
+                """Extract file name from File object or dict."""
+                if hasattr(file_item, 'file_name'):
+                    return file_item.file_name.lower()
+                elif isinstance(file_item, dict) and 'data' in file_item:
+                    return (file_item['data'].get('fileName', '') or '').lower()
+                else:
+                    return ''
+            
+            filtered = [f for f in filtered if match_fn(get_file_name(f))]
             if verbose:
                 print(f"Files matching fileName keywords {filename_keywords} ({filename_keywords_match}): {len(filtered)} / {len(files)}")
 
@@ -216,21 +221,29 @@ class FilesApi:
                 for ext in filename_extensions
             ]
             before = len(filtered)
-            filtered = [
-                f for f in filtered
-                if any(
-                    (f.get("data") or {}).get("fileName", "").lower().endswith(ext)
-                    for ext in norm_exts
-                )
-            ]
+            
+            def file_ends_with_extension(file_item, extensions):
+                """Check if file name ends with any of the extensions."""
+                file_name = get_file_name(file_item)
+                return any(file_name.endswith(ext) for ext in extensions)
+            
+            filtered = [f for f in filtered if file_ends_with_extension(f, norm_exts)]
             if verbose:
                 print(f"Files matching fileName extensions {norm_exts}: {len(filtered)} / {before}")
 
         results = []
         for i, f in enumerate(filtered, 1):
-            data = f.get("data") or {}
-            file_name = data.get("fileName", data.get("fileId", f"file_{i}"))
-            download_link = data.get("downloadLink")
+            # Handle both File objects and dict format
+            if hasattr(f, 'file_name'):
+                file_name = f.file_name
+                download_link = f.download_link
+            elif isinstance(f, dict) and 'data' in f:
+                data = f['data']
+                file_name = data.get("fileName", data.get("fileId", f"file_{i}"))
+                download_link = data.get("downloadLink")
+            else:
+                file_name = f"file_{i}"
+                download_link = None
             if not download_link:
                 if verbose:
                     print(f"  [{i}/{len(filtered)}] Skipping {file_name!r} (no downloadLink)")
@@ -271,9 +284,22 @@ class FilesApi:
         total = len(file_ids)
         for i, file_id in enumerate(file_ids, 1):
             file_info = self.get_file(project_id, file_area_id, file_id)
-            data = (file_info or {}).get("data") or {}
-            file_name = data.get("fileName", file_id)
-            download_link = data.get("downloadLink")
+            # Handle both FileResponse objects and legacy dict format
+            if file_info and hasattr(file_info, 'data'):
+                data = file_info.data
+                file_name = data.file_name if data else file_id
+                download_link = data.download_link if data else None
+            else:
+                # Handle legacy dict format
+                if isinstance(file_info, dict) and "data" in file_info:
+                    data = file_info["data"]
+                    file_name = data.get("fileName", file_id)
+                    download_link = data.get("downloadLink")
+                else:
+                    # Fallback for unexpected formats
+                    data = {}
+                    file_name = file_id
+                    download_link = None
             if not download_link:
                 if verbose:
                     print(f"  [{i}/{total}] Skipping {file_name!r} (no downloadLink)")

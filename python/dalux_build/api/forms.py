@@ -4,6 +4,9 @@ from typing import Any, Dict, Optional
 from ..api_client import ApiClient
 from ..models import FormsListResponse, FormResponse
 from ..response_converter import convert_to_model
+from ..utils.search import find_by_field, find_all_by_field
+from ..utils.validation import validate_project_id, validate_file_area_id
+from ..utils.pagination import paginate
 
 
 class FormsApi:
@@ -20,6 +23,7 @@ class FormsApi:
         Returns:
             FormsListResponse with type-safe access to forms.
         """
+        validate_project_id(project_id)
         response = self._client.get(f"/2.1/projects/{project_id}/forms", params=params)
         return convert_to_model(response, FormsListResponse)
 
@@ -29,6 +33,7 @@ class FormsApi:
         Returns:
             FormResponse with form details.
         """
+        validate_project_id(project_id)
         response = self._client.get(f"/1.2/projects/{project_id}/forms/{form_id}")
         return convert_to_model(response, FormResponse)
 
@@ -36,6 +41,7 @@ class FormsApi:
         self, project_id: str, params: Optional[Dict[str, Any]] = None
     ) -> Any:
         """GET /2.1/projects/{projectId}/forms/attachments."""
+        validate_project_id(project_id)
         return self._client.get(
             f"/2.1/projects/{project_id}/forms/attachments", params=params
         )

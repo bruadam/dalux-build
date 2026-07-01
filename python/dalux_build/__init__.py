@@ -14,6 +14,10 @@ from typing import Any
 
 from .api_client import ApiClient
 from .configuration import Configuration
+from .utils import (
+    DaluxError, NotFoundError, ApiError, ValidationError,
+    paginate, find_by_field, find_all_by_field
+)
 
 from .api import (
     CompaniesApi,
@@ -61,7 +65,7 @@ def create_client(base_url: str = None, api_key: str = None) -> DaluxClient:
     """Create a fully configured Dalux Build API client.
 
     Args:
-        base_url: The API base URL. If not provided, loads from DALUX_API_BASE_URL env var.
+        base_url: The API base URL. If not provided, loads from DALUX_BASE_URL env var.
         api_key: Your ``X-API-KEY``. If not provided, loads from DALUX_API_KEY env var.
 
     Returns:
@@ -123,4 +127,12 @@ __all__ = [
     "UsersApi",
     "VersionSetsApi",
     "WorkPackagesApi",
+    # Utilities
+    "DaluxError",
+    "NotFoundError",
+    "ApiError", 
+    "ValidationError",
+    "paginate",
+    "find_by_field",
+    "find_all_by_field",
 ]

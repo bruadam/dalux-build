@@ -4,6 +4,8 @@ from typing import Any, Dict, Optional
 from ..api_client import ApiClient
 from ..models import FileArea, FileAreasListResponse
 from ..response_converter import convert_to_model
+from ..utils.search import find_by_field
+from ..utils.validation import validate_project_id
 
 
 class FileAreasApi:
@@ -43,12 +45,12 @@ class FileAreasApi:
         Returns:
             The file area ID if found, None otherwise.
         """
+        validate_project_id(project_id)
+        
         response = self.get_file_areas(project_id)
         if not response or not response.items:
             return None
 
-        for item in response.items:
-            if item.file_area_name == file_area_name:
-                return item.file_area_id
-
-        return None
+        # Use generic search utility - search by the Pydantic field name "file_area_name"
+        file_area = find_by_field(response.items, "file_area_name", file_area_name)
+        return file_area.file_area_id if file_area else None

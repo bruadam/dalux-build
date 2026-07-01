@@ -4,6 +4,9 @@ from typing import Any, Dict, Optional
 from ..api_client import ApiClient
 from ..models import CompaniesListResponse, CompanyResponse
 from ..response_converter import convert_to_model
+from ..utils.search import find_by_field, find_all_by_field
+from ..utils.validation import validate_project_id, validate_file_area_id
+from ..utils.pagination import paginate
 
 
 class CompaniesApi:
@@ -20,6 +23,7 @@ class CompaniesApi:
         Returns:
             CompaniesListResponse with type-safe access to companies.
         """
+        validate_project_id(project_id)
         response = self._client.get(f"/3.1/projects/{project_id}/companies", params=params)
         return convert_to_model(response, CompaniesListResponse)
 
@@ -29,6 +33,7 @@ class CompaniesApi:
         Returns:
             CompanyResponse with company details.
         """
+        validate_project_id(project_id)
         response = self._client.get(
             f"/3.0/projects/{project_id}/companies/{company_id}"
         )
@@ -42,6 +47,7 @@ class CompaniesApi:
         Returns:
             CompanyResponse with the created company.
         """
+        validate_project_id(project_id)
         response = self._client.post(
             f"/3.1/projects/{project_id}/companies", json=body
         )
@@ -55,6 +61,7 @@ class CompaniesApi:
         Returns:
             CompanyResponse with the updated company.
         """
+        validate_project_id(project_id)
         response = self._client.patch(
             f"/3.0/projects/{project_id}/companies/{company_id}", json=body
         )

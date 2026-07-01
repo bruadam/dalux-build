@@ -17,7 +17,7 @@ class Project(BaseModel):
 
     project_id: str = Field(..., alias="projectId")
     project_name: str = Field(..., alias="projectName")
-    project_type: str = Field(..., alias="type")
+    project_type: Optional[str] = Field(None, alias="type")
     project_template_id: Optional[str] = Field(None, alias="projectTemplateId")
     address: Optional[str] = None
     number: Optional[str] = None

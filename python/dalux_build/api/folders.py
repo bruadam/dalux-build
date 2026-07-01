@@ -6,6 +6,9 @@ from urllib.parse import parse_qs, urlparse
 from ..api_client import ApiClient
 from ..models import Folder, FoldersListResponse, FolderResponse
 from ..response_converter import convert_to_model
+from ..utils.pagination import paginate
+from ..utils.search import find_by_field, find_by_field_path
+from ..utils.validation import validate_project_id, validate_file_area_id
 
 if TYPE_CHECKING:
     from .files import FilesApi
@@ -39,35 +42,42 @@ class FoldersApi:
         project_id: str,
         file_area_id: str,
         params: Optional[Dict[str, Any]] = None,
-    ) -> List[Any]:
+        verbose: bool = False,
+    ) -> List[Folder]:
         """Retrieve all folders by following bookmark pagination automatically.
 
-        Combines all pages into a single list of items.
+        Args:
+            project_id: Project ID.
+            file_area_id: File area ID.
+            params: Optional query parameters.
+            verbose: Whether to print progress information.
+
+        Returns:
+            List of all folder items as Folder objects.
         """
-        all_items: List[Any] = []
-        current_params: Dict[str, Any] = dict(params or {})
-        has_next_page = True
-
-        while has_next_page:
-            response = self._client.get(
-                f"/5.1/projects/{project_id}/file_areas/{file_area_id}/folders",
-                params=current_params,
-            )
-            items = response.get("items") if response else None
-            if items:
-                all_items.extend(items)
-            next_link = next(
-                (l for l in (response.get("links") or []) if l.get("rel") == "nextPage"),
-                None,
-            )
-            if next_link:
-                qs = parse_qs(urlparse(next_link["href"]).query)
-                bookmark = qs.get("bookmark", [None])[0]
-                current_params = {**dict(params or {}), "bookmark": bookmark}
+        validate_project_id(project_id)
+        validate_file_area_id(file_area_id)
+        
+        endpoint = f"/5.1/projects/{project_id}/file_areas/{file_area_id}/folders"
+        raw_items = paginate(endpoint, self._client, params, verbose)
+        
+        # Convert raw items to Folder objects
+        folders = []
+        for item in raw_items:
+            if isinstance(item, dict) and "data" in item:
+                folder_data = item["data"]
+                try:
+                    folder = Folder.model_validate(folder_data)
+                    folders.append(folder)
+                except Exception as e:
+                    # If conversion fails, fall back to raw data for compatibility
+                    folders.append(folder_data)
+            elif isinstance(item, Folder):
+                folders.append(item)
             else:
-                has_next_page = False
-
-        return all_items
+                folders.append(item)
+        
+        return folders
 
     def get_folder(
         self, project_id: str, file_area_id: str, folder_id: str
@@ -97,8 +107,8 @@ class FoldersApi:
         file_area_id: str,
         folder_name: str,
         parent_folder_id: Optional[str] = None,
-    ) -> Optional[str]:
-        """Get folder ID by name, optionally under a parent folder.
+    ) -> Optional[FolderResponse]:
+        """Get folder by name, optionally under a parent folder.
 
         Args:
             project_id: Project ID.
@@ -107,23 +117,44 @@ class FoldersApi:
             parent_folder_id: Optional parent folder ID to limit search.
 
         Returns:
-            The folder ID if found, None otherwise.
+            FolderResponse with folder details if found, None otherwise.
         """
+        validate_project_id(project_id)
+        validate_file_area_id(file_area_id)
+        
         all_folders = self.get_all_folders(project_id, file_area_id)
-
-        for item in all_folders:
-            folder_data = item.get("data", {}) if isinstance(item, dict) else item
-            if isinstance(folder_data, dict):
-                name = folder_data.get("folderName") or folder_data.get("name")
-                if name == folder_name:
-                    if parent_folder_id is None:
-                        return folder_data.get("folderId") or folder_data.get("id")
-                    else:
-                        parent = folder_data.get("parentFolderId") or folder_data.get("parentId")
-                        if parent == parent_folder_id:
-                            return folder_data.get("folderId") or folder_data.get("id")
-
-        return None
+        
+        # Use generic search utility
+        folder = find_by_field(
+            all_folders,
+            "folderName",
+            folder_name,
+            accessor=lambda x: x.get("data") if isinstance(x, dict) and "data" in x else x
+        )
+        
+        if not folder:
+            return None
+            
+        # Handle both Folder objects and raw dicts
+        if isinstance(folder, Folder):
+            folder_data = {
+                "folderId": folder.folder_id,
+                "folderName": folder.folder_name,
+                "parentFolderId": folder.parent_folder_id
+            }
+        elif isinstance(folder, dict) and "data" in folder:
+            folder_data = folder.get("data")
+        else:
+            folder_data = folder
+        
+        if parent_folder_id is not None:
+            parent = folder_data.get("parentFolderId") or folder_data.get("parentId")
+            if parent != parent_folder_id:
+                return None
+                
+        # Create a FolderResponse object
+        folder_obj = Folder.model_validate(folder_data)
+        return FolderResponse(data=folder_obj)
 
     def get_file_area_tree_by_path(
         self,
@@ -158,7 +189,16 @@ class FoldersApi:
         all_folders = self.get_all_folders(project_id, file_area_id)
 
         def _get_folder_data(item: Any) -> Dict[str, Any]:
-            return item.get("data", {}) if isinstance(item, dict) else item
+            if isinstance(item, Folder):
+                return {
+                    "folderId": item.folder_id,
+                    "folderName": item.folder_name,
+                    "parentFolderId": item.parent_folder_id
+                }
+            elif isinstance(item, dict) and "data" in item:
+                return item.get("data", {})
+            else:
+                return item if isinstance(item, dict) else {}
 
         def _get_fid(folder_data: Dict[str, Any]) -> Optional[str]:
             return folder_data.get("folderId") or folder_data.get("id")
@@ -262,14 +302,20 @@ class FoldersApi:
 
         # --- helpers to extract fields from varying API shapes ---
         def _fid(item: Any) -> Optional[str]:
+            if isinstance(item, Folder):
+                return item.folder_id
             d = item.get("data") or {}
             return d.get("id") or d.get("folderId") or item.get("id") or item.get("folderId")
 
         def _pid(item: Any) -> Optional[str]:
+            if isinstance(item, Folder):
+                return item.parent_folder_id
             d = item.get("data") or {}
             return d.get("parentFolderId") or d.get("parentId") or item.get("parentFolderId") or item.get("parentId")
 
         def _name(item: Any) -> str:
+            if isinstance(item, Folder):
+                return item.folder_name
             d = item.get("data") or {}
             return d.get("name") or d.get("folderName") or item.get("name") or _fid(item) or "?"
 
@@ -316,8 +362,15 @@ class FoldersApi:
 
         # --- attach files to their folder nodes ---
         for f in all_files:
-            fid = (f.get("data") or {}).get("folderId")
-            target = nodes.get(fid, root)
+            # Handle both File objects and dict format
+            if hasattr(f, 'folder_id'):
+                fid = f.folder_id
+            elif isinstance(f, dict) and "data" in f:
+                fid = f["data"].get("folderId")
+            else:
+                fid = None
+            
+            target = nodes.get(fid, root) if fid else root
             target["files"].append(f)
 
         return root

@@ -502,7 +502,7 @@ class TestCreateClientIntegration:
     @rsps_lib.activate
     def test_create_client_with_env_vars(self, monkeypatch):
         """create_client should load from env vars when not provided."""
-        monkeypatch.setenv("DALUX_API_BASE_URL", BASE_URL)
+        monkeypatch.setenv("DALUX_BASE_URL", BASE_URL)
         monkeypatch.setenv("DALUX_API_KEY", API_KEY)
 
         _reg(rsps_lib.GET, "/5.1/projects", body={

@@ -4,6 +4,9 @@ from typing import Any, Dict, Optional
 from ..api_client import ApiClient
 from ..models import UserResponse, UsersListResponse
 from ..response_converter import convert_to_model
+from ..utils.search import find_by_field, find_all_by_field
+from ..utils.validation import validate_project_id, validate_file_area_id
+from ..utils.pagination import paginate
 
 
 class UsersApi:
@@ -29,6 +32,7 @@ class UsersApi:
         Returns:
             UsersListResponse with type-safe access to project users.
         """
+        validate_project_id(project_id)
         response = self._client.get(
             f"/1.2/projects/{project_id}/users", params=params
         )
@@ -36,6 +40,7 @@ class UsersApi:
 
     def get_project_user(self, project_id: str, user_id: str) -> Any:
         """GET /1.1/projects/{projectId}/users/{userId}."""
+        validate_project_id(project_id)
         return self._client.get(
             f"/1.1/projects/{project_id}/users/{user_id}"
         )

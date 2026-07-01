@@ -4,6 +4,9 @@ from typing import Any, Dict, Optional
 from ..api_client import ApiClient
 from ..models import CompaniesListResponse, CompanyResponse
 from ..response_converter import convert_to_model
+from ..utils.search import find_by_field, find_all_by_field
+from ..utils.validation import validate_project_id, validate_file_area_id
+from ..utils.pagination import paginate
 
 
 class CompanyCatalogApi:
@@ -81,3 +84,20 @@ class CompanyCatalogApi:
         return self._client.get(
             f"/1.0/companyCatalog/metadata/1.0/mappings/{key}/values"
         )
+
+    def get_company_by_name(self, company_name: str) -> Optional[str]:
+        """Get company ID by name.
+
+        Args:
+            company_name: Name of the company to search for.
+
+        Returns:
+            The company ID if found, None otherwise.
+        """
+        response = self.get_companies()
+        if not response or not response.items:
+            return None
+
+        # Use generic search utility
+        company = find_by_field(response.items, "company_name", company_name)
+        return company.catalog_company_id if company else None

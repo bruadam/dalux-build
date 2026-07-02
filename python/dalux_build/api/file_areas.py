@@ -27,15 +27,16 @@ class FileAreasApi:
         )
         return convert_to_model(response, FileAreasListResponse)
 
-    def get_file_area(self, project_id: str, file_area_id: str) -> Any:
+    def get_file_area(self, project_id: str, file_area_id: str) -> Optional[FileArea]:
         """GET /1.0/projects/{projectId}/file_areas/{fileAreaId}."""
-        return self._client.get(
+        response = self._client.get(
             f"/1.0/projects/{project_id}/file_areas/{file_area_id}"
         )
+        return convert_to_model(response, FileArea)
 
     def get_file_area_by_name(
         self, project_id: str, file_area_name: str
-    ) -> Optional[str]:
+    ) -> Optional[FileArea]:
         """Get file area ID by name.
 
         Args:
@@ -43,7 +44,7 @@ class FileAreasApi:
             file_area_name: Name of the file area to search for.
 
         Returns:
-            The file area ID if found, None otherwise.
+            The file area if found, None otherwise.
         """
         validate_project_id(project_id)
         
@@ -53,4 +54,4 @@ class FileAreasApi:
 
         # Use generic search utility - search by the Pydantic field name "file_area_name"
         file_area = find_by_field(response.items, "file_area_name", file_area_name)
-        return file_area.file_area_id if file_area else None
+        return file_area if file_area else None

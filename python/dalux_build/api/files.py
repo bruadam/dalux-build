@@ -1,4 +1,5 @@
 """Files API."""
+import json
 import os
 from typing import TYPE_CHECKING, Any, Dict, List, Optional
 
@@ -6,11 +7,16 @@ if TYPE_CHECKING:
     from .folders import FoldersApi
 
 import requests
+try:
+    from tqdm import tqdm
+except ImportError:
+    tqdm = None
 
 from ..api_client import ApiClient
 from ..models import File, FilesListResponse, FileResponse
 from ..response_converter import convert_to_model
 from ..utils.pagination import paginate
+from ..utils.path_resolver import resolve_folder_id_from_named_path
 from ..utils.search import find_by_field, find_all_by_field
 from ..utils.validation import validate_project_id, validate_file_area_id, validate_folder_id
 
@@ -20,6 +26,45 @@ class FilesApi:
 
     def __init__(self, api_client: ApiClient) -> None:
         self._client = api_client
+
+    def _print_endpoint(
+        self,
+        method: str,
+        path: str,
+        params: Optional[Dict[str, Any]] = None,
+        verbose: bool = False,
+    ) -> None:
+        """Print endpoint details when verbose mode is enabled."""
+        if not verbose:
+            return
+        if params:
+            print(f"{method} {path} params={params}")
+        else:
+            print(f"{method} {path}")
+
+    def _get_local_file_path(self, file_name: str, save_path: Optional[str] = None) -> str:
+        """Build the destination file path."""
+        return os.path.join(save_path, file_name) if save_path else file_name
+
+    def _get_local_metadata_path(self, file_name: str, save_path: Optional[str] = None) -> str:
+        """Build the destination metadata path."""
+        return f"{self._get_local_file_path(file_name, save_path)}.txt"
+
+    def _load_saved_metadata(
+        self,
+        file_name: str,
+        save_path: Optional[str] = None,
+    ) -> Optional[Dict[str, Any]]:
+        """Load previously saved metadata for a local file if present."""
+        metadata_path = self._get_local_metadata_path(file_name, save_path)
+        if not os.path.exists(metadata_path):
+            return None
+        try:
+            with open(metadata_path, "r", encoding="utf-8") as metadata_file:
+                data = json.load(metadata_file)
+            return data if isinstance(data, dict) else None
+        except (OSError, json.JSONDecodeError):
+            return None
 
     def list_files(
         self,
@@ -64,6 +109,7 @@ class FilesApi:
         validate_file_area_id(file_area_id)
         
         endpoint = f"/6.1/projects/{project_id}/file_areas/{file_area_id}/files"
+        self._print_endpoint("GET", endpoint, params=params, verbose=verbose)
         raw_items = paginate(endpoint, self._client, params, verbose)
         
         # Convert raw items to File objects
@@ -87,17 +133,20 @@ class FilesApi:
     def get_all_files_in_folder(
         self,
         project_id: str,
-        file_area_id: str,
-        folder_id: str,
+        file_area_id_or_path: str,
+        folder_id: Optional[str] = None,
         params: Optional[Dict[str, Any]] = None,
         verbose: bool = False,
     ) -> list:
-        """Retrieve all files for a specific folder by filtering get_all_files results.
+        """Retrieve all files for a folder using either folder ID or full path.
 
         Args:
             project_id: Project ID.
-            file_area_id: File area ID.
-            folder_id: The folder ID to filter files by.
+            file_area_id_or_path: Either a file area ID or a full path starting
+                with the file area name, such as
+                ``Files/4_Design/C07_Geometry/C07.05_BIM``.
+            folder_id: The folder ID to filter files by when ``file_area_id_or_path``
+                is a file area ID.
             params: Optional additional query parameters passed to the API.
             verbose: If True, print progress information.
 
@@ -105,60 +154,31 @@ class FilesApi:
             A list of file items belonging to the specified folder.
         """
         validate_project_id(project_id)
-        validate_file_area_id(file_area_id)
-        validate_folder_id(folder_id)
+
+        if folder_id is None:
+            file_area_id, resolved_folder_id = resolve_folder_id_from_named_path(
+                self._client, project_id, file_area_id_or_path, verbose=verbose
+            )
+            if resolved_folder_id is None:
+                if verbose:
+                    print(f"Could not resolve folder path: {file_area_id_or_path}")
+                return []
+        else:
+            file_area_id = file_area_id_or_path
+            resolved_folder_id = folder_id
+            validate_file_area_id(file_area_id)
+            validate_folder_id(resolved_folder_id)
         
         all_files = self.get_all_files(project_id, file_area_id, params=params, verbose=verbose)
         filtered = find_all_by_field(
             all_files,
             "folderId",
-            folder_id,
+            resolved_folder_id,
             accessor=lambda x: x
         )
         if verbose:
-            print(f"Files matching folder {folder_id!r}: {len(filtered)}")
+            print(f"Files matching folder {resolved_folder_id!r}: {len(filtered)}")
         return filtered
-
-    def get_all_files_in_folder_by_path(
-        self,
-        project_id: str,
-        file_area_id: str,
-        folder_path: str,
-        folders_api: Optional["FoldersApi"] = None,
-        params: Optional[Dict[str, Any]] = None,
-        verbose: bool = False,
-    ) -> list:
-        """Retrieve all files in a folder specified by path.
-
-        Args:
-            project_id: Project ID.
-            file_area_id: File area ID.
-            folder_path: Path like "Folder1/Subfolder" (resolved to folder ID).
-            folders_api: FoldersApi instance for path resolution.
-            params: Optional additional query parameters passed to the API.
-            verbose: If True, print progress information.
-
-        Returns:
-            A list of file items belonging to the specified folder path.
-
-        Raises:
-            ValueError: If folders_api is not provided or folder path cannot be resolved.
-        """
-        if folders_api is None:
-            raise ValueError("folders_api must be provided to resolve folder paths")
-
-        folder_id = folders_api.get_file_area_tree_by_path(
-            project_id, file_area_id, folder_path, verbose=verbose
-        )
-
-        if folder_id is None:
-            if verbose:
-                print(f"Could not resolve folder path: {folder_path}")
-            return []
-
-        return self.get_all_files_in_folder(
-            project_id, file_area_id, folder_id, params=params, verbose=verbose
-        )
 
     def bulk_download_folder(
         self,
@@ -250,68 +270,158 @@ class FilesApi:
                 continue
             if verbose:
                 print(f"  [{i}/{len(filtered)}] Downloading {file_name!r}...")
-            downloaded_path = self.download_file_from_link(download_link, file_name, save_path)
+            downloaded_path = self._download_file_from_link(download_link, file_name, save_path)
             results.append({"fileName": file_name, "downloaded_file_path": downloaded_path})
 
         if verbose:
             print(f"Bulk download complete. {len(results)} file(s) downloaded.")
         return results
 
-    def bulk_download_by_ids(
+    def bulk_download_files(
         self,
         project_id: str,
-        file_area_id: str,
-        file_ids: List[str],
+        files: List[str],
+        file_area_id: Optional[str] = None,
         save_path: Optional[str] = None,
+        save_metadata: bool = False,
+        params: Optional[Dict[str, Any]] = None,
         verbose: bool = False,
-    ) -> List[Dict[str, Any]]:
-        """Download a list of files by their file IDs.
-
-        Fetches metadata for each ID and downloads the file using its download link.
+    ) -> List[File]:
+        """Download a list of files by IDs or full paths.
 
         Args:
             project_id: Project ID.
-            file_area_id: File area ID.
-            file_ids: List of file IDs to download.
+            files: List of file IDs or full file paths.
+            file_area_id: File area ID when *files* contains file IDs. Leave unset
+                when *files* contains full paths like
+                ``Files/folder/.../file.ext``.
             save_path: Optional directory to save files. Defaults to current directory.
+            save_metadata: If True, write ``model_dump()`` metadata for each downloaded
+                file to a sibling ``.txt`` file.
+            params: Optional additional query parameters used for path-based resolution.
             verbose: If True, print progress per file.
 
         Returns:
-            List of dicts with ``fileId``, ``fileName``, and ``downloaded_file_path``
-            for each successfully downloaded file.
+            List of downloaded :class:`File` objects with ``saved_file_path`` and
+            optionally ``saved_metadata_path`` populated.
         """
-        results: List[Dict[str, Any]] = []
-        total = len(file_ids)
-        for i, file_id in enumerate(file_ids, 1):
-            file_info = self.get_file(project_id, file_area_id, file_id)
-            # Handle both FileResponse objects and legacy dict format
-            if file_info and hasattr(file_info, 'data'):
-                data = file_info.data
-                file_name = data.file_name if data else file_id
-                download_link = data.download_link if data else None
-            else:
-                # Handle legacy dict format
-                if isinstance(file_info, dict) and "data" in file_info:
-                    data = file_info["data"]
-                    file_name = data.get("fileName", file_id)
-                    download_link = data.get("downloadLink")
-                else:
-                    # Fallback for unexpected formats
-                    data = {}
-                    file_name = file_id
-                    download_link = None
-            if not download_link:
+        results: List[File] = []
+        file_areas_cache: Dict[str, Any] = {}
+        folders_cache: Dict[str, list] = {}
+        resolved_paths_cache: Dict[str, tuple[Optional[str], Optional[str]]] = {}
+        all_files_cache: Dict[str, List[File]] = {}
+        total = len(files)
+        for i, item in enumerate(files, 1):
+            if file_area_id is None:
+                path_parts = [part.strip() for part in item.strip("/").split("/") if part.strip()]
+                if len(path_parts) < 3:
+                    if verbose:
+                        print(f"  [{i}/{total}] Skipping {item!r} (invalid path)")
+                    continue
+
+                resolved_file_area_id, folder_id = resolve_folder_id_from_named_path(
+                    self._client,
+                    project_id,
+                    "/".join(path_parts[:-1]),
+                    verbose=verbose,
+                    file_areas_cache=file_areas_cache,
+                    folders_cache=folders_cache,
+                    resolved_paths_cache=resolved_paths_cache,
+                )
+                if not resolved_file_area_id or not folder_id:
+                    if verbose:
+                        print(f"  [{i}/{total}] Skipping {item!r} (File does not exist: {item})")
+                    continue
+                if resolved_file_area_id not in all_files_cache:
+                    all_files_cache[resolved_file_area_id] = self.get_all_files(
+                        project_id,
+                        resolved_file_area_id,
+                        params=params,
+                        verbose=verbose,
+                    )
+                folder_files = find_all_by_field(
+                    all_files_cache[resolved_file_area_id],
+                    "folderId",
+                    folder_id,
+                    accessor=lambda x: x,
+                )
                 if verbose:
+                    print(f"Files matching folder {folder_id!r}: {len(folder_files)}")
+                file_obj = find_by_field(folder_files, "file_name", path_parts[-1])
+                if not file_obj:
+                    if verbose:
+                        print(f"  [{i}/{total}] Skipping {item!r} (File does not exist: {item})")
+                    continue
+            else:
+                file_info = self.get_file(
+                    project_id,
+                    file_area_id,
+                    item,
+                    verbose=verbose,
+                )
+                if isinstance(file_info, str):
+                    if verbose:
+                        print(f"  [{i}/{total}] Skipping {item!r} ({file_info})")
+                    continue
+                if hasattr(file_info, "data"):
+                    file_obj = file_info.data
+                elif isinstance(file_info, File):
+                    file_obj = file_info
+                else:
+                    file_obj = None
+
+            if not file_obj or not file_obj.download_link:
+                if verbose:
+                    file_name = file_obj.file_name if file_obj else item
                     print(f"  [{i}/{total}] Skipping {file_name!r} (no downloadLink)")
                 continue
+
+            local_file_path = self._get_local_file_path(file_obj.file_name, save_path)
+            metadata_path = self._get_local_metadata_path(file_obj.file_name, save_path)
+            current_metadata = file_obj.model_dump(mode="json")
+            saved_metadata = self._load_saved_metadata(file_obj.file_name, save_path)
+            if (
+                saved_metadata
+                and os.path.exists(local_file_path)
+                and saved_metadata.get("file_revision_id") == current_metadata.get("file_revision_id")
+                and saved_metadata.get("uploaded") == current_metadata.get("uploaded")
+            ):
+                print(f"  [{i}/{total}] {file_obj.file_name!r} is still up-to-date. Skipping download.")
+                results.append(
+                    file_obj.model_copy(
+                        update={
+                            "saved_file_path": local_file_path,
+                            "saved_metadata_path": metadata_path,
+                        }
+                    )
+                )
+                continue
+
             if verbose:
-                print(f"  [{i}/{total}] Downloading {file_name!r}...")
-            downloaded_path = self.download_file_from_link(download_link, file_name, save_path)
-            results.append({
-                "fileId": file_id,
-                "fileName": file_name,
-                "downloaded_file_path": downloaded_path,
-            })
+                print(f"  [{i}/{total}] Downloading {file_obj.file_name!r}...")
+
+            downloaded_path = self._download_file_from_link(
+                file_obj.download_link,
+                file_obj.file_name,
+                save_path,
+                verbose=verbose,
+            )
+            metadata_path = None
+            if save_metadata:
+                metadata_path = self._get_local_metadata_path(file_obj.file_name, save_path)
+                with open(metadata_path, "w", encoding="utf-8") as metadata_file:
+                    json.dump(current_metadata, metadata_file, indent=2)
+                    metadata_file.flush()
+                    os.fsync(metadata_file.fileno())
+
+            results.append(
+                file_obj.model_copy(
+                    update={
+                        "saved_file_path": downloaded_path,
+                        "saved_metadata_path": metadata_path,
+                    }
+                )
+            )
         if verbose:
             print(f"Done. {len(results)}/{total} file(s) downloaded.")
         return results
@@ -319,28 +429,76 @@ class FilesApi:
     def get_file(
         self,
         project_id: str,
-        file_area_id: str,
-        file_id: str,
+        file_area_id_or_path: str,
+        file_id: Optional[str] = None,
         download: bool = False,
         save_path: Optional[str] = None,
-    ) -> Optional[Any]:
-        """GET /5.0/projects/{projectId}/file_areas/{fileAreaId}/files/{fileId}.
+        params: Optional[Dict[str, Any]] = None,
+        verbose: bool = False,
+    ) -> Any:
+        """Get a file either by IDs or by full path.
 
-        If download=True, will also download the file using the download link in the response.
+        Supports either:
+        - ``get_file(project_id, file_area_id, file_id)``
+        - ``get_file(project_id, "Files/folder/.../file.ext")``
+
+        If ``download=True``, also downloads the file using the file's download link.
 
         Args:
             project_id: Project ID.
-            file_area_id: File area ID.
-            file_id: File ID.
+            file_area_id_or_path: Either a file area ID or a full path starting
+                with the file area name.
+            file_id: File ID when ``file_area_id_or_path`` is a file area ID.
             download: If True, download the file content using the download link.
             save_path: Optional directory to save the file (default: current directory).
+            params: Optional additional query parameters used for path-based resolution.
+            verbose: If True, print progress information for path-based resolution.
 
         Returns:
-            FileResponse with type-safe access. If download=True, returns as dict with
-            'downloaded_file_path' added.
+            FileResponse for ID lookups, File for path lookups, or a not-found message.
+            If ``download=True``, returns a dict with ``downloaded_file_path`` added.
         """
+        validate_project_id(project_id)
+
+        if file_id is None:
+            path = file_area_id_or_path
+            not_found_message = f"File does not exist: {path}"
+            path_parts = [part.strip() for part in path.strip("/").split("/") if part.strip()]
+            if len(path_parts) < 3:
+                raise ValueError("path must include file area name, folder path, and file name")
+
+            file_area_id, folder_id = resolve_folder_id_from_named_path(
+                self._client, project_id, "/".join(path_parts[:-1]), verbose=verbose
+            )
+            if not file_area_id or not folder_id:
+                return not_found_message
+
+            candidate_file_name = path_parts[-1]
+            files = self.get_all_files_in_folder(
+                project_id, file_area_id, folder_id, params=params, verbose=verbose
+            )
+            file_match = find_by_field(files, "file_name", candidate_file_name)
+            if not file_match:
+                return not_found_message
+
+            if download:
+                download_link = file_match.download_link if hasattr(file_match, "download_link") else None
+                file_name = file_match.file_name if hasattr(file_match, "file_name") else candidate_file_name
+                if download_link:
+                    result = file_match.model_dump() if hasattr(file_match, "model_dump") else file_match
+                    result["downloaded_file_path"] = self._download_file_from_link(
+                        download_link, file_name, save_path, verbose=verbose
+                    )
+                    return result
+            return file_match
+
+        self._print_endpoint(
+            "GET",
+            f"/5.0/projects/{project_id}/file_areas/{file_area_id_or_path}/files/{file_id}",
+            verbose=verbose,
+        )
         response = self._client.get(
-            f"/5.0/projects/{project_id}/file_areas/{file_area_id}/files/{file_id}"
+            f"/5.0/projects/{project_id}/file_areas/{file_area_id_or_path}/files/{file_id}"
         )
         file_info = convert_to_model(response, FileResponse)
 
@@ -349,19 +507,21 @@ class FilesApi:
             file_name = (file_info.data.file_name if file_info.data else file_id) or file_id
 
             if download_link:
-                downloaded_path = self.download_file_from_link(download_link, file_name, save_path)
-                # Convert to dict since we need to add a field
+                downloaded_path = self._download_file_from_link(
+                    download_link, file_name, save_path, verbose=verbose
+                )
                 result = file_info.model_dump()
                 result["downloaded_file_path"] = downloaded_path
                 return result
 
         return file_info
 
-    def download_file_from_link(
+    def _download_file_from_link(
         self,
         download_link: str,
         file_name: str,
         save_path: Optional[str] = None,
+        verbose: bool = False,
     ) -> str:
         """Download a file from a direct download link using the API key.
 
@@ -381,15 +541,38 @@ class FilesApi:
             file_path = os.path.join(save_path, file_name)
         else:
             file_path = file_name
+        temp_file_path = f"{file_path}.part"
 
         api_key = self._client._configuration.api_key
         headers = {"X-API-KEY": api_key}
 
         response = requests.get(download_link, headers=headers, stream=True)
+        if verbose:
+            print(f"GET {download_link}")
         if response.status_code == 200:
-            with open(file_path, "wb") as f:
+            total_bytes_header = response.headers.get("Content-Length")
+            total_bytes = int(total_bytes_header) if total_bytes_header and total_bytes_header.isdigit() else None
+            progress = None
+            if verbose and tqdm is not None:
+                progress = tqdm(
+                    total=total_bytes,
+                    unit="B",
+                    unit_scale=True,
+                    unit_divisor=1000,
+                    desc=file_name,
+                    leave=False,
+                )
+            with open(temp_file_path, "wb") as f:
                 for chunk in response.iter_content(chunk_size=8192):
-                    f.write(chunk)
+                    if chunk:
+                        f.write(chunk)
+                        if progress is not None:
+                            progress.update(len(chunk))
+                f.flush()
+                os.fsync(f.fileno())
+            if progress is not None:
+                progress.close()
+            os.replace(temp_file_path, file_path)
             return file_path
         else:
             raise Exception(f"Failed to download file. Status code: {response.status_code}")

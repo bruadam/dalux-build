@@ -24,6 +24,7 @@ dependencies = [
     "pydantic>=2.13.4",
     "requests>=2.34.2",
     "pydantic[email]",
+    "tqdm>=4.66.0",
 ]
 
 [project.urls]

@@ -7,6 +7,7 @@ from ..api_client import ApiClient
 from ..models import Folder, FoldersListResponse, FolderResponse
 from ..response_converter import convert_to_model
 from ..utils.pagination import paginate
+from ..utils.path_resolver import resolve_folder_id_from_named_path
 from ..utils.search import find_by_field, find_by_field_path
 from ..utils.validation import validate_project_id, validate_file_area_id
 
@@ -91,6 +92,23 @@ class FoldersApi:
             f"/5.0/projects/{project_id}/file_areas/{file_area_id}/folders/{folder_id}"
         )
         return convert_to_model(response, FolderResponse)
+
+    def get_folder_by_path(
+        self,
+        project_id: str,
+        path: str,
+        verbose: bool = False,
+    ) -> Optional[FolderResponse]:
+        """Get a folder using a full path starting with the file area name."""
+        validate_project_id(project_id)
+
+        file_area_id, folder_id = resolve_folder_id_from_named_path(
+            self._client, project_id, path, verbose=verbose
+        )
+        if not file_area_id or not folder_id:
+            return None
+
+        return self.get_folder(project_id, file_area_id, folder_id)
 
     def get_folder_files_properties(
         self, project_id: str, file_area_id: str, folder_id: str

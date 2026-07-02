@@ -81,6 +81,8 @@ class File(BaseModel):
     content_hash: Optional[str] = Field(None, alias="contentHash")
     download_link: Optional[str] = Field(None, alias="downloadLink")
     properties: Optional[List[FilePropertyField]] = None
+    saved_file_path: Optional[str] = None
+    saved_metadata_path: Optional[str] = None
 
     class Config:
         populate_by_name = True

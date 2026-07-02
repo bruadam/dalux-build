@@ -53,8 +53,14 @@ from .forms import Form
 from .forms import FormResponse, FormsListResponse
 
 # Endpoint models - tasks
-from .tasks import ApiTaskGet
-from .tasks import TaskResponse, TasksListResponse
+from .tasks import Task, TaskAttachment, TaskChange, TaskChangeActor, TaskChangeFields, TaskChangeLocation, TaskListParams
+from .tasks import (
+    TaskAttachmentsListResponse,
+    TaskChangeResponse,
+    TaskChanges,
+    TaskResponse,
+    TasksListResponse,
+)
 
 # Endpoint models - file revisions
 from .file_revisions import FileRevision
@@ -63,7 +69,7 @@ from .file_revisions import FileRevision
 from .file_upload import FileUpload
 
 # Endpoint models - work packages
-from .work_packages import WorkPackage
+from .work_packages import WorkPackage, WorkPackagesListResponse
 
 __all__ = [
     # Base models
@@ -121,9 +127,18 @@ __all__ = [
     "FormsListResponse",
     "FormResponse",
     # Tasks
-    "ApiTaskGet",
+    "Task",
+    "TaskAttachment",
+    "TaskChange",
+    "TaskChangeActor",
+    "TaskChangeFields",
+    "TaskChangeLocation",
+    "TaskListParams",
     "TasksListResponse",
     "TaskResponse",
+    "TaskChangeResponse",
+    "TaskChanges",
+    "TaskAttachmentsListResponse",
     # Project Templates
     "ProjectTemplate",
     # File Revisions
@@ -132,4 +147,5 @@ __all__ = [
     "FileUpload",
     # Work Packages
     "WorkPackage",
+    "WorkPackagesListResponse",
 ]

@@ -19,7 +19,14 @@ from dalux_build.models import (
     UsersListResponse, UserResponse, User,
     CompaniesListResponse, CompanyResponse,
     VersionSetsListResponse, VersionSetResponse,
-    TasksListResponse, TaskResponse,
+    Task,
+    TaskAttachmentsListResponse,
+    TaskChange,
+        TaskChangeActor,
+        TaskChangeFields,
+    TaskChanges,
+    TaskResponse,
+    TasksListResponse,
     TestPlansListResponse,
     FormsListResponse, FormResponse,
     InspectionPlansListResponse,
@@ -376,6 +383,179 @@ class TestTasksPydantic:
         response = api.get_task("p1", "t1")
 
         assert isinstance(response, TaskResponse)
+
+    @rsps_lib.activate
+    def test_get_all_project_tasks_returns_typed_items(self):
+        """get_all_project_tasks should return list[ApiTaskGet]."""
+        page1 = {
+            "items": [{"data": {"taskId": "t1", "title": "Task 1"}}],
+            "metadata": {"totalRemainingItems": 1},
+            "links": [
+                {
+                    "rel": "nextPage",
+                    "href": f"{BASE_URL}/5.2/projects/p1/tasks?bookmark=bm1",
+                    "method": "GET",
+                }
+            ],
+        }
+        page2 = {
+            "items": [{"data": {"taskId": "t2", "title": "Task 2"}}],
+            "metadata": {"totalRemainingItems": 0},
+            "links": [],
+        }
+        rsps_lib.add(rsps_lib.GET, f"{BASE_URL}/5.2/projects/p1/tasks", json=page1, status=200)
+        rsps_lib.add(rsps_lib.GET, f"{BASE_URL}/5.2/projects/p1/tasks", json=page2, status=200)
+
+        api = TasksApi(_make_client())
+        response = api.get_all_project_tasks("p1")
+
+        assert len(response) == 2
+        assert all(isinstance(item, Task) for item in response)
+        assert response[0].task_id == "t1"
+        assert response[1].task_id == "t2"
+
+    @rsps_lib.activate
+    def test_get_project_task_changes_returns_pydantic_model(self):
+        """get_project_task_changes should return TaskChanges."""
+        _reg(rsps_lib.GET, "/2.2/projects/p1/tasks/changes", body=[
+            {
+                "taskId": "S339368766909448192",
+                "description": "",
+                "timestamp": "2025-08-05T07:55:56.9900000+00:00",
+                "action": "reject",
+                "fields": {
+                    "modifiedBy": {"userId": ""},
+                    "assignedTo": {"roleId": "", "roleName": ""},
+                    "currentResponsible": {"userId": ""},
+                },
+            }
+        ])
+        api = TasksApi(_make_client())
+        response = api.get_project_task_changes("p1")
+
+        assert isinstance(response, TaskChanges)
+        assert len(response.items) == 1
+        assert response.items[0].task_id == "S339368766909448192"
+        assert isinstance(response.items[0].fields, TaskChangeFields)
+        assert isinstance(response.items[0].fields.modified_by, TaskChangeActor)
+        assert response.items[0].fields.modified_by.user_id == ""
+        assert response.items[0].fields.assigned_to.role_id == ""
+        assert response.items[0].fields.current_responsible.user_id == ""
+
+    @rsps_lib.activate
+    def test_get_all_project_task_changes_returns_typed_items(self):
+        """get_all_project_task_changes should return list[TaskChange]."""
+        page1 = {
+            "items": [
+                {
+                    "taskId": "t1",
+                    "description": "",
+                    "timestamp": "2025-08-05T07:55:56.9900000+00:00",
+                    "action": "create",
+                    "fields": {},
+                }
+            ],
+            "metadata": {"totalRemainingItems": 1},
+            "links": [
+                {
+                    "rel": "nextPage",
+                    "href": f"{BASE_URL}/2.2/projects/p1/tasks/changes?bookmark=bm1",
+                    "method": "GET",
+                }
+            ],
+        }
+        page2 = {
+            "items": [
+                {
+                    "taskId": "t2",
+                    "description": "",
+                    "timestamp": "2025-08-05T08:55:56.9900000+00:00",
+                    "action": "reject",
+                    "fields": {},
+                }
+            ],
+            "metadata": {"totalRemainingItems": 0},
+            "links": [],
+        }
+        rsps_lib.add(rsps_lib.GET, f"{BASE_URL}/2.2/projects/p1/tasks/changes", json=page1, status=200)
+        rsps_lib.add(rsps_lib.GET, f"{BASE_URL}/2.2/projects/p1/tasks/changes", json=page2, status=200)
+
+        api = TasksApi(_make_client())
+        response = api.get_all_project_task_changes("p1")
+
+        assert len(response) == 2
+        assert all(isinstance(item, TaskChange) for item in response)
+        assert response[0].task_id == "t1"
+        assert response[1].task_id == "t2"
+
+    @rsps_lib.activate
+    def test_get_all_project_task_changes_parses_wrapped_deadline(self):
+        """Task change fields.deadline can be wrapped as {'value': iso_datetime}."""
+        _reg(rsps_lib.GET, "/2.2/projects/p1/tasks/changes", body={
+            "items": [
+                {
+                    "taskId": "t3",
+                    "description": "",
+                    "timestamp": "2025-08-05T09:55:56.9900000+00:00",
+                    "action": "update",
+                    "fields": {
+                        "deadline": {"value": "2025-07-16T00:00:00.0000000+00:00"}
+                    },
+                }
+            ],
+            "metadata": {"totalRemainingItems": 0},
+            "links": [],
+        })
+        api = TasksApi(_make_client())
+        response = api.get_all_project_task_changes("p1")
+
+        assert len(response) == 1
+        assert response[0].fields is not None
+        assert response[0].fields.deadline is not None
+
+    @rsps_lib.activate
+    def test_get_all_project_task_changes_parses_empty_deadline_wrapper(self):
+        """Task change fields.deadline can be wrapped as {'empty': true}."""
+        _reg(rsps_lib.GET, "/2.2/projects/p1/tasks/changes", body={
+            "items": [
+                {
+                    "taskId": "t4",
+                    "description": "",
+                    "timestamp": "2025-08-05T10:55:56.9900000+00:00",
+                    "action": "update",
+                    "fields": {
+                        "deadline": {"empty": True}
+                    },
+                }
+            ],
+            "metadata": {"totalRemainingItems": 0},
+            "links": [],
+        })
+        api = TasksApi(_make_client())
+        response = api.get_all_project_task_changes("p1")
+
+        assert len(response) == 1
+        assert response[0].fields is not None
+        assert response[0].fields.deadline is None
+
+    @rsps_lib.activate
+    def test_get_project_task_attachments_returns_pydantic_model(self):
+        """get_project_task_attachments should return TaskAttachmentsListResponse."""
+        _reg(rsps_lib.GET, "/1.1/projects/p1/tasks/attachments", body={
+            "items": [
+                {
+                    "attachmentId": "a1",
+                    "taskId": "t1",
+                    "fileId": "f1",
+                }
+            ]
+        })
+        api = TasksApi(_make_client())
+        response = api.get_project_task_attachments("p1")
+
+        assert isinstance(response, TaskAttachmentsListResponse)
+        assert len(response.items) == 1
+        assert response.items[0].attachment_id == "a1"
 
 
 class TestTestPlansPydantic:

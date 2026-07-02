@@ -156,6 +156,7 @@ except requests.HTTPError as exc:
 | `get_project_tasks(project_id, params=None)` | GET | `/5.1/projects/{projectId}/tasks` |
 | `get_task(project_id, task_id)` | GET | `/3.3/projects/{projectId}/tasks/{taskId}` |
 | `get_project_task_changes(project_id, params=None)` | GET | `/2.2/projects/{projectId}/tasks/changes` |
+| `get_all_project_task_changes(project_id, params=None)` | GET (paginated) | `/2.2/projects/{projectId}/tasks/changes` |
 | `get_project_task_attachments(project_id, params=None)` | GET | `/1.1/projects/{projectId}/tasks/attachments` |
 
 ### FileAreasApi

@@ -13,6 +13,15 @@ from dalux_build.api import (
     ProjectTemplatesApi, ProjectsApi, TasksApi, TestPlansApi as DaluxTestPlansApi, UsersApi,
     VersionSetsApi, WorkPackagesApi,
 )
+from dalux_build.models import (
+    Task,
+    TaskAttachmentsListResponse,
+    TaskChange,
+    TaskChanges,
+    TaskListParams,
+    TaskResponse,
+    TasksListResponse,
+)
 
 BASE_URL = "https://api.example.com/build"
 API_KEY = "test-key-abc"
@@ -212,7 +221,9 @@ class TestTasksApi:
     @rsps_lib.activate
     def test_get_project_tasks(self):
         _reg(rsps_lib.GET, "/5.2/projects/p1/tasks", body=[])
-        assert TasksApi(_make_client()).get_project_tasks("p1") == []
+        response = TasksApi(_make_client()).get_project_tasks("p1")
+        assert isinstance(response, TasksListResponse)
+        assert response.items == []
 
     @rsps_lib.activate
     def test_get_project_tasks_maps_type_id_to_odata_filter(self):
@@ -245,6 +256,16 @@ class TestTasksApi:
         assert query == {"$filter": ["data/type/typeId eq 'x''y'"]}
 
     @rsps_lib.activate
+    def test_get_project_tasks_accepts_task_list_params_model(self):
+        _reg(rsps_lib.GET, "/5.2/projects/p1/tasks", body=[])
+        TasksApi(_make_client()).get_project_tasks(
+            "p1",
+            params=TaskListParams(type_id="S410425647911927812"),
+        )
+        query = parse_qs(urlparse(rsps_lib.calls[0].request.url).query)
+        assert query == {"$filter": ["data/type/typeId eq 'S410425647911927812'"]}
+
+    @rsps_lib.activate
     def test_get_all_project_tasks_follows_pagination(self):
         page1 = {
             "items": [{"data": {"taskId": "t1"}}],
@@ -262,8 +283,9 @@ class TestTasksApi:
         rsps_lib.add(rsps_lib.GET, f"{BASE_URL}/5.2/projects/p1/tasks", json=page2, status=200)
         result = TasksApi(_make_client()).get_all_project_tasks("p1")
         assert len(result) == 2
-        assert result[0]["data"]["taskId"] == "t1"
-        assert result[1]["data"]["taskId"] == "t2"
+        assert isinstance(result[0], Task)
+        assert result[0].task_id == "t1"
+        assert result[1].task_id == "t2"
 
     @rsps_lib.activate
     def test_get_all_project_tasks_stops_when_total_remaining_zero_ignores_next_link(self):
@@ -290,6 +312,7 @@ class TestTasksApi:
         rsps_lib.add(rsps_lib.GET, f"{BASE_URL}/5.2/projects/p1/tasks", json=page2, status=200)
         result = TasksApi(_make_client()).get_all_project_tasks("p1")
         assert len(result) == 2
+        assert all(isinstance(item, Task) for item in result)
         assert len(rsps_lib.calls) == 2
 
     @rsps_lib.activate
@@ -367,7 +390,7 @@ class TestTasksApi:
         rsps_lib.add(rsps_lib.GET, f"{BASE_URL}/5.2/projects/p1/tasks", json=page2, status=200)
         rsps_lib.add(rsps_lib.GET, f"{BASE_URL}/5.2/projects/p1/tasks", json=page3, status=200)
         result = TasksApi(_make_client()).get_all_project_tasks("p1")
-        assert [x["data"]["taskId"] for x in result] == ["a", "b", "c"]
+        assert [x.task_id for x in result] == ["a", "b", "c"]
         assert len(rsps_lib.calls) == 3
 
     @rsps_lib.activate
@@ -403,17 +426,62 @@ class TestTasksApi:
         _reg(rsps_lib.GET, "/3.3/projects/p1/tasks/t1", body={"id": "t1"})
         result = TasksApi(_make_client()).get_task("p1", "t1")
         assert result is not None
-        assert result.data["taskId"] == "t1"
+        assert isinstance(result, TaskResponse)
+        assert result.data.task_id == "t1"
 
     @rsps_lib.activate
     def test_get_project_task_changes(self):
-        _reg(rsps_lib.GET, "/2.2/projects/p1/tasks/changes", body=[])
-        assert TasksApi(_make_client()).get_project_task_changes("p1") == []
+        _reg(
+            rsps_lib.GET,
+            "/2.2/projects/p1/tasks/changes",
+            body=[
+                {
+                    "taskId": "S339368766909448192",
+                    "description": "",
+                    "timestamp": "2025-08-05T07:55:56.9900000+00:00",
+                    "action": "reject",
+                    "fields": {
+                        "modifiedBy": {"userId": ""},
+                        "assignedTo": {"roleId": "", "roleName": ""},
+                        "currentResponsible": {"userId": ""},
+                    },
+                }
+            ],
+        )
+        response = TasksApi(_make_client()).get_project_task_changes("p1")
+        assert isinstance(response, TaskChanges)
+        assert len(response.items) == 1
+        assert response.items[0].task_id == "S339368766909448192"
+        assert response.items[0].action == "reject"
+
+    @rsps_lib.activate
+    def test_get_all_project_task_changes_follows_pagination(self):
+        page1 = {
+            "items": [{"taskId": "t1", "timestamp": "2025-08-05T07:55:56.9900000+00:00", "action": "create", "fields": {}}],
+            "metadata": {"totalItems": 2, "totalRemainingItems": 1},
+            "links": [
+                {"rel": "nextPage", "href": f"{BASE_URL}/2.2/projects/p1/tasks/changes?bookmark=bm1", "method": "GET"}
+            ],
+        }
+        page2 = {
+            "items": [{"taskId": "t2", "timestamp": "2025-08-05T08:55:56.9900000+00:00", "action": "reject", "fields": {}}],
+            "metadata": {"totalItems": 2, "totalRemainingItems": 0},
+            "links": [],
+        }
+        rsps_lib.add(rsps_lib.GET, f"{BASE_URL}/2.2/projects/p1/tasks/changes", json=page1, status=200)
+        rsps_lib.add(rsps_lib.GET, f"{BASE_URL}/2.2/projects/p1/tasks/changes", json=page2, status=200)
+        result = TasksApi(_make_client()).get_all_project_task_changes("p1")
+        assert len(result) == 2
+        assert all(isinstance(item, TaskChange) for item in result)
+        assert result[0].task_id == "t1"
+        assert result[1].task_id == "t2"
 
     @rsps_lib.activate
     def test_get_project_task_attachments(self):
         _reg(rsps_lib.GET, "/1.1/projects/p1/tasks/attachments", body=[])
-        assert TasksApi(_make_client()).get_project_task_attachments("p1") == []
+        response = TasksApi(_make_client()).get_project_task_attachments("p1")
+        assert isinstance(response, TaskAttachmentsListResponse)
+        assert response.items == []
 
 
 # ---------- FileAreasApi ----------
@@ -678,5 +746,13 @@ class TestVersionSetsApi:
 class TestWorkPackagesApi:
     @rsps_lib.activate
     def test_list_work_packages(self):
-        _reg(rsps_lib.GET, "/1.0/projects/p1/workpackages", body=[])
-        assert WorkPackagesApi(_make_client()).list_work_packages("p1") == []
+        _reg(
+            rsps_lib.GET,
+            "/1.0/projects/p1/workpackages",
+            body={"items": [{"workpackageId": "wp1", "companyId": "c1", "name": "Facade"}]},
+        )
+        result = WorkPackagesApi(_make_client()).list_work_packages("p1")
+        assert result is not None
+        assert len(result.items) == 1
+        assert result.items[0].workpackage_id == "wp1"
+        assert result.items[0].name == "Facade"

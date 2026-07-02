@@ -97,7 +97,7 @@ def convert_to_model(response: Any, model_class: Type[T]) -> Optional[T]:
     if isinstance(response, list):
         # For backward compatibility with old tests that expect raw lists
         # instead of ListResponse objects
-        if model_class.__name__ in ["CompaniesListResponse", "CompanyCatalogListResponse", "UsersListResponse", "TasksListResponse", "FileAreasListResponse", "FormsListResponse", "InspectionPlansListResponse", "TestPlansListResponse", "VersionSetsListResponse", "FilesListResponse", "FoldersListResponse"]:
+        if model_class.__name__ in ["CompaniesListResponse", "CompanyCatalogListResponse", "UsersListResponse", "FileAreasListResponse", "FormsListResponse", "InspectionPlansListResponse", "TestPlansListResponse", "VersionSetsListResponse", "FilesListResponse", "FoldersListResponse"]:
             return response
         
         # Handle list responses by wrapping them in expected structure

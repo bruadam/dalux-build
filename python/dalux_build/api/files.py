@@ -13,7 +13,7 @@ except ImportError:
     tqdm = None
 
 from ..api_client import ApiClient
-from ..models import File, FilesListResponse, FileResponse
+from ..models import File, FileNameFilter, FilesListResponse, FileResponse
 from ..response_converter import convert_to_model
 from ..utils.pagination import paginate
 from ..utils.path_resolver import resolve_folder_id_from_named_path
@@ -180,101 +180,284 @@ class FilesApi:
             print(f"Files matching folder {resolved_folder_id!r}: {len(filtered)}")
         return filtered
 
+    def _extract_file_name(self, file_item: Any) -> str:
+        """Extract a file name from either a File model or raw API item."""
+        if hasattr(file_item, "file_name"):
+            return file_item.file_name or ""
+        if isinstance(file_item, dict):
+            if "data" in file_item and isinstance(file_item["data"], dict):
+                return file_item["data"].get("fileName", "") or ""
+            return file_item.get("fileName", "") or ""
+        return ""
+
+    def _coerce_file(self, file_item: Any) -> Optional[File]:
+        """Convert a raw file item to a File model when possible."""
+        if isinstance(file_item, File):
+            return file_item
+        if isinstance(file_item, dict):
+            file_data = file_item.get("data", file_item)
+            if isinstance(file_data, dict):
+                try:
+                    return File.model_validate(file_data)
+                except Exception:
+                    return None
+        return None
+
+    def _normalize_extensions(self, extensions: List[str]) -> List[str]:
+        """Normalize file extensions to lower-case values prefixed with a dot."""
+        return [
+            (ext if ext.startswith(".") else f".{ext}").lower()
+            for ext in extensions
+            if ext
+        ]
+
+    def _apply_file_name_filters(
+        self,
+        files: List[Any],
+        *,
+        contains: Optional[List[str]] = None,
+        contains_match: str = "any",
+        not_contains: Optional[List[str]] = None,
+        startswith: Optional[List[str]] = None,
+        not_startswith: Optional[List[str]] = None,
+        endswith: Optional[List[str]] = None,
+        not_endswith: Optional[List[str]] = None,
+        extensions: Optional[List[str]] = None,
+        not_extensions: Optional[List[str]] = None,
+        verbose: bool = False,
+    ) -> List[Any]:
+        """Filter files by file name using case-insensitive include/exclude rules."""
+        filtered = files
+
+        def lowered_values(values: Optional[List[str]]) -> List[str]:
+            return [value.lower() for value in values or [] if value]
+
+        contains_values = lowered_values(contains)
+        not_contains_values = lowered_values(not_contains)
+        startswith_values = lowered_values(startswith)
+        not_startswith_values = lowered_values(not_startswith)
+        endswith_values = lowered_values(endswith)
+        not_endswith_values = lowered_values(not_endswith)
+        extension_values = self._normalize_extensions(extensions or [])
+        not_extension_values = self._normalize_extensions(not_extensions or [])
+
+        def file_name(file_item: Any) -> str:
+            return self._extract_file_name(file_item).lower()
+
+        if contains_values:
+            before = len(filtered)
+            if contains_match == "all":
+                filtered = [
+                    file_item for file_item in filtered
+                    if all(value in file_name(file_item) for value in contains_values)
+                ]
+            else:
+                filtered = [
+                    file_item for file_item in filtered
+                    if any(value in file_name(file_item) for value in contains_values)
+                ]
+            if verbose:
+                print(
+                    f"Files matching fileName contains {contains_values} "
+                    f"({contains_match}): {len(filtered)} / {before}"
+                )
+
+        if not_contains_values:
+            before = len(filtered)
+            filtered = [
+                file_item for file_item in filtered
+                if not any(value in file_name(file_item) for value in not_contains_values)
+            ]
+            if verbose:
+                print(
+                    f"Files excluding fileName contains {not_contains_values}: "
+                    f"{len(filtered)} / {before}"
+                )
+
+        if startswith_values:
+            before = len(filtered)
+            filtered = [
+                file_item for file_item in filtered
+                if any(file_name(file_item).startswith(value) for value in startswith_values)
+            ]
+            if verbose:
+                print(
+                    f"Files matching fileName startswith {startswith_values}: "
+                    f"{len(filtered)} / {before}"
+                )
+
+        if not_startswith_values:
+            before = len(filtered)
+            filtered = [
+                file_item for file_item in filtered
+                if not any(file_name(file_item).startswith(value) for value in not_startswith_values)
+            ]
+            if verbose:
+                print(
+                    f"Files excluding fileName startswith {not_startswith_values}: "
+                    f"{len(filtered)} / {before}"
+                )
+
+        if endswith_values:
+            before = len(filtered)
+            filtered = [
+                file_item for file_item in filtered
+                if any(file_name(file_item).endswith(value) for value in endswith_values)
+            ]
+            if verbose:
+                print(
+                    f"Files matching fileName endswith {endswith_values}: "
+                    f"{len(filtered)} / {before}"
+                )
+
+        if not_endswith_values:
+            before = len(filtered)
+            filtered = [
+                file_item for file_item in filtered
+                if not any(file_name(file_item).endswith(value) for value in not_endswith_values)
+            ]
+            if verbose:
+                print(
+                    f"Files excluding fileName endswith {not_endswith_values}: "
+                    f"{len(filtered)} / {before}"
+                )
+
+        if extension_values:
+            before = len(filtered)
+            filtered = [
+                file_item for file_item in filtered
+                if any(file_name(file_item).endswith(ext) for ext in extension_values)
+            ]
+            if verbose:
+                print(
+                    f"Files matching fileName extensions {extension_values}: "
+                    f"{len(filtered)} / {before}"
+                )
+
+        if not_extension_values:
+            before = len(filtered)
+            filtered = [
+                file_item for file_item in filtered
+                if not any(file_name(file_item).endswith(ext) for ext in not_extension_values)
+            ]
+            if verbose:
+                print(
+                    f"Files excluding fileName extensions {not_extension_values}: "
+                    f"{len(filtered)} / {before}"
+                )
+
+        return filtered
+
     def bulk_download_folder(
         self,
         project_id: str,
-        file_area_id: str,
-        folder_id: str,
+        file_area_id_or_path: str,
+        folder_id: Optional[str] = None,
         save_path: Optional[str] = None,
-        filename_keywords: Optional[list] = None,
-        filename_keywords_match: str = "any",
-        filename_extensions: Optional[list] = None,
+        save_metadata: bool = False,
+        filters: Optional[FileNameFilter] = None,
         params: Optional[Dict[str, Any]] = None,
         verbose: bool = False,
-    ) -> list:
-        """Download all files in a folder, optionally filtered by fileName keywords and/or extensions.
+    ) -> List[File]:
+        """Download all files in a folder with optional case-insensitive name filters.
 
         Args:
             project_id: Project ID.
-            file_area_id: File area ID.
-            folder_id: The folder ID to download files from.
+            file_area_id_or_path: Either a file area ID or a full folder path
+                starting with the file area name, such as
+                ``Files/4_Design/C07_Geometry/C07.05_BIM``.
+            folder_id: The folder ID to download files from when
+                ``file_area_id_or_path`` is a file area ID.
             save_path: Optional directory to save downloaded files. Defaults to current directory.
-            filename_keywords: Optional list of keyword strings to match against the fileName
-                (case-insensitive). E.g. ["ARC", "STR"].
-            filename_keywords_match: "any" (default) to match files containing at least one keyword,
-                "all" to require all keywords to be present in the fileName.
-            filename_extensions: Optional list of file extensions to match against the fileName
-                (e.g. [".ifc", ".rvt"]). Case-insensitive. Leading dot is optional.
+            save_metadata: If True, write ``model_dump()`` metadata for each downloaded
+                file to a sibling ``.txt`` file.
+            filters: Optional :class:`FileNameFilter` with include/exclude rules for
+                fileName matching.
             params: Optional additional query parameters passed to the API.
             verbose: If True, print progress information.
 
         Returns:
-            A list of dicts with 'fileName' and 'downloaded_file_path' for each downloaded file.
+            List of downloaded :class:`File` objects with ``saved_file_path`` and
+            optionally ``saved_metadata_path`` populated.
         """
         files = self.get_all_files_in_folder(
-            project_id, file_area_id, folder_id, params=params, verbose=verbose
+            project_id, file_area_id_or_path, folder_id, params=params, verbose=verbose
         )
 
-        filtered = files
-        if filename_keywords:
-            if filename_keywords_match == "all":
-                match_fn = lambda name: all(kw.lower() in name for kw in filename_keywords)
-            else:
-                match_fn = lambda name: any(kw.lower() in name for kw in filename_keywords)
-            
-            def get_file_name(file_item):
-                """Extract file name from File object or dict."""
-                if hasattr(file_item, 'file_name'):
-                    return file_item.file_name.lower()
-                elif isinstance(file_item, dict) and 'data' in file_item:
-                    return (file_item['data'].get('fileName', '') or '').lower()
-                else:
-                    return ''
-            
-            filtered = [f for f in filtered if match_fn(get_file_name(f))]
-            if verbose:
-                print(f"Files matching fileName keywords {filename_keywords} ({filename_keywords_match}): {len(filtered)} / {len(files)}")
+        resolved_filters = filters.model_copy(deep=True) if filters else FileNameFilter()
 
-        if filename_extensions:
-            norm_exts = [
-                (ext if ext.startswith(".") else f".{ext}").lower()
-                for ext in filename_extensions
-            ]
-            before = len(filtered)
-            
-            def file_ends_with_extension(file_item, extensions):
-                """Check if file name ends with any of the extensions."""
-                file_name = get_file_name(file_item)
-                return any(file_name.endswith(ext) for ext in extensions)
-            
-            filtered = [f for f in filtered if file_ends_with_extension(f, norm_exts)]
-            if verbose:
-                print(f"Files matching fileName extensions {norm_exts}: {len(filtered)} / {before}")
+        filtered = self._apply_file_name_filters(
+            files,
+            contains=resolved_filters.contains,
+            contains_match=resolved_filters.contains_match,
+            not_contains=resolved_filters.not_contains,
+            startswith=resolved_filters.startswith,
+            not_startswith=resolved_filters.not_startswith,
+            endswith=resolved_filters.endswith,
+            not_endswith=resolved_filters.not_endswith,
+            extensions=resolved_filters.extensions,
+            not_extensions=resolved_filters.not_extensions,
+            verbose=verbose,
+        )
 
-        results = []
+        results: List[File] = []
         for i, f in enumerate(filtered, 1):
-            # Handle both File objects and dict format
-            if hasattr(f, 'file_name'):
-                file_name = f.file_name
-                download_link = f.download_link
-            elif isinstance(f, dict) and 'data' in f:
-                data = f['data']
-                file_name = data.get("fileName", data.get("fileId", f"file_{i}"))
-                download_link = data.get("downloadLink")
-            else:
-                file_name = f"file_{i}"
-                download_link = None
-            if not download_link:
+            file_obj = self._coerce_file(f)
+            file_name = file_obj.file_name if file_obj else self._extract_file_name(f) or f"file_{i}"
+
+            if not file_obj or not file_obj.download_link:
                 if verbose:
                     print(f"  [{i}/{len(filtered)}] Skipping {file_name!r} (no downloadLink)")
                 continue
+
+            local_file_path = self._get_local_file_path(file_obj.file_name, save_path)
+            metadata_path = self._get_local_metadata_path(file_obj.file_name, save_path)
+            current_metadata = file_obj.model_dump(mode="json")
+            saved_metadata = self._load_saved_metadata(file_obj.file_name, save_path)
+            if (
+                saved_metadata
+                and os.path.exists(local_file_path)
+                and saved_metadata.get("file_revision_id") == current_metadata.get("file_revision_id")
+                and saved_metadata.get("uploaded") == current_metadata.get("uploaded")
+            ):
+                print(f"  [{i}/{len(filtered)}] {file_obj.file_name!r} is still up-to-date. Skipping download.")
+                results.append(
+                    file_obj.model_copy(
+                        update={
+                            "saved_file_path": local_file_path,
+                            "saved_metadata_path": metadata_path,
+                        }
+                    )
+                )
+                continue
+
             if verbose:
-                print(f"  [{i}/{len(filtered)}] Downloading {file_name!r}...")
-            downloaded_path = self._download_file_from_link(download_link, file_name, save_path)
-            results.append({"fileName": file_name, "downloaded_file_path": downloaded_path})
+                print(f"  [{i}/{len(filtered)}] Downloading {file_obj.file_name!r}...")
+            downloaded_path = self._download_file_from_link(
+                file_obj.download_link,
+                file_obj.file_name,
+                save_path,
+                verbose=verbose,
+            )
+            metadata_path = None
+            if save_metadata:
+                metadata_path = self._get_local_metadata_path(file_obj.file_name, save_path)
+                with open(metadata_path, "w", encoding="utf-8") as metadata_file:
+                    json.dump(current_metadata, metadata_file, indent=2)
+                    metadata_file.flush()
+                    os.fsync(metadata_file.fileno())
+
+            results.append(
+                file_obj.model_copy(
+                    update={
+                        "saved_file_path": downloaded_path,
+                        "saved_metadata_path": metadata_path,
+                    }
+                )
+            )
 
         if verbose:
-            print(f"Bulk download complete. {len(results)} file(s) downloaded.")
+            print(f"Bulk download complete. {len(results)}/{len(filtered)} file(s) downloaded.")
         return results
 
     def bulk_download_files(

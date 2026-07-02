@@ -2,6 +2,7 @@
 from .models import (
     File,
     FileDateProperty,
+    FileNameFilter,
     FileIntegerProperty,
     FilePropertyField,
     FileReferenceProperty,
@@ -13,6 +14,7 @@ from .responses import FileResponse, FilesListResponse
 __all__ = [
     "File",
     "Reference",
+    "FileNameFilter",
     "FileIntegerProperty",
     "FileDateProperty",
     "FileTextProperty",

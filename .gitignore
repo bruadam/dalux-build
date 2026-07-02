@@ -47,3 +47,4 @@ notebooks/*
 *.xlsx
 *.xls
 *.csv
+*.ifc.txt

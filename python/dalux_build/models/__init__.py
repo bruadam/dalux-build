@@ -19,6 +19,7 @@ from .files import (
     File,
     FileDateProperty,
     FileIntegerProperty,
+    FileNameFilter,
     FilePropertyField,
     FileReferenceProperty,
     FileTextProperty,
@@ -94,6 +95,7 @@ __all__ = [
     # Files
     "File",
     "Reference",
+    "FileNameFilter",
     "FileIntegerProperty",
     "FileDateProperty",
     "FileTextProperty",

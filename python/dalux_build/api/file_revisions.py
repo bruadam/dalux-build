@@ -1,5 +1,8 @@
 """File Revisions API."""
 from ..api_client import ApiClient
+from ..utils.search import find_by_field, find_all_by_field
+from ..utils.validation import validate_project_id, validate_file_area_id
+from ..utils.pagination import paginate
 
 
 class FileRevisionsApi:
@@ -16,6 +19,8 @@ class FileRevisionsApi:
         file_revision_id: str,
     ):
         """GET /2.0/.../files/{fileId}/revisions/{fileRevisionId}/content."""
+        validate_project_id(project_id)
+        validate_file_area_id(file_area_id)
         return self._client.get(
             f"/2.0/projects/{project_id}/file_areas/{file_area_id}"
             f"/files/{file_id}/revisions/{file_revision_id}/content"

@@ -1,4 +1,4 @@
-"""Pydantic models for user-related responses."""
+"""Data models for Users endpoint."""
 from typing import Optional
 
 from pydantic import BaseModel, EmailStr, Field

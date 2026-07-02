@@ -4,10 +4,7 @@ Quickstart::
 
     from dalux_build import create_client
 
-    dalux = create_client(
-        base_url="https://<company>.dalux.com/api",
-        api_key="YOUR_API_KEY",
-    )
+    dalux = create_client()
 
     projects = dalux.projects.list_projects()
 """
@@ -17,6 +14,10 @@ from typing import Any
 
 from .api_client import ApiClient
 from .configuration import Configuration
+from .utils import (
+    DaluxError, NotFoundError, ApiError, ValidationError,
+    paginate, find_by_field, find_all_by_field
+)
 
 from .api import (
     CompaniesApi,
@@ -60,28 +61,29 @@ class DaluxClient:
     work_packages: WorkPackagesApi
 
 
-def create_client(base_url: str, api_key: str, use_pydantic: bool = False) -> DaluxClient:
+def create_client(base_url: str = None, api_key: str = None) -> DaluxClient:
     """Create a fully configured Dalux Build API client.
 
     Args:
-        base_url: The API base URL (obtain from Dalux support).
-        api_key: Your ``X-API-KEY``
-            (manage via *Settings › Integrations › API Identities*).
-        use_pydantic: If True, return Pydantic model instances instead of raw dicts.
+        base_url: The API base URL. If not provided, loads from DALUX_BASE_URL env var.
+        api_key: Your ``X-API-KEY``. If not provided, loads from DALUX_API_KEY env var.
 
     Returns:
         A :class:`DaluxClient` with one attribute per API resource group.
 
     Example::
 
+        # Using environment variables
+        dalux = create_client()
+
+        # Or with explicit parameters
         dalux = create_client(
             base_url="https://<company>.dalux.com/api",
             api_key="YOUR_API_KEY",
-            use_pydantic=True,
         )
         projects = dalux.projects.list_projects()
     """
-    configuration = Configuration(base_url=base_url, api_key=api_key, use_pydantic=use_pydantic)
+    configuration = Configuration(base_url=base_url, api_key=api_key)
     api_client = ApiClient(configuration)
 
     return DaluxClient(
@@ -125,4 +127,12 @@ __all__ = [
     "UsersApi",
     "VersionSetsApi",
     "WorkPackagesApi",
+    # Utilities
+    "DaluxError",
+    "NotFoundError",
+    "ApiError", 
+    "ValidationError",
+    "paginate",
+    "find_by_field",
+    "find_all_by_field",
 ]

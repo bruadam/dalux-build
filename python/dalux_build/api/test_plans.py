@@ -2,6 +2,11 @@
 from typing import Any, Dict, Optional
 
 from ..api_client import ApiClient
+from ..models import TestPlansListResponse
+from ..response_converter import convert_to_model
+from ..utils.search import find_by_field, find_all_by_field
+from ..utils.validation import validate_project_id, validate_file_area_id
+from ..utils.pagination import paginate
 
 
 class TestPlansApi:
@@ -12,20 +17,16 @@ class TestPlansApi:
 
     def list_test_plans(
         self, project_id: str, params: Optional[Dict[str, Any]] = None
-    ) -> Any:
-        """GET /1.2/projects/{projectId}/testPlans."""
+    ) -> Optional[TestPlansListResponse]:
+        """GET /1.2/projects/{projectId}/testPlans.
+
+        Returns:
+            TestPlansListResponse with type-safe access to test plans.
+        """
         response = self._client.get(
             f"/1.2/projects/{project_id}/testPlans", params=params
         )
-
-        if self._client.configuration.use_pydantic and isinstance(response, dict):
-            try:
-                from ..models import TestPlansListResponse
-                return TestPlansListResponse(**response)
-            except Exception:
-                return response
-
-        return response
+        return convert_to_model(response, TestPlansListResponse)
 
     def list_test_plan_items(
         self, project_id: str, params: Optional[Dict[str, Any]] = None

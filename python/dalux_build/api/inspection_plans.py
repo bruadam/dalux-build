@@ -2,6 +2,11 @@
 from typing import Any, Dict, Optional
 
 from ..api_client import ApiClient
+from ..models import InspectionPlansListResponse
+from ..response_converter import convert_to_model
+from ..utils.search import find_by_field, find_all_by_field
+from ..utils.validation import validate_project_id, validate_file_area_id
+from ..utils.pagination import paginate
 
 
 class InspectionPlansApi:
@@ -12,25 +17,23 @@ class InspectionPlansApi:
 
     def list_inspection_plans(
         self, project_id: str, params: Optional[Dict[str, Any]] = None
-    ) -> Any:
-        """GET /1.2/projects/{projectId}/inspectionPlans."""
+    ) -> Optional[InspectionPlansListResponse]:
+        """GET /1.2/projects/{projectId}/inspectionPlans.
+
+        Returns:
+            InspectionPlansListResponse with type-safe access to inspection plans.
+        """
+        validate_project_id(project_id)
         response = self._client.get(
             f"/1.2/projects/{project_id}/inspectionPlans", params=params
         )
-
-        if self._client.configuration.use_pydantic and isinstance(response, dict):
-            try:
-                from ..models import InspectionPlansListResponse
-                return InspectionPlansListResponse(**response)
-            except Exception:
-                return response
-
-        return response
+        return convert_to_model(response, InspectionPlansListResponse)
 
     def list_inspection_plan_items(
         self, project_id: str, params: Optional[Dict[str, Any]] = None
     ) -> Any:
         """GET /1.1/projects/{projectId}/inspectionPlanItems."""
+        validate_project_id(project_id)
         return self._client.get(
             f"/1.1/projects/{project_id}/inspectionPlanItems", params=params
         )
@@ -39,6 +42,7 @@ class InspectionPlansApi:
         self, project_id: str, params: Optional[Dict[str, Any]] = None
     ) -> Any:
         """GET /1.1/projects/{projectId}/inspectionPlanItemZones."""
+        validate_project_id(project_id)
         return self._client.get(
             f"/1.1/projects/{project_id}/inspectionPlanItemZones", params=params
         )
@@ -47,6 +51,7 @@ class InspectionPlansApi:
         self, project_id: str, params: Optional[Dict[str, Any]] = None
     ) -> Any:
         """GET /2.1/projects/{projectId}/inspectionPlanRegistrations."""
+        validate_project_id(project_id)
         return self._client.get(
             f"/2.1/projects/{project_id}/inspectionPlanRegistrations", params=params
         )

@@ -1,6 +1,6 @@
-"""Pydantic models for file related responses."""
+"""Data models for Files endpoint."""
 from datetime import date
-from typing import Any, List, Optional
+from typing import Any, List, Literal, Optional
 
 from pydantic import BaseModel, Field
 
@@ -62,6 +62,23 @@ class FilePropertyField(BaseModel):
         populate_by_name = True
 
 
+class FileNameFilter(BaseModel):
+    """Case-insensitive file name filter rules."""
+
+    contains: Optional[List[str]] = None
+    contains_match: Literal["any", "all"] = "any"
+    not_contains: Optional[List[str]] = None
+    startswith: Optional[List[str]] = None
+    not_startswith: Optional[List[str]] = None
+    endswith: Optional[List[str]] = None
+    not_endswith: Optional[List[str]] = None
+    extensions: Optional[List[str]] = None
+    not_extensions: Optional[List[str]] = None
+
+    class Config:
+        populate_by_name = True
+
+
 class File(BaseModel):
     """File model."""
 
@@ -81,6 +98,8 @@ class File(BaseModel):
     content_hash: Optional[str] = Field(None, alias="contentHash")
     download_link: Optional[str] = Field(None, alias="downloadLink")
     properties: Optional[List[FilePropertyField]] = None
+    saved_file_path: Optional[str] = None
+    saved_metadata_path: Optional[str] = None
 
     class Config:
         populate_by_name = True

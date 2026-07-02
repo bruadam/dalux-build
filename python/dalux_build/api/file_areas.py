@@ -2,7 +2,10 @@
 from typing import Any, Dict, Optional
 
 from ..api_client import ApiClient
-from ..models import FileArea
+from ..models import FileArea, FileAreasListResponse
+from ..response_converter import convert_to_model
+from ..utils.search import find_by_field
+from ..utils.validation import validate_project_id
 
 
 class FileAreasApi:
@@ -13,27 +16,23 @@ class FileAreasApi:
 
     def get_file_areas(
         self, project_id: str, params: Optional[Dict[str, Any]] = None
-    ) -> Any:
-        """GET /5.1/projects/{projectId}/file_areas."""
+    ) -> Optional[FileAreasListResponse]:
+        """GET /5.1/projects/{projectId}/file_areas.
+
+        Returns:
+            FileAreasListResponse with type-safe access to file areas.
+        """
         response = self._client.get(
             f"/5.1/projects/{project_id}/file_areas", params=params
         )
+        return convert_to_model(response, FileAreasListResponse)
 
-        if self._client.configuration.use_pydantic and isinstance(response, dict):
-            try:
-                from ..models import FileAreasListResponse
-                return FileAreasListResponse(**response)
-            except Exception:
-                # If conversion fails, return original dict
-                return response
-
-        return response
-
-    def get_file_area(self, project_id: str, file_area_id: str) -> Any:
+    def get_file_area(self, project_id: str, file_area_id: str) -> Optional[FileArea]:
         """GET /1.0/projects/{projectId}/file_areas/{fileAreaId}."""
-        return self._client.get(
+        response = self._client.get(
             f"/1.0/projects/{project_id}/file_areas/{file_area_id}"
         )
+        return convert_to_model(response, FileArea)
 
     def get_file_area_by_name(
         self, project_id: str, file_area_name: str
@@ -45,25 +44,14 @@ class FileAreasApi:
             file_area_name: Name of the file area to search for.
 
         Returns:
-            The file area ID if found, None otherwise.
+            The file area if found, None otherwise.
         """
+        validate_project_id(project_id)
+        
         response = self.get_file_areas(project_id)
+        if not response or not response.items:
+            return None
 
-        # Handle both dict and FileAreasListResponse
-        if isinstance(response, dict):
-            items = response.get("items", [])
-        else:
-            # Assume it's a FileAreasListResponse or similar
-            items = getattr(response, "items", [])
-
-        for item in items:
-            # Handle both FileArea models and dicts
-            if isinstance(item, FileArea):
-                if item.file_area_name == file_area_name:
-                    return item.file_area_id
-            elif isinstance(item, dict):
-                name = item.get("fileAreaName") or item.get("file_area_name")
-                if name == file_area_name:
-                    return item.get("fileAreaId") or item.get("file_area_id")
-
-        return None
+        # Use generic search utility - search by the Pydantic field name "file_area_name"
+        file_area = find_by_field(response.items, "file_area_name", file_area_name)
+        return file_area.file_area_id if file_area else None

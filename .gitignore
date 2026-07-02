@@ -44,3 +44,7 @@ Thumbs.db
 *.html
 
 notebooks/*
+*.xlsx
+*.xls
+*.csv
+*.ifc.txt

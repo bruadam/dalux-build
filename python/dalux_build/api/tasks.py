@@ -1,11 +1,24 @@
 """Tasks API."""
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Union
 from urllib.parse import parse_qs, urlparse
 
 from ..api_client import ApiClient
+from ..models import (
+    Task,
+    TaskAttachmentsListResponse,
+    TaskChange,
+    TaskChanges,
+    TaskListParams,
+    TaskResponse,
+    TasksListResponse,
+)
+from ..response_converter import convert_to_model
+from ..utils.pagination import paginate
 
 
-def _normalize_task_params(params: Optional[Dict[str, Any]]) -> Dict[str, Any]:
+def _normalize_task_params(
+    params: Optional[Union[Dict[str, Any], TaskListParams]]
+) -> Dict[str, Any]:
     """Build query params for ``/5.2/projects/.../tasks`` (OData).
 
     If ``params`` contains ``typeId`` and no ``$filter`` is supplied, it is
@@ -18,7 +31,10 @@ def _normalize_task_params(params: Optional[Dict[str, Any]]) -> Dict[str, Any]:
     is already set, ``typeId`` is removed from the outgoing query and not merged
     into ``$filter`` (callers must supply a full filter themselves).
     """
-    normalized = dict(params or {})
+    if isinstance(params, TaskListParams):
+        normalized = params.model_dump(by_alias=True, exclude_none=True)
+    else:
+        normalized = dict(params or {})
     type_id = normalized.pop("typeId", None)
     if type_id is not None and "$filter" not in normalized:
         escaped_type_id = str(type_id).replace("'", "''")
@@ -33,8 +49,10 @@ class TasksApi:
         self._client = api_client
 
     def get_project_tasks(
-        self, project_id: str, params: Optional[Dict[str, Any]] = None
-    ) -> Any:
+        self,
+        project_id: str,
+        params: Optional[Union[Dict[str, Any], TaskListParams]] = None,
+    ) -> Optional[TasksListResponse]:
         """GET /5.2/projects/{projectId}/tasks.
 
         Args:
@@ -43,27 +61,22 @@ class TasksApi:
                 the OData ``$filter`` on task type (see :func:`_normalize_task_params`).
                 You may also pass ``$filter`` directly; other OData query options
                 supported by the API may be included as usual.
+
+        Returns:
+            TasksListResponse with type-safe access to tasks.
         """
         response = self._client.get(
             f"/5.2/projects/{project_id}/tasks",
             params=_normalize_task_params(params),
         )
-
-        if self._client.configuration.use_pydantic and isinstance(response, dict):
-            try:
-                from ..models import TasksListResponse
-                return TasksListResponse(**response)
-            except Exception:
-                return response
-
-        return response
+        return convert_to_model(response, TasksListResponse)
 
     def get_all_project_tasks(
         self,
         project_id: str,
-        params: Optional[Dict[str, Any]] = None,
+        params: Optional[Union[Dict[str, Any], TaskListParams]] = None,
         verbose: bool = False,
-    ) -> List[Any]:
+    ) -> List[Task]:
         """Retrieve all tasks by following bookmark pagination automatically.
 
         Combines all pages into a single list of items.
@@ -91,7 +104,7 @@ class TasksApi:
             verbose: If ``True``, print progress using the same pattern as
                 :meth:`FilesApi.get_all_files`, plus the next page URL when present.
         """
-        all_items: List[Any] = []
+        all_items: List[Task] = []
         base_params = _normalize_task_params(params)
         current_params: Dict[str, Any] = dict(base_params)
         has_next_page = True
@@ -103,7 +116,17 @@ class TasksApi:
             response = self._client.get(
                 f"/5.2/projects/{project_id}/tasks", params=current_params
             )
-            items = response.get("items") if response else None
+            raw_items = response.get("items") if response else None
+            items: List[Task] = []
+            if isinstance(raw_items, list):
+                for item in raw_items:
+                    task_data = (
+                        item.get("data") if isinstance(item, dict) and "data" in item else item
+                    )
+                    if isinstance(task_data, Task):
+                        items.append(task_data)
+                    elif isinstance(task_data, dict):
+                        items.append(Task.model_validate(task_data))
             if items:
                 all_items.extend(items)
             meta = (response or {}).get("metadata") or {}
@@ -163,31 +186,67 @@ class TasksApi:
             print(f"Done. Total tasks retrieved: {len(all_items)}")
         return all_items
 
-    def get_task(self, project_id: str, task_id: str) -> Any:
-        """GET /3.3/projects/{projectId}/tasks/{taskId}."""
+    def get_task(self, project_id: str, task_id: str) -> Optional[TaskResponse]:
+        """GET /3.3/projects/{projectId}/tasks/{taskId}.
+
+        Returns:
+            TaskResponse with task details.
+        """
         response = self._client.get(f"/3.3/projects/{project_id}/tasks/{task_id}")
-
-        if self._client.configuration.use_pydantic and isinstance(response, dict):
-            try:
-                from ..models import TaskResponse
-                return TaskResponse(**response)
-            except Exception:
-                return response
-
-        return response
+        return convert_to_model(response, TaskResponse)
 
     def get_project_task_changes(
         self, project_id: str, params: Optional[Dict[str, Any]] = None
-    ) -> Any:
-        """GET /2.2/projects/{projectId}/tasks/changes."""
-        return self._client.get(
+    ) -> Optional[TaskChanges]:
+        """GET /2.2/projects/{projectId}/tasks/changes.
+
+        Returns:
+            TaskChanges model with a typed ``items`` collection.
+        """
+        response = self._client.get(
             f"/2.2/projects/{project_id}/tasks/changes", params=params
         )
+        return convert_to_model(response, TaskChanges)
+
+    def get_all_project_task_changes(
+        self,
+        project_id: str,
+        params: Optional[Dict[str, Any]] = None,
+        verbose: bool = False,
+    ) -> List[TaskChange]:
+        """Retrieve all task changes by following bookmark pagination.
+
+        Args:
+            project_id: Project ID.
+            params: Optional query parameters. Pagination ``bookmark`` is applied
+                automatically across pages.
+            verbose: If ``True``, print page-by-page pagination progress.
+
+        Returns:
+            List of task change objects across all available pages.
+        """
+        raw_items = paginate(
+            endpoint=f"/2.2/projects/{project_id}/tasks/changes",
+            client=self._client,
+            params=params,
+            verbose=verbose,
+            item_accessor="items",
+        )
+        typed_items: List[TaskChange] = []
+        for item in raw_items:
+            if isinstance(item, TaskChange):
+                typed_items.append(item)
+            elif isinstance(item, dict):
+                typed_items.append(TaskChange.model_validate(item))
+        return typed_items
 
     def get_project_task_attachments(
         self, project_id: str, params: Optional[Dict[str, Any]] = None
-    ) -> Any:
+    ) -> Optional[TaskAttachmentsListResponse]:
         """GET /1.1/projects/{projectId}/tasks/attachments."""
-        return self._client.get(
+        response = self._client.get(
             f"/1.1/projects/{project_id}/tasks/attachments", params=params
         )
+        if isinstance(response, list):
+            response = {"items": response}
+        return convert_to_model(response, TaskAttachmentsListResponse)

@@ -1,7 +1,11 @@
 """Configuration for the Dalux Build API client."""
 import os
-from dotenv import load_dotenv
 from typing import Optional
+
+try:
+    from dotenv import load_dotenv
+except ImportError:
+    load_dotenv = None
 
 
 class Configuration:
@@ -19,7 +23,8 @@ class Configuration:
     """
 
     def __init__(self, base_url: Optional[str] = None, api_key: Optional[str] = None) -> None:
-        load_dotenv()
+        if load_dotenv is not None:
+            load_dotenv()
 
         if not base_url:
             base_url = os.getenv("DALUX_BASE_URL")

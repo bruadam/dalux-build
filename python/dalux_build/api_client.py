@@ -1,10 +1,14 @@
 """Base HTTP client that injects the X-API-KEY header on every request."""
 from typing import Any, Dict, Optional
-from dotenv import load_dotenv
 import logging
 
 import requests
 import os
+
+try:
+    from dotenv import load_dotenv
+except ImportError:
+    load_dotenv = None
 
 from .configuration import Configuration
 from .utils.exceptions import ApiError, AuthenticationError, NotFoundError, RateLimitError
@@ -34,7 +38,8 @@ class ApiClient:
             ValueError: If configuration is None and environment variables are missing.
         """
         if configuration is None:
-            load_dotenv() # Load from .env if available
+            if load_dotenv is not None:
+                load_dotenv()  # Load from .env if available
             base_url = os.getenv("DALUX_BASE_URL")
             api_key = os.getenv("DALUX_API_KEY")
             if not base_url:

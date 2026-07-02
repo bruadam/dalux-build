@@ -489,13 +489,22 @@ class TestTasksApi:
 class TestFileAreasApi:
     @rsps_lib.activate
     def test_get_file_areas(self):
-        _reg(rsps_lib.GET, "/5.1/projects/p1/file_areas", body=[])
-        assert FileAreasApi(_make_client()).get_file_areas("p1") == []
+        _reg(rsps_lib.GET, "/5.1/projects/p1/file_areas", body={"items": []})
+        response = FileAreasApi(_make_client()).get_file_areas("p1")
+        assert response is not None
+        assert response.items == []
 
     @rsps_lib.activate
     def test_get_file_area(self):
-        _reg(rsps_lib.GET, "/1.0/projects/p1/file_areas/fa1", body={"id": "fa1"})
-        assert FileAreasApi(_make_client()).get_file_area("p1", "fa1") == {"id": "fa1"}
+        _reg(rsps_lib.GET, "/1.0/projects/p1/file_areas/fa1", body={
+            "fileAreaId": "fa1",
+            "fileAreaName": "Main",
+            "fileAreaType": "Drawings",
+        })
+        response = FileAreasApi(_make_client()).get_file_area("p1", "fa1")
+        assert response is not None
+        assert response.file_area_id == "fa1"
+        assert response.file_area_name == "Main"
 
 
 # ---------- FilesApi ----------

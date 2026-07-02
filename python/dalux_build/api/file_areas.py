@@ -36,7 +36,7 @@ class FileAreasApi:
 
     def get_file_area_by_name(
         self, project_id: str, file_area_name: str
-    ) -> Optional[FileArea]:
+    ) -> Optional[str]:
         """Get file area ID by name.
 
         Args:
@@ -54,4 +54,4 @@ class FileAreasApi:
 
         # Use generic search utility - search by the Pydantic field name "file_area_name"
         file_area = find_by_field(response.items, "file_area_name", file_area_name)
-        return file_area if file_area else None
+        return file_area.file_area_id if file_area else None

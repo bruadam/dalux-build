@@ -1,7 +1,9 @@
 """Tests to verify all API endpoints return Pydantic models, not dicts."""
+import json
+from datetime import date, datetime
+
 import pytest
 import responses as rsps_lib
-from datetime import datetime
 
 from dalux_build import create_client
 from dalux_build.api_client import ApiClient
@@ -14,7 +16,7 @@ from dalux_build.api import (
 from dalux_build.models import (
     ProjectsListResponse, ProjectResponse, Project,
     FileAreasListResponse, FileAreaResponse, FileArea,
-    FilesListResponse, FileResponse, File,
+    FilesListResponse, FileResponse, File, FileNameFilter,
     FoldersListResponse, FolderResponse, Folder,
     UsersListResponse, UserResponse, User,
     CompaniesListResponse, CompanyResponse,
@@ -145,6 +147,21 @@ class TestFileAreasPydantic:
         assert response.items[0].file_area_name == "Main"
 
     @rsps_lib.activate
+    def test_get_file_area_returns_pydantic_model(self):
+        """get_file_area should return FileArea."""
+        _reg(rsps_lib.GET, "/1.0/projects/p1/file_areas/fa1", body={
+            "fileAreaId": "fa1",
+            "fileAreaName": "Main",
+            "fileAreaType": "Drawings",
+        })
+        api = FileAreasApi(_make_client())
+        response = api.get_file_area("p1", "fa1")
+
+        assert isinstance(response, FileArea)
+        assert response.file_area_id == "fa1"
+        assert response.file_area_name == "Main"
+
+    @rsps_lib.activate
     def test_get_file_area_by_name(self):
         """get_file_area_by_name works with Pydantic models."""
         _reg(rsps_lib.GET, "/5.1/projects/p1/file_areas", body={
@@ -199,6 +216,99 @@ class TestFilesPydantic:
 
         assert isinstance(response, FileResponse)
         assert response.data.file_id == "f1"
+
+    def test_bulk_download_folder_supports_filters_and_metadata(self, monkeypatch, tmp_path):
+        """bulk_download_folder should filter and write metadata for downloaded files."""
+        api = FilesApi(_make_client())
+        file_obj = File.model_validate(
+            {
+                "fileId": "f1",
+                "fileName": "LLYN.B250_K01_F03.ifc",
+                "fileAreaId": "fa1",
+                "folderId": "fo1",
+                "downloadLink": "https://download.example.com/f1",
+                "uploaded": date(2026, 7, 2),
+            }
+        )
+
+        def fake_get_all_files_in_folder(project_id, file_area_id_or_path, folder_id=None, params=None, verbose=False):
+            assert file_area_id_or_path == "Files/4_Design/C07_Geometry/C07.05_BIM"
+            assert folder_id is None
+            return [file_obj]
+
+        def fake_download(download_link, file_name, save_path=None, verbose=False):
+            target = tmp_path / file_name
+            target.write_text("content", encoding="utf-8")
+            return str(target)
+
+        monkeypatch.setattr(api, "get_all_files_in_folder", fake_get_all_files_in_folder)
+        monkeypatch.setattr(api, "_download_file_from_link", fake_download)
+
+        results = api.bulk_download_folder(
+            "p1",
+            "Files/4_Design/C07_Geometry/C07.05_BIM",
+            save_path=str(tmp_path),
+            save_metadata=True,
+            filters=FileNameFilter(contains=["B250"], extensions=["ifc"]),
+        )
+
+        assert len(results) == 1
+        assert results[0].saved_file_path == str(tmp_path / "LLYN.B250_K01_F03.ifc")
+        assert results[0].saved_metadata_path == str(tmp_path / "LLYN.B250_K01_F03.ifc.txt")
+
+        with open(tmp_path / "LLYN.B250_K01_F03.ifc.txt", "r", encoding="utf-8") as metadata_file:
+            metadata = json.load(metadata_file)
+        assert metadata["file_id"] == "f1"
+        assert metadata["uploaded"] == "2026-07-02"
+
+    def test_bulk_download_folder_skips_when_metadata_matches(self, monkeypatch, tmp_path):
+        """bulk_download_folder should skip unchanged files when saved metadata matches."""
+        api = FilesApi(_make_client())
+        file_obj = File.model_validate(
+            {
+                "fileId": "f1",
+                "fileRevisionId": "r1",
+                "fileName": "LLYN.B250_K01_F03.ifc",
+                "fileAreaId": "fa1",
+                "folderId": "fo1",
+                "downloadLink": "https://download.example.com/f1",
+                "uploaded": date(2026, 7, 2),
+            }
+        )
+        local_file = tmp_path / "LLYN.B250_K01_F03.ifc"
+        local_file.write_text("existing", encoding="utf-8")
+        metadata_path = tmp_path / "LLYN.B250_K01_F03.ifc.txt"
+        metadata_path.write_text(
+            json.dumps(
+                {
+                    "file_revision_id": "r1",
+                    "uploaded": "2026-07-02",
+                }
+            ),
+            encoding="utf-8",
+        )
+
+        monkeypatch.setattr(
+            api,
+            "get_all_files_in_folder",
+            lambda project_id, file_area_id_or_path, folder_id=None, params=None, verbose=False: [file_obj],
+        )
+
+        def fail_download(*args, **kwargs):
+            raise AssertionError("download should be skipped when metadata matches")
+
+        monkeypatch.setattr(api, "_download_file_from_link", fail_download)
+
+        results = api.bulk_download_folder(
+            "p1",
+            "fa1",
+            folder_id="fo1",
+            save_path=str(tmp_path),
+        )
+
+        assert len(results) == 1
+        assert results[0].saved_file_path == str(local_file)
+        assert results[0].saved_metadata_path == str(metadata_path)
 
 
 class TestFoldersPydantic:

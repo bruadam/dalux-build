@@ -66,6 +66,86 @@ class FilesApi:
         except (OSError, json.JSONDecodeError):
             return None
 
+    def _build_local_name(self, file_obj: File, save_historically: bool) -> str:
+        """Return the local file name, versioned by upload timestamp when requested.
+
+        When *save_historically* is True the file's ``uploaded`` value is appended
+        to the name in ``YYYYMMDDHHMMSS`` format, inserted before the extension
+        (e.g. ``LLYN.B250_K01_F03_20260702000000.ifc``). Because the Dalux API
+        reports ``uploaded`` with date granularity only (``yyyy-MM-dd``), the time
+        portion is always zeros. Files uploaded the same day therefore share a
+        timestamp and are distinguished by their revision id during the
+        up-to-date check.
+        """
+        if not save_historically or file_obj.uploaded is None:
+            return file_obj.file_name
+        timestamp = file_obj.uploaded.strftime("%Y%m%d%H%M%S")
+        root, ext = os.path.splitext(file_obj.file_name)
+        return f"{root}_{timestamp}{ext}"
+
+    def _download_file_with_metadata(
+        self,
+        file_obj: File,
+        *,
+        save_path: Optional[str],
+        save_metadata: bool,
+        save_historically: bool,
+        progress_label: str,
+        verbose: bool,
+    ) -> File:
+        """Download a single file (optionally versioned) and write its metadata.
+
+        Skips the download when a matching local copy already exists (same
+        ``file_revision_id`` and ``uploaded`` value). With *save_historically*
+        enabled each revision is saved under its own timestamped name, so earlier
+        downloads are preserved rather than overwritten and re-running only
+        fetches revisions not yet present locally.
+
+        Returns a :class:`File` copy with ``saved_file_path`` and
+        ``saved_metadata_path`` populated.
+        """
+        local_name = self._build_local_name(file_obj, save_historically)
+        local_file_path = self._get_local_file_path(local_name, save_path)
+        metadata_path = self._get_local_metadata_path(local_name, save_path)
+        current_metadata = file_obj.model_dump(mode="json")
+        saved_metadata = self._load_saved_metadata(local_name, save_path)
+        if (
+            saved_metadata
+            and os.path.exists(local_file_path)
+            and saved_metadata.get("file_revision_id") == current_metadata.get("file_revision_id")
+            and saved_metadata.get("uploaded") == current_metadata.get("uploaded")
+        ):
+            print(f"  {progress_label} {local_name!r} is still up-to-date. Skipping download.")
+            return file_obj.model_copy(
+                update={
+                    "saved_file_path": local_file_path,
+                    "saved_metadata_path": metadata_path,
+                }
+            )
+
+        if verbose:
+            print(f"  {progress_label} Downloading {local_name!r}...")
+        downloaded_path = self._download_file_from_link(
+            file_obj.download_link,
+            local_name,
+            save_path,
+            verbose=verbose,
+        )
+        written_metadata_path = None
+        if save_metadata:
+            written_metadata_path = self._get_local_metadata_path(local_name, save_path)
+            with open(written_metadata_path, "w", encoding="utf-8") as metadata_file:
+                json.dump(current_metadata, metadata_file, indent=2)
+                metadata_file.flush()
+                os.fsync(metadata_file.fileno())
+
+        return file_obj.model_copy(
+            update={
+                "saved_file_path": downloaded_path,
+                "saved_metadata_path": written_metadata_path,
+            }
+        )
+
     def list_files(
         self,
         project_id: str,
@@ -355,6 +435,7 @@ class FilesApi:
         folder_id: Optional[str] = None,
         save_path: Optional[str] = None,
         save_metadata: bool = False,
+        save_historically: bool = False,
         filters: Optional[FileNameFilter] = None,
         params: Optional[Dict[str, Any]] = None,
         verbose: bool = False,
@@ -371,6 +452,10 @@ class FilesApi:
             save_path: Optional directory to save downloaded files. Defaults to current directory.
             save_metadata: If True, write ``model_dump()`` metadata for each downloaded
                 file to a sibling ``.txt`` file.
+            save_historically: If True, append the file's ``uploaded`` timestamp
+                (``YYYYMMDDHHMMSS``) to each downloaded file and its metadata so
+                earlier revisions are kept side by side instead of overwritten.
+                Re-running only downloads revisions not already present locally.
             filters: Optional :class:`FileNameFilter` with include/exclude rules for
                 fileName matching.
             params: Optional additional query parameters passed to the API.
@@ -410,49 +495,14 @@ class FilesApi:
                     print(f"  [{i}/{len(filtered)}] Skipping {file_name!r} (no downloadLink)")
                 continue
 
-            local_file_path = self._get_local_file_path(file_obj.file_name, save_path)
-            metadata_path = self._get_local_metadata_path(file_obj.file_name, save_path)
-            current_metadata = file_obj.model_dump(mode="json")
-            saved_metadata = self._load_saved_metadata(file_obj.file_name, save_path)
-            if (
-                saved_metadata
-                and os.path.exists(local_file_path)
-                and saved_metadata.get("file_revision_id") == current_metadata.get("file_revision_id")
-                and saved_metadata.get("uploaded") == current_metadata.get("uploaded")
-            ):
-                print(f"  [{i}/{len(filtered)}] {file_obj.file_name!r} is still up-to-date. Skipping download.")
-                results.append(
-                    file_obj.model_copy(
-                        update={
-                            "saved_file_path": local_file_path,
-                            "saved_metadata_path": metadata_path,
-                        }
-                    )
-                )
-                continue
-
-            if verbose:
-                print(f"  [{i}/{len(filtered)}] Downloading {file_obj.file_name!r}...")
-            downloaded_path = self._download_file_from_link(
-                file_obj.download_link,
-                file_obj.file_name,
-                save_path,
-                verbose=verbose,
-            )
-            metadata_path = None
-            if save_metadata:
-                metadata_path = self._get_local_metadata_path(file_obj.file_name, save_path)
-                with open(metadata_path, "w", encoding="utf-8") as metadata_file:
-                    json.dump(current_metadata, metadata_file, indent=2)
-                    metadata_file.flush()
-                    os.fsync(metadata_file.fileno())
-
             results.append(
-                file_obj.model_copy(
-                    update={
-                        "saved_file_path": downloaded_path,
-                        "saved_metadata_path": metadata_path,
-                    }
+                self._download_file_with_metadata(
+                    file_obj,
+                    save_path=save_path,
+                    save_metadata=save_metadata,
+                    save_historically=save_historically,
+                    progress_label=f"[{i}/{len(filtered)}]",
+                    verbose=verbose,
                 )
             )
 
@@ -467,6 +517,7 @@ class FilesApi:
         file_area_id: Optional[str] = None,
         save_path: Optional[str] = None,
         save_metadata: bool = False,
+        save_historically: bool = False,
         params: Optional[Dict[str, Any]] = None,
         verbose: bool = False,
     ) -> List[File]:
@@ -481,6 +532,10 @@ class FilesApi:
             save_path: Optional directory to save files. Defaults to current directory.
             save_metadata: If True, write ``model_dump()`` metadata for each downloaded
                 file to a sibling ``.txt`` file.
+            save_historically: If True, append the file's ``uploaded`` timestamp
+                (``YYYYMMDDHHMMSS``) to each downloaded file and its metadata so
+                earlier revisions are kept side by side instead of overwritten.
+                Re-running only downloads revisions not already present locally.
             params: Optional additional query parameters used for path-based resolution.
             verbose: If True, print progress per file.
 
@@ -559,50 +614,14 @@ class FilesApi:
                     print(f"  [{i}/{total}] Skipping {file_name!r} (no downloadLink)")
                 continue
 
-            local_file_path = self._get_local_file_path(file_obj.file_name, save_path)
-            metadata_path = self._get_local_metadata_path(file_obj.file_name, save_path)
-            current_metadata = file_obj.model_dump(mode="json")
-            saved_metadata = self._load_saved_metadata(file_obj.file_name, save_path)
-            if (
-                saved_metadata
-                and os.path.exists(local_file_path)
-                and saved_metadata.get("file_revision_id") == current_metadata.get("file_revision_id")
-                and saved_metadata.get("uploaded") == current_metadata.get("uploaded")
-            ):
-                print(f"  [{i}/{total}] {file_obj.file_name!r} is still up-to-date. Skipping download.")
-                results.append(
-                    file_obj.model_copy(
-                        update={
-                            "saved_file_path": local_file_path,
-                            "saved_metadata_path": metadata_path,
-                        }
-                    )
-                )
-                continue
-
-            if verbose:
-                print(f"  [{i}/{total}] Downloading {file_obj.file_name!r}...")
-
-            downloaded_path = self._download_file_from_link(
-                file_obj.download_link,
-                file_obj.file_name,
-                save_path,
-                verbose=verbose,
-            )
-            metadata_path = None
-            if save_metadata:
-                metadata_path = self._get_local_metadata_path(file_obj.file_name, save_path)
-                with open(metadata_path, "w", encoding="utf-8") as metadata_file:
-                    json.dump(current_metadata, metadata_file, indent=2)
-                    metadata_file.flush()
-                    os.fsync(metadata_file.fileno())
-
             results.append(
-                file_obj.model_copy(
-                    update={
-                        "saved_file_path": downloaded_path,
-                        "saved_metadata_path": metadata_path,
-                    }
+                self._download_file_with_metadata(
+                    file_obj,
+                    save_path=save_path,
+                    save_metadata=save_metadata,
+                    save_historically=save_historically,
+                    progress_label=f"[{i}/{total}]",
+                    verbose=verbose,
                 )
             )
         if verbose:

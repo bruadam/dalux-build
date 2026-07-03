@@ -223,7 +223,7 @@ class TestFilesPydantic:
         file_obj = File.model_validate(
             {
                 "fileId": "f1",
-                "fileName": "LLYN.B250_K01_F03.ifc",
+                "fileName": "something.ifc",
                 "fileAreaId": "fa1",
                 "folderId": "fo1",
                 "downloadLink": "https://download.example.com/f1",
@@ -232,7 +232,7 @@ class TestFilesPydantic:
         )
 
         def fake_get_all_files_in_folder(project_id, file_area_id_or_path, folder_id=None, params=None, verbose=False):
-            assert file_area_id_or_path == "Files/4_Design/C07_Geometry/C07.05_BIM"
+            assert file_area_id_or_path == "Files/Design/Models"
             assert folder_id is None
             return [file_obj]
 
@@ -246,17 +246,17 @@ class TestFilesPydantic:
 
         results = api.bulk_download_folder(
             "p1",
-            "Files/4_Design/C07_Geometry/C07.05_BIM",
+            "Files/Design/Models",
             save_path=str(tmp_path),
             save_metadata=True,
-            filters=FileNameFilter(contains=["B250"], extensions=["ifc"]),
+            filters=FileNameFilter(contains=["something"], extensions=["ifc"]),
         )
 
         assert len(results) == 1
-        assert results[0].saved_file_path == str(tmp_path / "LLYN.B250_K01_F03.ifc")
-        assert results[0].saved_metadata_path == str(tmp_path / "LLYN.B250_K01_F03.ifc.txt")
+        assert results[0].saved_file_path == str(tmp_path / "something.ifc")
+        assert results[0].saved_metadata_path == str(tmp_path / "something.ifc.txt")
 
-        with open(tmp_path / "LLYN.B250_K01_F03.ifc.txt", "r", encoding="utf-8") as metadata_file:
+        with open(tmp_path / "something.ifc.txt", "r", encoding="utf-8") as metadata_file:
             metadata = json.load(metadata_file)
         assert metadata["file_id"] == "f1"
         assert metadata["uploaded"] == "2026-07-02"
@@ -268,16 +268,16 @@ class TestFilesPydantic:
             {
                 "fileId": "f1",
                 "fileRevisionId": "r1",
-                "fileName": "LLYN.B250_K01_F03.ifc",
+                "fileName": "something.ifc",
                 "fileAreaId": "fa1",
                 "folderId": "fo1",
                 "downloadLink": "https://download.example.com/f1",
                 "uploaded": date(2026, 7, 2),
             }
         )
-        local_file = tmp_path / "LLYN.B250_K01_F03.ifc"
+        local_file = tmp_path / "something.ifc"
         local_file.write_text("existing", encoding="utf-8")
-        metadata_path = tmp_path / "LLYN.B250_K01_F03.ifc.txt"
+        metadata_path = tmp_path / "something.ifc.txt"
         metadata_path.write_text(
             json.dumps(
                 {
@@ -309,6 +309,144 @@ class TestFilesPydantic:
         assert len(results) == 1
         assert results[0].saved_file_path == str(local_file)
         assert results[0].saved_metadata_path == str(metadata_path)
+
+    def test_bulk_download_folder_save_historically_appends_timestamp(self, monkeypatch, tmp_path):
+        """save_historically should version file and metadata names by upload timestamp."""
+        api = FilesApi(_make_client())
+        file_obj = File.model_validate(
+            {
+                "fileId": "f1",
+                "fileRevisionId": "r1",
+                "fileName": "something.ifc",
+                "fileAreaId": "fa1",
+                "folderId": "fo1",
+                "downloadLink": "https://download.example.com/f1",
+                "uploaded": date(2026, 7, 2),
+            }
+        )
+
+        def fake_download(download_link, file_name, save_path=None, verbose=False):
+            target = tmp_path / file_name
+            target.write_text("content", encoding="utf-8")
+            return str(target)
+
+        monkeypatch.setattr(
+            api,
+            "get_all_files_in_folder",
+            lambda project_id, file_area_id_or_path, folder_id=None, params=None, verbose=False: [file_obj],
+        )
+        monkeypatch.setattr(api, "_download_file_from_link", fake_download)
+
+        results = api.bulk_download_folder(
+            "p1",
+            "fa1",
+            folder_id="fo1",
+            save_path=str(tmp_path),
+            save_metadata=True,
+            save_historically=True,
+        )
+
+        versioned = "something_20260702000000.ifc"
+        assert len(results) == 1
+        assert results[0].saved_file_path == str(tmp_path / versioned)
+        assert results[0].saved_metadata_path == str(tmp_path / f"{versioned}.txt")
+        assert (tmp_path / versioned).exists()
+
+    def test_bulk_download_folder_save_historically_keeps_previous_versions(self, monkeypatch, tmp_path):
+        """A newer upload date should download alongside the previously saved version."""
+        api = FilesApi(_make_client())
+
+        # A prior run already saved the 2026-07-02 revision under its timestamp.
+        old_versioned = "something_20260702000000.ifc"
+        (tmp_path / old_versioned).write_text("old", encoding="utf-8")
+        (tmp_path / f"{old_versioned}.txt").write_text(
+            json.dumps({"file_revision_id": "r1", "uploaded": "2026-07-02"}),
+            encoding="utf-8",
+        )
+
+        # The server now reports a newer revision uploaded on a later date.
+        file_obj = File.model_validate(
+            {
+                "fileId": "f1",
+                "fileRevisionId": "r2",
+                "fileName": "something.ifc",
+                "fileAreaId": "fa1",
+                "folderId": "fo1",
+                "downloadLink": "https://download.example.com/f1",
+                "uploaded": date(2026, 7, 3),
+            }
+        )
+
+        def fake_download(download_link, file_name, save_path=None, verbose=False):
+            target = tmp_path / file_name
+            target.write_text("new", encoding="utf-8")
+            return str(target)
+
+        monkeypatch.setattr(
+            api,
+            "get_all_files_in_folder",
+            lambda project_id, file_area_id_or_path, folder_id=None, params=None, verbose=False: [file_obj],
+        )
+        monkeypatch.setattr(api, "_download_file_from_link", fake_download)
+
+        results = api.bulk_download_folder(
+            "p1",
+            "fa1",
+            folder_id="fo1",
+            save_path=str(tmp_path),
+            save_metadata=True,
+            save_historically=True,
+        )
+
+        new_versioned = "something_20260703000000.ifc"
+        assert results[0].saved_file_path == str(tmp_path / new_versioned)
+        # Both revisions now coexist locally.
+        assert (tmp_path / old_versioned).read_text(encoding="utf-8") == "old"
+        assert (tmp_path / new_versioned).read_text(encoding="utf-8") == "new"
+
+    def test_bulk_download_folder_save_historically_skips_existing_version(self, monkeypatch, tmp_path):
+        """Re-running with the same revision should not re-download the versioned file."""
+        api = FilesApi(_make_client())
+
+        versioned = "something_20260702000000.ifc"
+        (tmp_path / versioned).write_text("existing", encoding="utf-8")
+        (tmp_path / f"{versioned}.txt").write_text(
+            json.dumps({"file_revision_id": "r1", "uploaded": "2026-07-02"}),
+            encoding="utf-8",
+        )
+
+        file_obj = File.model_validate(
+            {
+                "fileId": "f1",
+                "fileRevisionId": "r1",
+                "fileName": "something.ifc",
+                "fileAreaId": "fa1",
+                "folderId": "fo1",
+                "downloadLink": "https://download.example.com/f1",
+                "uploaded": date(2026, 7, 2),
+            }
+        )
+
+        def fail_download(*args, **kwargs):
+            raise AssertionError("download should be skipped for an already-saved version")
+
+        monkeypatch.setattr(
+            api,
+            "get_all_files_in_folder",
+            lambda project_id, file_area_id_or_path, folder_id=None, params=None, verbose=False: [file_obj],
+        )
+        monkeypatch.setattr(api, "_download_file_from_link", fail_download)
+
+        results = api.bulk_download_folder(
+            "p1",
+            "fa1",
+            folder_id="fo1",
+            save_path=str(tmp_path),
+            save_historically=True,
+        )
+
+        assert len(results) == 1
+        assert results[0].saved_file_path == str(tmp_path / versioned)
 
 
 class TestFoldersPydantic:

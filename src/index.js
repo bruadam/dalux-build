@@ -126,6 +126,3 @@ module.exports = {
   resolveFileAreaByName,
   resolveFolderIdFromNamedPath,
 };
-
-
-

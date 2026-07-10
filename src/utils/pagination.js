@@ -17,7 +17,7 @@ function hasNextPage(response) {
  * @returns {string|null}
  */
 function getNextBookmark(response) {
-  const links = response && response.links || [];
+  const links = (response && response.links) || [];
   const nextLink = links.find((l) => l.rel === 'nextPage');
   if (!nextLink) return null;
   try {

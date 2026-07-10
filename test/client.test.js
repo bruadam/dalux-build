@@ -920,7 +920,7 @@ describe('FoldersApi – getAllFolders', () => {
     });
     const result = await api.getFolderByName('p1', 'fa1', 'Folder2');
     expect(result).toBeTruthy();
-    expect((result.data || result).folderName || (result.data || result).folderName).toBe('Folder2');
+    expect((result.data || result).folderName).toBe('Folder2');
   });
 
   it('getFolderByName returns null when not found', async () => {

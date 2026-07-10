@@ -119,7 +119,7 @@ class FoldersApi {
    * Supports wildcard matching with * in path segments.
    * @param {string} projectId
    * @param {string} fileAreaId
-   * @param {string} folderPath - e.g. "Folder1/SubFolder" or a wildcard path like "&#42;/SubFolder"
+   * @param {string} folderPath - e.g. "Folder1/SubFolder" or a wildcard path ("*" matches any single segment)
    * @param {boolean} [verbose=false]
    * @returns {Promise<string|null>} Folder ID or null if not found.
    */

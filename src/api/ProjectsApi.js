@@ -101,6 +101,23 @@ class ProjectsApi {
   listProjectMetadataValues(projectId, key) {
     return this._client.get(`/1.0/projects/${projectId}/metadata/1.0/mappings/${key}/values`);
   }
+
+  /**
+   * Get a project ID by its name.
+   * @param {string} projectName
+   * @returns {Promise<string|null>} The projectId, or null if not found.
+   */
+  async getProjectByName(projectName) {
+    const { findByField } = require('../utils/search');
+    const response = await this.listProjects();
+    const items = (response && response.items) || [];
+    const project =
+      findByField(items, 'projectName', projectName, (x) => x.data || x) ||
+      findByField(items, 'name', projectName, (x) => x.data || x);
+    if (!project) return null;
+    const data = project.data || project;
+    return data.projectId || data.id || null;
+  }
 }
 
 module.exports = ProjectsApi;

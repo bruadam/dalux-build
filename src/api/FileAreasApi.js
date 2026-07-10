@@ -32,6 +32,24 @@ class FileAreasApi {
   getFileArea(projectId, fileAreaId) {
     return this._client.get(`/1.0/projects/${projectId}/file_areas/${fileAreaId}`);
   }
+
+  /**
+   * Get a file area ID by its name for a project.
+   * @param {string} projectId
+   * @param {string} fileAreaName
+   * @returns {Promise<string|null>} The fileAreaId, or null if not found.
+   */
+  async getFileAreaByName(projectId, fileAreaName) {
+    const { findByField } = require('../utils/search');
+    const response = await this.getFileAreas(projectId);
+    const items = (response && response.items) || [];
+    const area =
+      findByField(items, 'fileAreaName', fileAreaName, (x) => x.data || x) ||
+      findByField(items, 'name', fileAreaName, (x) => x.data || x);
+    if (!area) return null;
+    const data = area.data || area;
+    return data.fileAreaId || data.id || null;
+  }
 }
 
 module.exports = FileAreasApi;

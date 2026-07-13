@@ -30,7 +30,7 @@ jobs:
     runs-on: ubuntu-latest
     environment:
       name: npm
-      url: https://www.npmjs.com/package/dalux-build-api
+      url: https://www.npmjs.com/package/@bruadam/dalux-build-api
 
     steps:
       - name: Checkout

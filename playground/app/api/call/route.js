@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import { createClient } from 'dalux-build-api';
+import { createClient } from '@bruadam/dalux-build-api';
 import { catalog } from '../../../lib/catalog';
 
 // Coerce a raw form value into the argument the client method expects,

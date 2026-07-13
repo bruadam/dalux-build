@@ -20,7 +20,7 @@ A lightweight Node.js client for the Dalux Build REST API.
 ## Installation
 
 ```bash
-npm install dalux-build-api
+npm install @bruadam/dalux-build-api
 ```
 
 ## Getting Started
@@ -31,7 +31,7 @@ To access the API you need:
 2. An **API key** — managed via _Settings › Integrations › API Identities_ inside the Dalux Build UI.
 
 ```js
-const { createClient } = require('dalux-build-api');
+const { createClient } = require('@bruadam/dalux-build-api');
 
 const dalux = createClient({
   baseUrl: 'https://<your-company>.dalux.com/api',
@@ -314,7 +314,7 @@ Browse and paginated helpers use **route version 6.1** for the file collection. 
 You can also instantiate API classes directly with a shared `ApiClient`:
 
 ```js
-const { Configuration, ApiClient, ProjectsApi, TasksApi } = require('dalux-build-api');
+const { Configuration, ApiClient, ProjectsApi, TasksApi } = require('@bruadam/dalux-build-api');
 
 const config = new Configuration({
   baseUrl: 'https://<your-company>.dalux.com/api',
@@ -355,10 +355,10 @@ Create a GitHub **environment** named `npm` with secret **`NPM_TOKEN`**. If push
 
 ### First publish and `E404` on `npm publish`
 
-If CI fails with **`404 Not Found - PUT …/dalux-build-api`** and **`is not in this registry`**, the name usually does not exist on npm yet **or** your token is not allowed to **create** it.
+If CI fails with **`404 Not Found - PUT …/@bruadam/dalux-build-api`** and **`is not in this registry`**, the package does not exist on npm yet **or** your token is not allowed to **create** it.
 
-- **Classic [Automation](https://docs.npmjs.com/about-access-tokens#automation-tokens)** tokens only publish packages your account **already** maintains. They cannot create a **new** package name. Fix: run **`npm publish`** once locally (or use a **Publish** classic token / granular token with write access) while logged in as the owner, then switch CI back to an automation token.
-- Confirm the package is not taken by someone else: [https://www.npmjs.com/package/dalux-build-api](https://www.npmjs.com/package/dalux-build-api).
+- **Classic [Automation](https://docs.npmjs.com/about-access-tokens#automation-tokens)** tokens only publish packages your account **already** maintains. They cannot create a **new** package name. Fix: use a **granular access token** with write access to the `@bruadam` scope (or all packages), or run **`npm publish --access public`** once locally while logged in as the owner, then switch CI back to an automation token.
+- Confirm the package is not taken by someone else: [https://www.npmjs.com/package/@bruadam/dalux-build-api](https://www.npmjs.com/package/@bruadam/dalux-build-api).
 
 ## License
 

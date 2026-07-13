@@ -128,6 +128,12 @@ jobs:
             echo "exists=false" >> "$GITHUB_OUTPUT"
           fi
 
+      - name: Verify npm authentication
+        if: steps.ver.outputs.skip != 'true' && steps.published.outputs.exists != 'true'
+        run: npm whoami
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+
       - name: Publish to npm
         if: steps.ver.outputs.skip != 'true' && steps.published.outputs.exists != 'true'
         run: npm publish --access public

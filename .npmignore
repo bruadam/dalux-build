@@ -1,0 +1,9 @@
+# Directories to exclude from npm package
+playground/
+node_modules/
+.test.cache
+coverage
+.idea
+.vscode
+.DS_Store
+*.log

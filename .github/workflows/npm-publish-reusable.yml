@@ -95,9 +95,13 @@ jobs:
             echo "bump=false" >> "$GITHUB_OUTPUT"
             exit 0
           fi
-          export GHA_MODE=auto
-          export COMMIT_MESSAGE="$(git log -1 --format=%B)"
-          python "$ROOT/.github/scripts/gh_release_version.py" >> "$GITHUB_OUTPUT"
+          # On main, publish the version committed in package.json. Version bumps
+          # are intentional repository changes, not a side effect of CI.
+          VER=$(node -p "require('./package.json').version")
+          echo "version=${VER}" >> "$GITHUB_OUTPUT"
+          echo "tag=v${VER}" >> "$GITHUB_OUTPUT"
+          echo "skip=false" >> "$GITHUB_OUTPUT"
+          echo "bump=false" >> "$GITHUB_OUTPUT"
 
       - name: Apply version to package.json
         if: steps.ver.outputs.bump == 'true'
@@ -111,8 +115,21 @@ jobs:
           npm ci
           npm test
 
-      - name: Publish to npm
+      - name: Check whether version is already published
+        id: published
         if: steps.ver.outputs.skip != 'true'
+        env:
+          PACKAGE_NAME: ${{ github.event.repository.name }}
+          REL_VERSION: ${{ steps.ver.outputs.version }}
+        run: |
+          if npm view "@bruadam/dalux-build-api@${REL_VERSION}" version >/dev/null 2>&1; then
+            echo "exists=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "exists=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Publish to npm
+        if: steps.ver.outputs.skip != 'true' && steps.published.outputs.exists != 'true'
         run: npm publish --access public
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}

@@ -103,6 +103,23 @@ class CompanyCatalogApi {
   listMetadataValuesForCompanies(key) {
     return this._client.get(`/1.0/companyCatalog/metadata/1.0/mappings/${key}/values`);
   }
+
+  /**
+   * Get a company ID by its name from the catalog.
+   * @param {string} companyName
+   * @returns {Promise<string|null>} The catalogCompanyId, or null if not found.
+   */
+  async getCompanyByName(companyName) {
+    const { findByField } = require('../utils/search');
+    const response = await this.getCompanies();
+    const items = (response && response.items) || [];
+    const company =
+      findByField(items, 'companyName', companyName, (x) => x.data || x) ||
+      findByField(items, 'name', companyName, (x) => x.data || x);
+    if (!company) return null;
+    const data = company.data || company;
+    return data.catalogCompanyId || data.id || null;
+  }
 }
 
 module.exports = CompanyCatalogApi;

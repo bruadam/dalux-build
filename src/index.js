@@ -20,12 +20,31 @@ const UsersApi = require('./api/UsersApi');
 const VersionSetsApi = require('./api/VersionSetsApi');
 const WorkPackagesApi = require('./api/WorkPackagesApi');
 
+const {
+  DaluxError,
+  NotFoundError,
+  ApiError,
+  ValidationError,
+  AuthenticationError,
+  RateLimitError,
+  hasNextPage,
+  getNextBookmark,
+  paginate,
+  findByField,
+  findAllByField,
+  validateProjectId,
+  validateFileAreaId,
+  validateFolderId,
+  resolveFileAreaByName,
+  resolveFolderIdFromNamedPath,
+} = require('./utils');
+
 /**
  * Create a fully configured Dalux Build API client.
  *
- * @param {object} options
- * @param {string} options.baseUrl  - The API base URL (obtain from Dalux support)
- * @param {string} options.apiKey  - Your X-API-KEY (manage via Dalux Settings › Integrations › API Identities)
+ * @param {object} [options]
+ * @param {string} [options.baseUrl]  - The API base URL (falls back to DALUX_BASE_URL env var)
+ * @param {string} [options.apiKey]  - Your X-API-KEY (falls back to DALUX_API_KEY env var)
  * @returns {{
  *   projects: ProjectsApi,
  *   companies: CompaniesApi,
@@ -89,4 +108,21 @@ module.exports = {
   UsersApi,
   VersionSetsApi,
   WorkPackagesApi,
+  // Utilities
+  DaluxError,
+  NotFoundError,
+  ApiError,
+  ValidationError,
+  AuthenticationError,
+  RateLimitError,
+  hasNextPage,
+  getNextBookmark,
+  paginate,
+  findByField,
+  findAllByField,
+  validateProjectId,
+  validateFileAreaId,
+  validateFolderId,
+  resolveFileAreaByName,
+  resolveFolderIdFromNamedPath,
 };

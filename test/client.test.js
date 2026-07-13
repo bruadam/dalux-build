@@ -67,8 +67,16 @@ describe('ApiClient', () => {
     mock.restore();
   });
 
-  it('throws when configuration is missing', () => {
-    expect(() => new ApiClient()).toThrow('configuration is required');
+  it('throws when no configuration and no env vars', () => {
+    const saved = { base: process.env.DALUX_BASE_URL, key: process.env.DALUX_API_KEY };
+    delete process.env.DALUX_BASE_URL;
+    delete process.env.DALUX_API_KEY;
+    try {
+      expect(() => new ApiClient()).toThrow('baseUrl is required');
+    } finally {
+      if (saved.base !== undefined) process.env.DALUX_BASE_URL = saved.base;
+      if (saved.key !== undefined) process.env.DALUX_API_KEY = saved.key;
+    }
   });
 
   it('sends X-API-KEY header on GET', async () => {
@@ -795,5 +803,279 @@ describe('WorkPackagesApi', () => {
   it('listWorkPackages calls GET /1.0/projects/:id/workpackages', async () => {
     mock.onGet('/1.0/projects/p1/workpackages').reply(200, []);
     expect(await api.listWorkPackages('p1')).toEqual([]);
+  });
+});
+
+// ---------- ProjectsApi – getProjectByName ----------
+
+describe('ProjectsApi.getProjectByName', () => {
+  let mock;
+  let api;
+
+  beforeEach(() => {
+    const { apiClient, mock: m } = createMockedClient();
+    mock = m;
+    api = new ProjectsApi(apiClient);
+  });
+
+  afterEach(() => mock.restore());
+
+  it('returns projectId when project found by name', async () => {
+    mock.onGet('/5.1/projects').reply(200, {
+      items: [{ data: { projectId: 'p1', projectName: 'My Project' } }],
+    });
+    expect(await api.getProjectByName('My Project')).toBe('p1');
+  });
+
+  it('returns null when project not found', async () => {
+    mock.onGet('/5.1/projects').reply(200, { items: [] });
+    expect(await api.getProjectByName('Missing')).toBeNull();
+  });
+});
+
+// ---------- CompanyCatalogApi – getCompanyByName ----------
+
+describe('CompanyCatalogApi.getCompanyByName', () => {
+  let mock;
+  let api;
+
+  beforeEach(() => {
+    const { apiClient, mock: m } = createMockedClient();
+    mock = m;
+    api = new CompanyCatalogApi(apiClient);
+  });
+
+  afterEach(() => mock.restore());
+
+  it('returns catalogCompanyId when company found by name', async () => {
+    mock.onGet('/2.2/companyCatalog').reply(200, {
+      items: [{ data: { catalogCompanyId: 'c1', companyName: 'ACME Corp' } }],
+    });
+    expect(await api.getCompanyByName('ACME Corp')).toBe('c1');
+  });
+
+  it('returns null when company not found', async () => {
+    mock.onGet('/2.2/companyCatalog').reply(200, { items: [] });
+    expect(await api.getCompanyByName('Unknown')).toBeNull();
+  });
+});
+
+// ---------- FileAreasApi – getFileAreaByName ----------
+
+describe('FileAreasApi.getFileAreaByName', () => {
+  let mock;
+  let api;
+
+  beforeEach(() => {
+    const { apiClient, mock: m } = createMockedClient();
+    mock = m;
+    api = new FileAreasApi(apiClient);
+  });
+
+  afterEach(() => mock.restore());
+
+  it('returns fileAreaId when file area found by name', async () => {
+    mock.onGet('/5.1/projects/p1/file_areas').reply(200, {
+      items: [{ data: { fileAreaId: 'fa1', fileAreaName: 'Files' } }],
+    });
+    expect(await api.getFileAreaByName('p1', 'Files')).toBe('fa1');
+  });
+
+  it('returns null when file area not found', async () => {
+    mock.onGet('/5.1/projects/p1/file_areas').reply(200, { items: [] });
+    expect(await api.getFileAreaByName('p1', 'Missing')).toBeNull();
+  });
+});
+
+// ---------- FoldersApi – new methods ----------
+
+describe('FoldersApi – getAllFolders', () => {
+  let mock;
+  let api;
+
+  beforeEach(() => {
+    const { apiClient, mock: m } = createMockedClient();
+    mock = m;
+    api = new FoldersApi(apiClient);
+  });
+
+  afterEach(() => mock.restore());
+
+  it('getAllFolders returns all items from a single page', async () => {
+    mock.onGet('/5.1/projects/p1/file_areas/fa1/folders').reply(200, {
+      items: [{ data: { folderId: 'f1', folderName: 'Folder1' } }],
+      metadata: { totalRemainingItems: 0 },
+    });
+    const result = await api.getAllFolders('p1', 'fa1');
+    expect(result).toHaveLength(1);
+  });
+
+  it('getFolderByName finds folder by name', async () => {
+    mock.onGet('/5.1/projects/p1/file_areas/fa1/folders').reply(200, {
+      items: [
+        { data: { folderId: 'f1', folderName: 'Folder1' } },
+        { data: { folderId: 'f2', folderName: 'Folder2' } },
+      ],
+      metadata: { totalRemainingItems: 0 },
+    });
+    const result = await api.getFolderByName('p1', 'fa1', 'Folder2');
+    expect(result).toBeTruthy();
+    expect((result.data || result).folderName).toBe('Folder2');
+  });
+
+  it('getFolderByName returns null when not found', async () => {
+    mock.onGet('/5.1/projects/p1/file_areas/fa1/folders').reply(200, {
+      items: [],
+      metadata: { totalRemainingItems: 0 },
+    });
+    const result = await api.getFolderByName('p1', 'fa1', 'Missing');
+    expect(result).toBeNull();
+  });
+
+  it('getFileAreaTreeByPath resolves a single segment', async () => {
+    mock.onGet('/5.1/projects/p1/file_areas/fa1/folders').reply(200, {
+      items: [{ data: { folderId: 'f1', folderName: 'Subfolder', parentFolderId: null } }],
+      metadata: { totalRemainingItems: 0 },
+    });
+    const fid = await api.getFileAreaTreeByPath('p1', 'fa1', 'Subfolder');
+    expect(fid).toBe('f1');
+  });
+
+  it('getFileAreaTree returns root node with children', async () => {
+    mock.onGet('/5.1/projects/p1/file_areas/fa1/folders').reply(200, {
+      items: [{ data: { folderId: 'f1', folderName: 'Design', parentFolderId: null } }],
+      metadata: { totalRemainingItems: 0 },
+    });
+    const root = await api.getFileAreaTree('p1', 'fa1');
+    expect(root.id).toBeNull();
+    expect(root.children).toHaveLength(1);
+    expect(root.children[0].name).toBe('Design');
+    expect(root.children[0].path).toBe('Design');
+  });
+});
+
+// ---------- TasksApi – getAllProjectTaskChanges ----------
+
+describe('TasksApi.getAllProjectTaskChanges', () => {
+  let mock;
+  let api;
+
+  beforeEach(() => {
+    const { apiClient, mock: m } = createMockedClient();
+    mock = m;
+    api = new TasksApi(apiClient);
+  });
+
+  afterEach(() => mock.restore());
+
+  it('getAllProjectTaskChanges returns all items from a single page', async () => {
+    mock.onGet('/2.2/projects/p1/tasks/changes').reply(200, {
+      items: [{ id: 'tc1' }, { id: 'tc2' }],
+      metadata: { totalRemainingItems: 0 },
+    });
+    const result = await api.getAllProjectTaskChanges('p1');
+    expect(result).toHaveLength(2);
+  });
+
+  it('getAllProjectTaskChanges follows bookmark pagination', async () => {
+    mock.onGet('/2.2/projects/p1/tasks/changes').reply((config) => {
+      if (!config.params.bookmark) {
+        return [200, {
+          items: [{ id: 'tc1' }],
+          metadata: { totalRemainingItems: 1 },
+          links: [{ rel: 'nextPage', href: 'https://api.example.com/build/2.2/projects/p1/tasks/changes?bookmark=bk1' }],
+        }];
+      }
+      return [200, { items: [{ id: 'tc2' }], metadata: { totalRemainingItems: 0 } }];
+    });
+    const result = await api.getAllProjectTaskChanges('p1');
+    expect(result).toHaveLength(2);
+  });
+});
+
+// ---------- FilesApi – getAllFilesInFolder (path-based) ----------
+
+describe('FilesApi.getAllFilesInFolder – path-based', () => {
+  let mock;
+  let api;
+
+  beforeEach(() => {
+    const { apiClient, mock: m } = createMockedClient();
+    mock = m;
+    api = new FilesApi(apiClient);
+  });
+
+  afterEach(() => mock.restore());
+
+  it('filters files by folderId when called with explicit IDs', async () => {
+    mock.onGet('/6.1/projects/p1/file_areas/fa1/files').reply(200, {
+      items: [
+        { data: { fileId: 'file1', folderId: 'f1' } },
+        { data: { fileId: 'file2', folderId: 'f2' } },
+      ],
+      metadata: { totalRemainingItems: 0 },
+    });
+    const result = await api.getAllFilesInFolder('p1', 'fa1', 'f1');
+    expect(result).toHaveLength(1);
+    expect(result[0].data.fileId).toBe('file1');
+  });
+});
+
+// ---------- FilesApi – bulkDownloadFiles ----------
+
+describe('FilesApi.bulkDownloadFiles', () => {
+  let mock;
+  let api;
+
+  beforeEach(() => {
+    const { apiClient, mock: m } = createMockedClient();
+    mock = m;
+    api = new FilesApi(apiClient);
+  });
+
+  afterEach(() => mock.restore());
+
+  it('skips items with no downloadLink', async () => {
+    mock.onGet('/5.0/projects/p1/file_areas/fa1/files/file1').reply(200, {
+      data: { fileId: 'file1', fileName: 'test.ifc', downloadLink: null },
+    });
+    const result = await api.bulkDownloadFiles('p1', ['file1'], 'fa1', undefined, { verbose: false });
+    expect(result).toHaveLength(0);
+  });
+});
+
+// ---------- utils exports ----------
+
+describe('utils exports', () => {
+  it('exports error classes', () => {
+    const { DaluxError, NotFoundError, ApiError, ValidationError, AuthenticationError, RateLimitError } = require('../src/index');
+    expect(new DaluxError('x')).toBeInstanceOf(Error);
+    expect(new NotFoundError('x')).toBeInstanceOf(DaluxError);
+    expect(new ApiError('x')).toBeInstanceOf(DaluxError);
+    expect(new ValidationError('x')).toBeInstanceOf(DaluxError);
+    expect(new AuthenticationError('x')).toBeInstanceOf(DaluxError);
+    expect(new RateLimitError('x')).toBeInstanceOf(DaluxError);
+  });
+
+  it('exports search helpers', () => {
+    const { findByField, findAllByField } = require('../src/index');
+    const items = [{ name: 'a' }, { name: 'b' }];
+    expect(findByField(items, 'name', 'a')).toEqual({ name: 'a' });
+    expect(findAllByField(items, 'name', 'b')).toEqual([{ name: 'b' }]);
+  });
+
+  it('exports pagination helper hasNextPage', () => {
+    const { hasNextPage } = require('../src/index');
+    expect(hasNextPage({ links: [{ rel: 'nextPage', href: 'http://x' }] })).toBe(true);
+    expect(hasNextPage({ links: [] })).toBe(false);
+    expect(hasNextPage(null)).toBe(false);
+  });
+
+  it('exports validation helpers', () => {
+    const { validateProjectId, validateFileAreaId, validateFolderId, ValidationError } = require('../src/index');
+    expect(() => validateProjectId('')).toThrow(ValidationError);
+    expect(() => validateFileAreaId(null)).toThrow(ValidationError);
+    expect(() => validateFolderId('  ')).toThrow(ValidationError);
+    expect(() => validateFolderId(null)).not.toThrow();
   });
 });

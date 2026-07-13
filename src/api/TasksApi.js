@@ -154,6 +154,23 @@ class TasksApi {
   getProjectTaskAttachments(projectId, params = {}) {
     return this._client.get(`/1.1/projects/${projectId}/tasks/attachments`, params);
   }
+
+  /**
+   * Retrieve all task changes by following bookmark pagination automatically.
+   * @param {string} projectId
+   * @param {object} [params] - Optional query parameters (e.g. updatedAfter).
+   * @param {boolean} [verbose=false]
+   * @returns {Promise<object[]>} All task change items across all pages.
+   */
+  async getAllProjectTaskChanges(projectId, params = {}, verbose = false) {
+    const { paginate } = require('../utils/pagination');
+    return paginate(
+      `/2.2/projects/${projectId}/tasks/changes`,
+      this._client,
+      params,
+      verbose,
+    );
+  }
 }
 
 TasksApi.normalizeTaskParams = normalizeTaskParams;

@@ -1,0 +1,17 @@
+{
+  "name": "dalux-build-playground",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Interactive web console for testing the dalux-build-api JS client",
+  "scripts": {
+    "dev": "next dev -p 3210",
+    "build": "next build",
+    "start": "next start -p 3210"
+  },
+  "dependencies": {
+    "dalux-build-api": "file:..",
+    "next": "^16.2.10",
+    "react": "^19.2.7",
+    "react-dom": "^19.2.7"
+  }
+}

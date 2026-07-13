@@ -24,12 +24,12 @@
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/bruadam/Dalux-Build-API.git"
+    "url": "git+https://github.com/bruadam/dalux-build.git"
   },
   "bugs": {
-    "url": "https://github.com/bruadam/Dalux-Build-API/issues"
+    "url": "https://github.com/bruadam/dalux-build/issues"
   },
-  "homepage": "https://github.com/bruadam/Dalux-Build-API#readme",
+  "homepage": "https://github.com/bruadam/dalux-build#readme",
   "publishConfig": {
     "access": "public"
   },

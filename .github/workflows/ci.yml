@@ -60,6 +60,7 @@ jobs:
     # Reusable workflow needs contents:write (push, tag, release); caller default is often read-only.
     permissions:
       contents: write
+      id-token: write
     uses: ./.github/workflows/npm-publish-reusable.yml
     with:
       mode: post_ci

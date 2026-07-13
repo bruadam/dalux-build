@@ -20,6 +20,7 @@ on:
 
 permissions:
   contents: write
+  id-token: write
 
 concurrency:
   group: npm-registry-${{ github.sha }}-${{ inputs.mode }}
@@ -40,11 +41,11 @@ jobs:
           token: ${{ secrets.RELEASE_PAT || secrets.GITHUB_TOKEN }}
           ref: ${{ inputs.mode == 'release' && format('refs/tags/{0}', inputs.release_tag) || github.ref }}
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v6
         with:
-          node-version: 20
+          node-version: 24
           registry-url: https://registry.npmjs.org/
-          cache: npm
+          package-manager-cache: false
 
       - uses: actions/setup-python@v5
         if: inputs.mode != 'release'
@@ -128,17 +129,9 @@ jobs:
             echo "exists=false" >> "$GITHUB_OUTPUT"
           fi
 
-      - name: Verify npm authentication
-        if: steps.ver.outputs.skip != 'true' && steps.published.outputs.exists != 'true'
-        run: npm whoami
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
-
       - name: Publish to npm
         if: steps.ver.outputs.skip != 'true' && steps.published.outputs.exists != 'true'
         run: npm publish --access public
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
 
       - name: Commit version sync and push
         if: steps.ver.outputs.skip != 'true' && steps.ver.outputs.bump == 'true' && inputs.mode != 'release'

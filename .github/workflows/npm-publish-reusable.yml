@@ -31,7 +31,7 @@ jobs:
     runs-on: ubuntu-latest
     environment:
       name: npm
-      url: https://www.npmjs.com/package/@bruadam/dalux-build-api
+      url: https://www.npmjs.com/package/dalux-build-api
 
     steps:
       - name: Checkout
@@ -123,7 +123,7 @@ jobs:
           PACKAGE_NAME: ${{ github.event.repository.name }}
           REL_VERSION: ${{ steps.ver.outputs.version }}
         run: |
-          if npm view "@bruadam/dalux-build-api@${REL_VERSION}" version >/dev/null 2>&1; then
+          if npm view "dalux-build-api@${REL_VERSION}" version >/dev/null 2>&1; then
             echo "exists=true" >> "$GITHUB_OUTPUT"
           else
             echo "exists=false" >> "$GITHUB_OUTPUT"

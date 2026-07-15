@@ -1,13 +1,14 @@
-import { NextResponse } from 'next/server';
-import { createClient } from '@bruadam/dalux-build-api';
-import { catalog } from '../../../lib/catalog';
+import { NextResponse } from "next/server";
+import { createClient } from "dalux-build-api";
+import { catalog } from "../../../lib/catalog";
 
 // Coerce a raw form value into the argument the client method expects,
 // based on the param spec `type`. Returns { arg, provided }.
 function coerceValue(spec, raw) {
-  const isBlank = raw === undefined || raw === null || String(raw).trim() === '';
+  const isBlank =
+    raw === undefined || raw === null || String(raw).trim() === "";
 
-  if (spec.type === 'json') {
+  if (spec.type === "json") {
     if (isBlank) return { provided: false };
     let parsed;
     try {
@@ -20,7 +21,8 @@ function coerceValue(spec, raw) {
 
   // string (default)
   if (isBlank) {
-    if (spec.required) throw new HttpError(400, `Missing required field "${spec.name}"`);
+    if (spec.required)
+      throw new HttpError(400, `Missing required field "${spec.name}"`);
     return { provided: false };
   }
   return { arg: String(raw), provided: true };
@@ -38,7 +40,10 @@ export async function POST(request) {
   try {
     payload = await request.json();
   } catch {
-    return NextResponse.json({ ok: false, error: { message: 'Request body must be JSON' } }, { status: 400 });
+    return NextResponse.json(
+      { ok: false, error: { message: "Request body must be JSON" } },
+      { status: 400 },
+    );
   }
 
   const { resource, method, params = {}, credentials = {} } = payload || {};
@@ -46,19 +51,35 @@ export async function POST(request) {
   // Validate against the catalog (this is the allow-list).
   const resourceSpec = catalog[resource];
   if (!resourceSpec) {
-    return NextResponse.json({ ok: false, error: { message: `Unknown resource "${resource}"` } }, { status: 400 });
+    return NextResponse.json(
+      { ok: false, error: { message: `Unknown resource "${resource}"` } },
+      { status: 400 },
+    );
   }
   const methodSpec = resourceSpec.methods[method];
   if (!methodSpec) {
-    return NextResponse.json({ ok: false, error: { message: `Unknown method "${resource}.${method}"` } }, { status: 400 });
+    return NextResponse.json(
+      {
+        ok: false,
+        error: { message: `Unknown method "${resource}.${method}"` },
+      },
+      { status: 400 },
+    );
   }
 
   // Resolve credentials: request overrides, else server env.
-  const baseUrl = (credentials.baseUrl || '').trim() || process.env.DALUX_BASE_URL;
-  const apiKey = (credentials.apiKey || '').trim() || process.env.DALUX_API_KEY;
+  const baseUrl =
+    (credentials.baseUrl || "").trim() || process.env.DALUX_BASE_URL;
+  const apiKey = (credentials.apiKey || "").trim() || process.env.DALUX_API_KEY;
   if (!baseUrl || !apiKey) {
     return NextResponse.json(
-      { ok: false, error: { message: 'Base URL and API key are required (set them in the console or in .env.local).' } },
+      {
+        ok: false,
+        error: {
+          message:
+            "Base URL and API key are required (set them in the console or in .env.local).",
+        },
+      },
       { status: 400 },
     );
   }
@@ -77,7 +98,10 @@ export async function POST(request) {
     while (args.length && args[args.length - 1] === undefined) args.pop();
   } catch (e) {
     if (e instanceof HttpError) {
-      return NextResponse.json({ ok: false, error: { message: e.message } }, { status: e.status });
+      return NextResponse.json(
+        { ok: false, error: { message: e.message } },
+        { status: e.status },
+      );
     }
     throw e;
   }
@@ -86,13 +110,17 @@ export async function POST(request) {
   try {
     const client = createClient({ baseUrl, apiKey });
     const data = await client[resource][method](...args);
-    return NextResponse.json({ ok: true, data, meta: { durationMs: Date.now() - started, http: methodSpec.http } });
+    return NextResponse.json({
+      ok: true,
+      data,
+      meta: { durationMs: Date.now() - started, http: methodSpec.http },
+    });
   } catch (err) {
     return NextResponse.json(
       {
         ok: false,
         error: {
-          name: err.name || 'Error',
+          name: err.name || "Error",
           message: err.message || String(err),
         },
         meta: { durationMs: Date.now() - started, http: methodSpec.http },

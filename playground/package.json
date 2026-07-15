@@ -9,7 +9,7 @@
     "start": "next start -p 3210"
   },
   "dependencies": {
-    "@bruadam/dalux-build-api": "file:..",
+    "dalux-build-api": "file:..",
     "next": "^16.2.10",
     "react": "^19.2.7",
     "react-dom": "^19.2.7"

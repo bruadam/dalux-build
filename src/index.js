@@ -39,6 +39,8 @@ const {
   resolveFolderIdFromNamedPath,
 } = require('./utils');
 
+const models = require('./models');
+
 /**
  * Create a fully configured Dalux Build API client.
  *
@@ -125,4 +127,7 @@ module.exports = {
   validateFolderId,
   resolveFileAreaByName,
   resolveFolderIdFromNamedPath,
+  // Data models (zod schemas) - both `models.FolderSchema` and top-level `FolderSchema` work
+  models,
+  ...models,
 };

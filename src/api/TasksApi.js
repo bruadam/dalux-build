@@ -1,5 +1,15 @@
 'use strict';
 
+const { convertToModel, convertToModelList } = require('../models/convert');
+const {
+  TaskSchema,
+  TaskChangeSchema,
+  TasksListResponseSchema,
+  TaskResponseSchema,
+  TaskChangesSchema,
+  TaskAttachmentsListResponseSchema,
+} = require('../models/tasks');
+
 /**
  * Build query params for GET /5.2/projects/.../tasks (OData).
  * If params contains typeId and no $filter, expands to
@@ -39,8 +49,9 @@ class TasksApi {
    *   OData $filter on task type, or pass $filter (and other OData options) directly.
    * @returns {Promise<object>}
    */
-  getProjectTasks(projectId, params = {}) {
-    return this._client.get(`/5.2/projects/${projectId}/tasks`, normalizeTaskParams(params));
+  async getProjectTasks(projectId, params = {}) {
+    const response = await this._client.get(`/5.2/projects/${projectId}/tasks`, normalizeTaskParams(params));
+    return convertToModel(response, TasksListResponseSchema, 'TasksListResponse');
   }
 
   /**
@@ -119,7 +130,7 @@ class TasksApi {
     if (verbose) {
       console.log(`Done. Total tasks retrieved: ${allItems.length}`);
     }
-    return allItems;
+    return convertToModelList(allItems, TaskSchema, 'Task');
   }
 
   /**
@@ -129,8 +140,9 @@ class TasksApi {
    * @param {string} taskId
    * @returns {Promise<object>}
    */
-  getTask(projectId, taskId) {
-    return this._client.get(`/3.3/projects/${projectId}/tasks/${taskId}`);
+  async getTask(projectId, taskId) {
+    const response = await this._client.get(`/3.3/projects/${projectId}/tasks/${taskId}`);
+    return convertToModel(response, TaskResponseSchema, 'TaskResponse');
   }
 
   /**
@@ -140,8 +152,9 @@ class TasksApi {
    * @param {object} [params] - Optional filters (e.g. updatedAfter)
    * @returns {Promise<object>}
    */
-  getProjectTaskChanges(projectId, params = {}) {
-    return this._client.get(`/2.2/projects/${projectId}/tasks/changes`, params);
+  async getProjectTaskChanges(projectId, params = {}) {
+    const response = await this._client.get(`/2.2/projects/${projectId}/tasks/changes`, params);
+    return convertToModel(response, TaskChangesSchema, 'TaskChanges');
   }
 
   /**
@@ -151,8 +164,9 @@ class TasksApi {
    * @param {object} [params] - Optional filters (e.g. updatedAfter)
    * @returns {Promise<object>}
    */
-  getProjectTaskAttachments(projectId, params = {}) {
-    return this._client.get(`/1.1/projects/${projectId}/tasks/attachments`, params);
+  async getProjectTaskAttachments(projectId, params = {}) {
+    const response = await this._client.get(`/1.1/projects/${projectId}/tasks/attachments`, params);
+    return convertToModel(response, TaskAttachmentsListResponseSchema, 'TaskAttachmentsListResponse');
   }
 
   /**
@@ -164,12 +178,13 @@ class TasksApi {
    */
   async getAllProjectTaskChanges(projectId, params = {}, verbose = false) {
     const { paginate } = require('../utils/pagination');
-    return paginate(
+    const raw = await paginate(
       `/2.2/projects/${projectId}/tasks/changes`,
       this._client,
       params,
       verbose,
     );
+    return convertToModelList(raw, TaskChangeSchema, 'TaskChange');
   }
 }
 

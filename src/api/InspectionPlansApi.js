@@ -1,5 +1,8 @@
 'use strict';
 
+const { convertToModel } = require('../models/convert');
+const { InspectionPlansListResponseSchema } = require('../models/inspectionPlans');
+
 /**
  * API methods for inspection plans.
  */
@@ -16,10 +19,11 @@ class InspectionPlansApi {
    * GET /1.2/projects/{projectId}/inspectionPlans
    * @param {string} projectId
    * @param {object} [params]
-   * @returns {Promise<object>}
+   * @returns {Promise<object>} InspectionPlansListResponse ({ items, metadata?, links? })
    */
-  listInspectionPlans(projectId, params = {}) {
-    return this._client.get(`/1.2/projects/${projectId}/inspectionPlans`, params);
+  async listInspectionPlans(projectId, params = {}) {
+    const response = await this._client.get(`/1.2/projects/${projectId}/inspectionPlans`, params);
+    return convertToModel(response, InspectionPlansListResponseSchema, 'InspectionPlansListResponse');
   }
 
   /**

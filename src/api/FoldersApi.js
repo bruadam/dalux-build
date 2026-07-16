@@ -4,6 +4,8 @@ const { paginate } = require('../utils/pagination');
 const { findByField } = require('../utils/search');
 const { validateProjectId, validateFileAreaId } = require('../utils/validation');
 const { resolveFolderIdFromNamedPath } = require('../utils/pathResolver');
+const { convertToModel, convertToModelList } = require('../models/convert');
+const { FolderSchema, FolderResponseSchema, FoldersListResponseSchema } = require('../models/folders');
 
 /**
  * API methods for folders within a file area.
@@ -24,11 +26,12 @@ class FoldersApi {
    * @param {object} [params]
    * @returns {Promise<object>}
    */
-  listFolders(projectId, fileAreaId, params = {}) {
-    return this._client.get(
+  async listFolders(projectId, fileAreaId, params = {}) {
+    const response = await this._client.get(
       `/5.1/projects/${projectId}/file_areas/${fileAreaId}/folders`,
       params,
     );
+    return convertToModel(response, FoldersListResponseSchema, 'FoldersListResponse');
   }
 
   /**
@@ -43,7 +46,8 @@ class FoldersApi {
     validateProjectId(projectId);
     validateFileAreaId(fileAreaId);
     const endpoint = `/5.1/projects/${projectId}/file_areas/${fileAreaId}/folders`;
-    return paginate(endpoint, this._client, params, verbose);
+    const raw = await paginate(endpoint, this._client, params, verbose);
+    return convertToModelList(raw, FolderSchema, 'Folder');
   }
 
   /**
@@ -54,10 +58,11 @@ class FoldersApi {
    * @param {string} folderId
    * @returns {Promise<object>}
    */
-  getFolder(projectId, fileAreaId, folderId) {
-    return this._client.get(
+  async getFolder(projectId, fileAreaId, folderId) {
+    const response = await this._client.get(
       `/5.0/projects/${projectId}/file_areas/${fileAreaId}/folders/${folderId}`,
     );
+    return convertToModel(response, FolderResponseSchema, 'FolderResponse');
   }
 
   /**
@@ -103,15 +108,12 @@ class FoldersApi {
     validateProjectId(projectId);
     validateFileAreaId(fileAreaId);
     const allFolders = await this.getAllFolders(projectId, fileAreaId);
-    const folder = findByField(allFolders, 'folderName', folderName, (x) => x.data || x)
-      || findByField(allFolders, 'name', folderName, (x) => x.data || x);
+    const folder = findByField(allFolders, 'folderName', folderName);
     if (!folder) return null;
-    if (parentFolderId != null) {
-      const data = folder.data || folder;
-      const pid = data.parentFolderId || data.parentId;
-      if (pid !== parentFolderId) return null;
+    if (parentFolderId != null && folder.parentFolderId !== parentFolderId) {
+      return null;
     }
-    return folder;
+    return convertToModel({ data: folder }, FolderResponseSchema, 'FolderResponse');
   }
 
   /**

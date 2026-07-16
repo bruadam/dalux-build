@@ -109,6 +109,11 @@ export async function POST(request) {
   const started = Date.now();
   try {
     const client = createClient({ baseUrl, apiKey });
+    // getFileAreaTree composes folders + files (fetches both concurrently),
+    // but its FilesApi argument can't come from the browser — inject it here.
+    if (resource === 'folders' && method === 'getFileAreaTree') {
+      args = [args[0], args[1], client.files];
+    }
     const data = await client[resource][method](...args);
     return NextResponse.json({
       ok: true,

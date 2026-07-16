@@ -1,5 +1,8 @@
 'use strict';
 
+const { convertToModel } = require('../models/convert');
+const { TestPlansListResponseSchema } = require('../models/testPlans');
+
 /**
  * API methods for test plans.
  */
@@ -16,10 +19,11 @@ class TestPlansApi {
    * GET /1.2/projects/{projectId}/testPlans
    * @param {string} projectId
    * @param {object} [params]
-   * @returns {Promise<object>}
+   * @returns {Promise<object>} TestPlansListResponse ({ items, metadata?, links? })
    */
-  listTestPlans(projectId, params = {}) {
-    return this._client.get(`/1.2/projects/${projectId}/testPlans`, params);
+  async listTestPlans(projectId, params = {}) {
+    const response = await this._client.get(`/1.2/projects/${projectId}/testPlans`, params);
+    return convertToModel(response, TestPlansListResponseSchema, 'TestPlansListResponse');
   }
 
   /**

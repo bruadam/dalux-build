@@ -23,6 +23,7 @@ const {
   UsersApi,
   VersionSetsApi,
   WorkPackagesApi,
+  ValidationError,
 } = require('../src/index');
 
 const BASE_URL = 'https://api.example.com/build';
@@ -173,9 +174,9 @@ describe('ProjectsApi', () => {
   afterEach(() => mock.restore());
 
   it('listProjects calls GET /5.1/projects', async () => {
-    const data = { items: [{ id: 'p1' }] };
-    mock.onGet('/5.1/projects').reply(200, data);
-    expect(await api.listProjects()).toEqual(data);
+    const raw = { items: [{ data: { projectId: 'p1', projectName: 'Test Project' } }] };
+    mock.onGet('/5.1/projects').reply(200, raw);
+    expect(await api.listProjects()).toEqual({ items: [{ projectId: 'p1', projectName: 'Test Project' }] });
   });
 
   it('listProjects passes query params', async () => {
@@ -187,22 +188,22 @@ describe('ProjectsApi', () => {
   });
 
   it('getProject calls GET /5.0/projects/:id', async () => {
-    const data = { id: 'p1', name: 'Test' };
-    mock.onGet('/5.0/projects/p1').reply(200, data);
-    expect(await api.getProject('p1')).toEqual(data);
+    const raw = { data: { projectId: 'p1', projectName: 'Test' } };
+    mock.onGet('/5.0/projects/p1').reply(200, raw);
+    expect(await api.getProject('p1')).toEqual(raw);
   });
 
   it('createProject calls POST /5.0/projects', async () => {
-    const body = { name: 'New Project' };
-    mock.onPost('/5.0/projects').reply(201, { id: 'p2', ...body });
+    const body = { projectName: 'New Project' };
+    mock.onPost('/5.0/projects').reply(201, { data: { projectId: 'p2', projectName: 'New Project' } });
     const result = await api.createProject(body);
-    expect(result.name).toBe('New Project');
+    expect(result.data.projectName).toBe('New Project');
   });
 
   it('updateProject calls PATCH /5.0/projects/:id', async () => {
-    mock.onPatch('/5.0/projects/p1').reply(200, { id: 'p1', name: 'Updated' });
-    const result = await api.updateProject('p1', { name: 'Updated' });
-    expect(result.name).toBe('Updated');
+    mock.onPatch('/5.0/projects/p1').reply(200, { data: { projectId: 'p1', projectName: 'Updated' } });
+    const result = await api.updateProject('p1', { projectName: 'Updated' });
+    expect(result.data.projectName).toBe('Updated');
   });
 
   it('listMetadataMappingsForProjects calls GET /1.0/projects/metadata/1.0/mappings', async () => {
@@ -247,22 +248,25 @@ describe('CompaniesApi', () => {
 
   it('listProjectCompanies calls GET /3.1/projects/:id/companies', async () => {
     mock.onGet('/3.1/projects/p1/companies').reply(200, []);
-    expect(await api.listProjectCompanies('p1')).toEqual([]);
+    expect(await api.listProjectCompanies('p1')).toEqual({ items: [] });
   });
 
   it('getProjectCompany calls GET /3.0/projects/:id/companies/:cid', async () => {
-    mock.onGet('/3.0/projects/p1/companies/c1').reply(200, { id: 'c1' });
-    expect(await api.getProjectCompany('p1', 'c1')).toEqual({ id: 'c1' });
+    const raw = { data: { companyId: 'c1', name: 'Acme' } };
+    mock.onGet('/3.0/projects/p1/companies/c1').reply(200, raw);
+    expect(await api.getProjectCompany('p1', 'c1')).toEqual(raw);
   });
 
   it('createProjectCompany calls POST /3.1/projects/:id/companies', async () => {
-    mock.onPost('/3.1/projects/p1/companies').reply(201, { id: 'c2' });
-    expect(await api.createProjectCompany('p1', {})).toEqual({ id: 'c2' });
+    const raw = { data: { companyId: 'c2', name: 'New Co' } };
+    mock.onPost('/3.1/projects/p1/companies').reply(201, raw);
+    expect(await api.createProjectCompany('p1', { name: 'New Co' })).toEqual(raw);
   });
 
   it('updateProjectCompany calls PATCH /3.0/projects/:id/companies/:cid', async () => {
-    mock.onPatch('/3.0/projects/p1/companies/c1').reply(200, { id: 'c1' });
-    expect(await api.updateProjectCompany('p1', 'c1', {})).toEqual({ id: 'c1' });
+    const raw = { data: { companyId: 'c1', name: 'Acme Updated' } };
+    mock.onPatch('/3.0/projects/p1/companies/c1').reply(200, raw);
+    expect(await api.updateProjectCompany('p1', 'c1', { name: 'Acme Updated' })).toEqual(raw);
   });
 });
 
@@ -282,22 +286,25 @@ describe('CompanyCatalogApi', () => {
 
   it('getCompanies calls GET /2.2/companyCatalog', async () => {
     mock.onGet('/2.2/companyCatalog').reply(200, []);
-    expect(await api.getCompanies()).toEqual([]);
+    expect(await api.getCompanies()).toEqual({ items: [] });
   });
 
   it('getCompany calls GET /1.2/companyCatalog/:id', async () => {
-    mock.onGet('/1.2/companyCatalog/cc1').reply(200, { id: 'cc1' });
-    expect(await api.getCompany('cc1')).toEqual({ id: 'cc1' });
+    const raw = { data: { catalogCompanyId: 'cc1', name: 'ACME' } };
+    mock.onGet('/1.2/companyCatalog/cc1').reply(200, raw);
+    expect(await api.getCompany('cc1')).toEqual(raw);
   });
 
   it('createCompany calls POST /2.2/companyCatalog', async () => {
-    mock.onPost('/2.2/companyCatalog').reply(201, { id: 'cc2' });
-    expect(await api.createCompany({})).toEqual({ id: 'cc2' });
+    const raw = { data: { catalogCompanyId: 'cc2', name: 'New Co' } };
+    mock.onPost('/2.2/companyCatalog').reply(201, raw);
+    expect(await api.createCompany({ name: 'New Co' })).toEqual(raw);
   });
 
   it('updateCompany calls PATCH /2.1/companyCatalog/:id', async () => {
-    mock.onPatch('/2.1/companyCatalog/cc1').reply(200, { id: 'cc1' });
-    expect(await api.updateCompany('cc1', {})).toEqual({ id: 'cc1' });
+    const raw = { data: { catalogCompanyId: 'cc1', name: 'ACME Updated' } };
+    mock.onPatch('/2.1/companyCatalog/cc1').reply(200, raw);
+    expect(await api.updateCompany('cc1', { name: 'ACME Updated' })).toEqual(raw);
   });
 
   it('listCompanyMetadata calls correct URL', async () => {
@@ -342,7 +349,7 @@ describe('TasksApi', () => {
 
   it('getProjectTasks calls GET /5.2/projects/:id/tasks', async () => {
     mock.onGet('/5.2/projects/p1/tasks').reply(200, []);
-    expect(await api.getProjectTasks('p1')).toEqual([]);
+    expect(await api.getProjectTasks('p1')).toEqual({ items: [] });
   });
 
   it('getProjectTasks maps typeId to OData $filter', async () => {
@@ -378,23 +385,24 @@ describe('TasksApi', () => {
     mock.onGet('/5.2/projects/p1/tasks', { params: { bookmark: 'bm1' } }).reply(200, page2);
     const all = await api.getAllProjectTasks('p1');
     expect(all).toHaveLength(2);
-    expect(all[0].data.taskId).toBe('t1');
-    expect(all[1].data.taskId).toBe('t2');
+    expect(all[0].taskId).toBe('t1');
+    expect(all[1].taskId).toBe('t2');
   });
 
   it('getTask calls GET /3.3/projects/:id/tasks/:taskId', async () => {
-    mock.onGet('/3.3/projects/p1/tasks/t1').reply(200, { id: 't1' });
-    expect(await api.getTask('p1', 't1')).toEqual({ id: 't1' });
+    const raw = { data: { taskId: 't1' } };
+    mock.onGet('/3.3/projects/p1/tasks/t1').reply(200, raw);
+    expect(await api.getTask('p1', 't1')).toEqual(raw);
   });
 
   it('getProjectTaskChanges calls GET /2.2/projects/:id/tasks/changes', async () => {
     mock.onGet('/2.2/projects/p1/tasks/changes').reply(200, []);
-    expect(await api.getProjectTaskChanges('p1')).toEqual([]);
+    expect(await api.getProjectTaskChanges('p1')).toEqual({ items: [] });
   });
 
   it('getProjectTaskAttachments calls GET /1.1/projects/:id/tasks/attachments', async () => {
     mock.onGet('/1.1/projects/p1/tasks/attachments').reply(200, []);
-    expect(await api.getProjectTaskAttachments('p1')).toEqual([]);
+    expect(await api.getProjectTaskAttachments('p1')).toEqual({ items: [] });
   });
 });
 
@@ -414,12 +422,13 @@ describe('FileAreasApi', () => {
 
   it('getFileAreas calls GET /5.1/projects/:id/file_areas', async () => {
     mock.onGet('/5.1/projects/p1/file_areas').reply(200, []);
-    expect(await api.getFileAreas('p1')).toEqual([]);
+    expect(await api.getFileAreas('p1')).toEqual({ items: [] });
   });
 
   it('getFileArea calls GET /1.0/projects/:id/file_areas/:faId', async () => {
-    mock.onGet('/1.0/projects/p1/file_areas/fa1').reply(200, { id: 'fa1' });
-    expect(await api.getFileArea('p1', 'fa1')).toEqual({ id: 'fa1' });
+    const raw = { fileAreaId: 'fa1', fileAreaName: 'Files', fileAreaType: 'DRAWING' };
+    mock.onGet('/1.0/projects/p1/file_areas/fa1').reply(200, raw);
+    expect(await api.getFileArea('p1', 'fa1')).toEqual(raw);
   });
 });
 
@@ -439,22 +448,25 @@ describe('FilesApi', () => {
 
   it('listFiles calls GET /6.1/projects/:id/file_areas/:faId/files', async () => {
     mock.onGet('/6.1/projects/p1/file_areas/fa1/files').reply(200, []);
-    expect(await api.listFiles('p1', 'fa1')).toEqual([]);
+    expect(await api.listFiles('p1', 'fa1')).toEqual({ items: [] });
   });
 
   it('getFile calls correct URL', async () => {
-    mock.onGet('/5.0/projects/p1/file_areas/fa1/files/f1').reply(200, { id: 'f1' });
-    expect(await api.getFile('p1', 'fa1', 'f1')).toEqual({ id: 'f1' });
+    const raw = { data: { fileId: 'f1', fileName: 'test.ifc', fileAreaId: 'fa1' } };
+    mock.onGet('/5.0/projects/p1/file_areas/fa1/files/f1').reply(200, raw);
+    expect(await api.getFile('p1', 'fa1', 'f1')).toEqual({
+      data: { ...raw.data, deleted: false },
+    });
   });
 
   it('getAllFiles follows bookmark until totalRemainingItems is 0', async () => {
     const page1 = {
-      items: [{ data: { fileId: 'a' } }],
+      items: [{ data: { fileId: 'a', fileName: 'a.txt', fileAreaId: 'fa1' } }],
       metadata: { totalRemainingItems: 1 },
       links: [{ rel: 'nextPage', href: `${BASE_URL}/6.1/projects/p1/file_areas/fa1/files?bookmark=b1` }],
     };
     const page2 = {
-      items: [{ data: { fileId: 'b' } }],
+      items: [{ data: { fileId: 'b', fileName: 'b.txt', fileAreaId: 'fa1' } }],
       metadata: { totalRemainingItems: 0 },
       links: [],
     };
@@ -462,8 +474,8 @@ describe('FilesApi', () => {
     mock.onGet('/6.1/projects/p1/file_areas/fa1/files', { params: { bookmark: 'b1' } }).reply(200, page2);
     const all = await api.getAllFiles('p1', 'fa1');
     expect(all).toHaveLength(2);
-    expect(all[0].data.fileId).toBe('a');
-    expect(all[1].data.fileId).toBe('b');
+    expect(all[0].fileId).toBe('a');
+    expect(all[1].fileId).toBe('b');
   });
 
   it('getFile with download streams to disk', async () => {
@@ -477,7 +489,12 @@ describe('FilesApi', () => {
       data: Readable.from([Buffer.from('hello')]),
     });
     mock.onGet('/5.0/projects/p1/file_areas/fa1/files/f1').reply(200, {
-      data: { fileName: 't.bin', downloadLink: 'https://files.example/download/1' },
+      data: {
+        fileId: 'f1',
+        fileName: 't.bin',
+        fileAreaId: 'fa1',
+        downloadLink: 'https://files.example/download/1',
+      },
     });
     const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'dalux-dl-'));
     try {
@@ -528,12 +545,13 @@ describe('FoldersApi', () => {
 
   it('listFolders calls GET /5.1/projects/:id/file_areas/:faId/folders', async () => {
     mock.onGet('/5.1/projects/p1/file_areas/fa1/folders').reply(200, []);
-    expect(await api.listFolders('p1', 'fa1')).toEqual([]);
+    expect(await api.listFolders('p1', 'fa1')).toEqual({ items: [] });
   });
 
   it('getFolder calls correct URL', async () => {
-    mock.onGet('/5.0/projects/p1/file_areas/fa1/folders/fo1').reply(200, { id: 'fo1' });
-    expect(await api.getFolder('p1', 'fa1', 'fo1')).toEqual({ id: 'fo1' });
+    const raw = { data: { folderId: 'fo1', folderName: 'Test Folder' } };
+    mock.onGet('/5.0/projects/p1/file_areas/fa1/folders/fo1').reply(200, raw);
+    expect(await api.getFolder('p1', 'fa1', 'fo1')).toEqual(raw);
   });
 
   it('getFolderFilesProperties calls correct URL', async () => {
@@ -617,12 +635,13 @@ describe('FormsApi', () => {
 
   it('getProjectForms calls GET /2.1/projects/:id/forms', async () => {
     mock.onGet('/2.1/projects/p1/forms').reply(200, []);
-    expect(await api.getProjectForms('p1')).toEqual([]);
+    expect(await api.getProjectForms('p1')).toEqual({ items: [] });
   });
 
   it('getForm calls GET /1.2/projects/:id/forms/:formId', async () => {
-    mock.onGet('/1.2/projects/p1/forms/fm1').reply(200, { id: 'fm1' });
-    expect(await api.getForm('p1', 'fm1')).toEqual({ id: 'fm1' });
+    const raw = { data: { id: 'fm1' } };
+    mock.onGet('/1.2/projects/p1/forms/fm1').reply(200, raw);
+    expect(await api.getForm('p1', 'fm1')).toEqual(raw);
   });
 
   it('getProjectFormAttachments calls GET /2.1/projects/:id/forms/attachments', async () => {
@@ -646,13 +665,14 @@ describe('UsersApi', () => {
   afterEach(() => mock.restore());
 
   it('getUser calls GET /1.1/users/:id', async () => {
-    mock.onGet('/1.1/users/u1').reply(200, { id: 'u1' });
-    expect(await api.getUser('u1')).toEqual({ id: 'u1' });
+    const raw = { data: { userId: 'u1', userType: 'end_user', email: 'u1@example.com' } };
+    mock.onGet('/1.1/users/u1').reply(200, raw);
+    expect(await api.getUser('u1')).toEqual(raw);
   });
 
   it('listProjectUsers calls GET /1.2/projects/:id/users', async () => {
     mock.onGet('/1.2/projects/p1/users').reply(200, []);
-    expect(await api.listProjectUsers('p1')).toEqual([]);
+    expect(await api.listProjectUsers('p1')).toEqual({ items: [] });
   });
 
   it('getProjectUser calls GET /1.1/projects/:id/users/:userId', async () => {
@@ -697,7 +717,7 @@ describe('InspectionPlansApi', () => {
 
   it('listInspectionPlans calls GET /1.2/projects/:id/inspectionPlans', async () => {
     mock.onGet('/1.2/projects/p1/inspectionPlans').reply(200, []);
-    expect(await api.listInspectionPlans('p1')).toEqual([]);
+    expect(await api.listInspectionPlans('p1')).toEqual({ items: [] });
   });
 
   it('listInspectionPlanItems calls correct URL', async () => {
@@ -732,7 +752,7 @@ describe('TestPlansApi', () => {
 
   it('listTestPlans calls GET /1.2/projects/:id/testPlans', async () => {
     mock.onGet('/1.2/projects/p1/testPlans').reply(200, []);
-    expect(await api.listTestPlans('p1')).toEqual([]);
+    expect(await api.listTestPlans('p1')).toEqual({ items: [] });
   });
 
   it('listTestPlanItems calls correct URL', async () => {
@@ -767,22 +787,23 @@ describe('VersionSetsApi', () => {
 
   it('getVersionSets calls GET /2.1/projects/:id/version_sets', async () => {
     mock.onGet('/2.1/projects/p1/version_sets').reply(200, []);
-    expect(await api.getVersionSets('p1')).toEqual([]);
+    expect(await api.getVersionSets('p1')).toEqual({ items: [] });
   });
 
   it('getVersionSet calls correct URL', async () => {
-    mock.onGet('/2.0/projects/p1/version_sets/vs1').reply(200, { id: 'vs1' });
-    expect(await api.getVersionSet('p1', 'vs1')).toEqual({ id: 'vs1' });
+    const raw = { data: { versionSetId: 'vs1', name: 'Set A', fileAreaId: 'fa1' } };
+    mock.onGet('/2.0/projects/p1/version_sets/vs1').reply(200, raw);
+    expect(await api.getVersionSet('p1', 'vs1')).toEqual(raw);
   });
 
   it('listFileAreaVersionSets calls correct URL', async () => {
     mock.onGet('/2.1/projects/p1/file_areas/fa1/version_sets').reply(200, []);
-    expect(await api.listFileAreaVersionSets('p1', 'fa1')).toEqual([]);
+    expect(await api.listFileAreaVersionSets('p1', 'fa1')).toEqual({ items: [] });
   });
 
   it('listVersionSetFiles calls correct URL', async () => {
     mock.onGet('/3.0/projects/p1/version_sets/vs1/files').reply(200, []);
-    expect(await api.listVersionSetFiles('p1', 'vs1')).toEqual([]);
+    expect(await api.listVersionSetFiles('p1', 'vs1')).toEqual({ items: [] });
   });
 });
 
@@ -802,7 +823,7 @@ describe('WorkPackagesApi', () => {
 
   it('listWorkPackages calls GET /1.0/projects/:id/workpackages', async () => {
     mock.onGet('/1.0/projects/p1/workpackages').reply(200, []);
-    expect(await api.listWorkPackages('p1')).toEqual([]);
+    expect(await api.listWorkPackages('p1')).toEqual({ items: [] });
   });
 });
 
@@ -849,7 +870,7 @@ describe('CompanyCatalogApi.getCompanyByName', () => {
 
   it('returns catalogCompanyId when company found by name', async () => {
     mock.onGet('/2.2/companyCatalog').reply(200, {
-      items: [{ data: { catalogCompanyId: 'c1', companyName: 'ACME Corp' } }],
+      items: [{ data: { catalogCompanyId: 'c1', name: 'ACME Corp' } }],
     });
     expect(await api.getCompanyByName('ACME Corp')).toBe('c1');
   });
@@ -876,7 +897,7 @@ describe('FileAreasApi.getFileAreaByName', () => {
 
   it('returns fileAreaId when file area found by name', async () => {
     mock.onGet('/5.1/projects/p1/file_areas').reply(200, {
-      items: [{ data: { fileAreaId: 'fa1', fileAreaName: 'Files' } }],
+      items: [{ data: { fileAreaId: 'fa1', fileAreaName: 'Files', fileAreaType: 'DRAWING' } }],
     });
     expect(await api.getFileAreaByName('p1', 'Files')).toBe('fa1');
   });
@@ -920,7 +941,7 @@ describe('FoldersApi – getAllFolders', () => {
     });
     const result = await api.getFolderByName('p1', 'fa1', 'Folder2');
     expect(result).toBeTruthy();
-    expect((result.data || result).folderName).toBe('Folder2');
+    expect(result.data.folderName).toBe('Folder2');
   });
 
   it('getFolderByName returns null when not found', async () => {
@@ -970,23 +991,31 @@ describe('TasksApi.getAllProjectTaskChanges', () => {
 
   it('getAllProjectTaskChanges returns all items from a single page', async () => {
     mock.onGet('/2.2/projects/p1/tasks/changes').reply(200, {
-      items: [{ id: 'tc1' }, { id: 'tc2' }],
+      items: [
+        { taskId: 'tc1', timestamp: '2024-01-01T00:00:00Z', action: 'update' },
+        { taskId: 'tc2', timestamp: '2024-01-02T00:00:00Z', action: 'update' },
+      ],
       metadata: { totalRemainingItems: 0 },
     });
     const result = await api.getAllProjectTaskChanges('p1');
     expect(result).toHaveLength(2);
+    expect(result[0].taskId).toBe('tc1');
+    expect(result[1].taskId).toBe('tc2');
   });
 
   it('getAllProjectTaskChanges follows bookmark pagination', async () => {
     mock.onGet('/2.2/projects/p1/tasks/changes').reply((config) => {
       if (!config.params.bookmark) {
         return [200, {
-          items: [{ id: 'tc1' }],
+          items: [{ taskId: 'tc1', timestamp: '2024-01-01T00:00:00Z', action: 'update' }],
           metadata: { totalRemainingItems: 1 },
           links: [{ rel: 'nextPage', href: 'https://api.example.com/build/2.2/projects/p1/tasks/changes?bookmark=bk1' }],
         }];
       }
-      return [200, { items: [{ id: 'tc2' }], metadata: { totalRemainingItems: 0 } }];
+      return [200, {
+        items: [{ taskId: 'tc2', timestamp: '2024-01-02T00:00:00Z', action: 'update' }],
+        metadata: { totalRemainingItems: 0 },
+      }];
     });
     const result = await api.getAllProjectTaskChanges('p1');
     expect(result).toHaveLength(2);
@@ -1010,14 +1039,14 @@ describe('FilesApi.getAllFilesInFolder – path-based', () => {
   it('filters files by folderId when called with explicit IDs', async () => {
     mock.onGet('/6.1/projects/p1/file_areas/fa1/files').reply(200, {
       items: [
-        { data: { fileId: 'file1', folderId: 'f1' } },
-        { data: { fileId: 'file2', folderId: 'f2' } },
+        { data: { fileId: 'file1', fileName: 'file1.txt', fileAreaId: 'fa1', folderId: 'f1' } },
+        { data: { fileId: 'file2', fileName: 'file2.txt', fileAreaId: 'fa1', folderId: 'f2' } },
       ],
       metadata: { totalRemainingItems: 0 },
     });
     const result = await api.getAllFilesInFolder('p1', 'fa1', 'f1');
     expect(result).toHaveLength(1);
-    expect(result[0].data.fileId).toBe('file1');
+    expect(result[0].fileId).toBe('file1');
   });
 });
 
@@ -1037,10 +1066,41 @@ describe('FilesApi.bulkDownloadFiles', () => {
 
   it('skips items with no downloadLink', async () => {
     mock.onGet('/5.0/projects/p1/file_areas/fa1/files/file1').reply(200, {
-      data: { fileId: 'file1', fileName: 'test.ifc', downloadLink: null },
+      data: { fileId: 'file1', fileName: 'test.ifc', fileAreaId: 'fa1', downloadLink: null },
     });
     const result = await api.bulkDownloadFiles('p1', ['file1'], 'fa1', undefined, { verbose: false });
     expect(result).toHaveLength(0);
+  });
+});
+
+// ---------- Model validation ----------
+
+describe('Model validation', () => {
+  let mock;
+  let foldersApi;
+  let usersApi;
+
+  beforeEach(() => {
+    const { apiClient, mock: m } = createMockedClient();
+    mock = m;
+    foldersApi = new FoldersApi(apiClient);
+    usersApi = new UsersApi(apiClient);
+  });
+
+  afterEach(() => mock.restore());
+
+  it('throws ValidationError when a required field is missing', async () => {
+    mock.onGet('/5.0/projects/p1/file_areas/fa1/folders/fo1').reply(200, {
+      data: { folderId: 'fo1' }, // missing required folderName
+    });
+    await expect(foldersApi.getFolder('p1', 'fa1', 'fo1')).rejects.toThrow(ValidationError);
+  });
+
+  it('throws ValidationError when a field has the wrong type/format', async () => {
+    mock.onGet('/1.1/users/u1').reply(200, {
+      data: { userId: 'u1', userType: 'end_user', email: 'not-an-email' },
+    });
+    await expect(usersApi.getUser('u1')).rejects.toThrow(ValidationError);
   });
 });
 

@@ -1,5 +1,8 @@
 'use strict';
 
+const { convertToModel } = require('../models/convert');
+const { UserResponseSchema, UsersListResponseSchema } = require('../models/users');
+
 /**
  * API methods for users.
  */
@@ -15,10 +18,11 @@ class UsersApi {
    * Get a specific user.
    * GET /1.1/users/{userId}
    * @param {string} userId
-   * @returns {Promise<object>}
+   * @returns {Promise<object>} UserResponse ({ data: User, links? })
    */
-  getUser(userId) {
-    return this._client.get(`/1.1/users/${userId}`);
+  async getUser(userId) {
+    const response = await this._client.get(`/1.1/users/${userId}`);
+    return convertToModel(response, UserResponseSchema, 'UserResponse');
   }
 
   /**
@@ -26,10 +30,11 @@ class UsersApi {
    * GET /1.2/projects/{projectId}/users
    * @param {string} projectId
    * @param {object} [params]
-   * @returns {Promise<object>}
+   * @returns {Promise<object>} UsersListResponse ({ items: ProjectUser[], metadata?, links? })
    */
-  listProjectUsers(projectId, params = {}) {
-    return this._client.get(`/1.2/projects/${projectId}/users`, params);
+  async listProjectUsers(projectId, params = {}) {
+    const response = await this._client.get(`/1.2/projects/${projectId}/users`, params);
+    return convertToModel(response, UsersListResponseSchema, 'UsersListResponse');
   }
 
   /**

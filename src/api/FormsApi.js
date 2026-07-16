@@ -1,5 +1,8 @@
 'use strict';
 
+const { convertToModel } = require('../models/convert');
+const { FormsListResponseSchema, FormResponseSchema } = require('../models/forms');
+
 /**
  * API methods for forms on a project.
  */
@@ -16,10 +19,11 @@ class FormsApi {
    * GET /2.1/projects/{projectId}/forms
    * @param {string} projectId
    * @param {object} [params] - Optional filters (e.g. updatedAfter)
-   * @returns {Promise<object>}
+   * @returns {Promise<object>} FormsListResponse ({ items, metadata?, links? })
    */
-  getProjectForms(projectId, params = {}) {
-    return this._client.get(`/2.1/projects/${projectId}/forms`, params);
+  async getProjectForms(projectId, params = {}) {
+    const response = await this._client.get(`/2.1/projects/${projectId}/forms`, params);
+    return convertToModel(response, FormsListResponseSchema, 'FormsListResponse');
   }
 
   /**
@@ -27,10 +31,11 @@ class FormsApi {
    * GET /1.2/projects/{projectId}/forms/{formId}
    * @param {string} projectId
    * @param {string} formId
-   * @returns {Promise<object>}
+   * @returns {Promise<object>} FormResponse ({ data, links? })
    */
-  getForm(projectId, formId) {
-    return this._client.get(`/1.2/projects/${projectId}/forms/${formId}`);
+  async getForm(projectId, formId) {
+    const response = await this._client.get(`/1.2/projects/${projectId}/forms/${formId}`);
+    return convertToModel(response, FormResponseSchema, 'FormResponse');
   }
 
   /**

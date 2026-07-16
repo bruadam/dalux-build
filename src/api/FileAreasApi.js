@@ -1,5 +1,9 @@
 'use strict';
 
+const { findByField } = require('../utils/search');
+const { convertToModel } = require('../models/convert');
+const { FileAreaSchema, FileAreasListResponseSchema } = require('../models/fileAreas');
+
 /**
  * API methods for file areas on a project.
  */
@@ -16,10 +20,11 @@ class FileAreasApi {
    * GET /5.1/projects/{projectId}/file_areas
    * @param {string} projectId
    * @param {object} [params]
-   * @returns {Promise<object>}
+   * @returns {Promise<object>} FileAreasListResponse ({ items: FileArea[], metadata?, links? })
    */
-  getFileAreas(projectId, params = {}) {
-    return this._client.get(`/5.1/projects/${projectId}/file_areas`, params);
+  async getFileAreas(projectId, params = {}) {
+    const response = await this._client.get(`/5.1/projects/${projectId}/file_areas`, params);
+    return convertToModel(response, FileAreasListResponseSchema, 'FileAreasListResponse');
   }
 
   /**
@@ -27,10 +32,11 @@ class FileAreasApi {
    * GET /1.0/projects/{projectId}/file_areas/{fileAreaId}
    * @param {string} projectId
    * @param {string} fileAreaId
-   * @returns {Promise<object>}
+   * @returns {Promise<object>} FileArea (not wrapped in a data envelope, matches Python)
    */
-  getFileArea(projectId, fileAreaId) {
-    return this._client.get(`/1.0/projects/${projectId}/file_areas/${fileAreaId}`);
+  async getFileArea(projectId, fileAreaId) {
+    const response = await this._client.get(`/1.0/projects/${projectId}/file_areas/${fileAreaId}`);
+    return convertToModel(response, FileAreaSchema, 'FileArea');
   }
 
   /**
@@ -40,15 +46,11 @@ class FileAreasApi {
    * @returns {Promise<string|null>} The fileAreaId, or null if not found.
    */
   async getFileAreaByName(projectId, fileAreaName) {
-    const { findByField } = require('../utils/search');
     const response = await this.getFileAreas(projectId);
     const items = (response && response.items) || [];
-    const area =
-      findByField(items, 'fileAreaName', fileAreaName, (x) => x.data || x) ||
-      findByField(items, 'name', fileAreaName, (x) => x.data || x);
+    const area = findByField(items, 'fileAreaName', fileAreaName);
     if (!area) return null;
-    const data = area.data || area;
-    return data.fileAreaId || data.id || null;
+    return area.fileAreaId || null;
   }
 }
 

@@ -1,5 +1,8 @@
 'use strict';
 
+const { convertToModel } = require('../models/convert');
+const { WorkPackagesListResponseSchema } = require('../models/workPackages');
+
 /**
  * API methods for work packages on a project.
  */
@@ -16,10 +19,11 @@ class WorkPackagesApi {
    * GET /1.0/projects/{projectId}/workpackages
    * @param {string} projectId
    * @param {object} [params]
-   * @returns {Promise<object>}
+   * @returns {Promise<object>} WorkPackagesListResponse ({ items: WorkPackage[], metadata?, links? })
    */
-  listWorkPackages(projectId, params = {}) {
-    return this._client.get(`/1.0/projects/${projectId}/workpackages`, params);
+  async listWorkPackages(projectId, params = {}) {
+    const response = await this._client.get(`/1.0/projects/${projectId}/workpackages`, params);
+    return convertToModel(response, WorkPackagesListResponseSchema, 'WorkPackagesListResponse');
   }
 }
 

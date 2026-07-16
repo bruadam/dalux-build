@@ -1,5 +1,9 @@
 'use strict';
 
+const { findByField } = require('../utils/search');
+const { convertToModel } = require('../models/convert');
+const { ProjectsListResponseSchema, ProjectResponseSchema } = require('../models/projects');
+
 /**
  * API methods for project management.
  */
@@ -15,30 +19,33 @@ class ProjectsApi {
    * Get all available projects.
    * GET /5.1/projects
    * @param {object} [params] - Optional query parameters (e.g. updatedAfter)
-   * @returns {Promise<object>}
+   * @returns {Promise<object>} ProjectsListResponse ({ items: Project[], metadata?, links? })
    */
-  listProjects(params = {}) {
-    return this._client.get('/5.1/projects', params);
+  async listProjects(params = {}) {
+    const response = await this._client.get('/5.1/projects', params);
+    return convertToModel(response, ProjectsListResponseSchema, 'ProjectsListResponse');
   }
 
   /**
    * Get a specific project.
    * GET /5.0/projects/{projectId}
    * @param {string} projectId
-   * @returns {Promise<object>}
+   * @returns {Promise<object>} ProjectResponse ({ data: Project, links? })
    */
-  getProject(projectId) {
-    return this._client.get(`/5.0/projects/${projectId}`);
+  async getProject(projectId) {
+    const response = await this._client.get(`/5.0/projects/${projectId}`);
+    return convertToModel(response, ProjectResponseSchema, 'ProjectResponse');
   }
 
   /**
    * Create a new project.
    * POST /5.0/projects
    * @param {object} body
-   * @returns {Promise<object>}
+   * @returns {Promise<object>} ProjectResponse
    */
-  createProject(body) {
-    return this._client.post('/5.0/projects', body);
+  async createProject(body) {
+    const response = await this._client.post('/5.0/projects', body);
+    return convertToModel(response, ProjectResponseSchema, 'ProjectResponse');
   }
 
   /**
@@ -46,10 +53,11 @@ class ProjectsApi {
    * PATCH /5.0/projects/{projectId}
    * @param {string} projectId
    * @param {object} body
-   * @returns {Promise<object>}
+   * @returns {Promise<object>} ProjectResponse
    */
-  updateProject(projectId, body) {
-    return this._client.patch(`/5.0/projects/${projectId}`, body);
+  async updateProject(projectId, body) {
+    const response = await this._client.patch(`/5.0/projects/${projectId}`, body);
+    return convertToModel(response, ProjectResponseSchema, 'ProjectResponse');
   }
 
   /**
@@ -108,15 +116,11 @@ class ProjectsApi {
    * @returns {Promise<string|null>} The projectId, or null if not found.
    */
   async getProjectByName(projectName) {
-    const { findByField } = require('../utils/search');
     const response = await this.listProjects();
     const items = (response && response.items) || [];
-    const project =
-      findByField(items, 'projectName', projectName, (x) => x.data || x) ||
-      findByField(items, 'name', projectName, (x) => x.data || x);
+    const project = findByField(items, 'projectName', projectName);
     if (!project) return null;
-    const data = project.data || project;
-    return data.projectId || data.id || null;
+    return project.projectId || null;
   }
 }
 

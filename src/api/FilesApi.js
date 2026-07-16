@@ -7,6 +7,8 @@ const axios = require('axios');
 const { findByField, findAllByField } = require('../utils/search');
 const { resolveFolderIdFromNamedPath } = require('../utils/pathResolver');
 const { validateProjectId, validateFileAreaId, validateFolderId } = require('../utils/validation');
+const { convertToModel, convertToModelList } = require('../models/convert');
+const { FileSchema, FileResponseSchema, FilesListResponseSchema } = require('../models/files');
 
 /**
  * API methods for files within a file area.
@@ -27,11 +29,12 @@ class FilesApi {
    * @param {object} [params] - Optional params (e.g. folderId, updatedAfter, includeProperties). The files endpoint does not support OData $filter.
    * @returns {Promise<object>}
    */
-  listFiles(projectId, fileAreaId, params = {}) {
-    return this._client.get(
+  async listFiles(projectId, fileAreaId, params = {}) {
+    const response = await this._client.get(
       `/6.1/projects/${projectId}/file_areas/${fileAreaId}/files`,
       params,
     );
+    return convertToModel(response, FilesListResponseSchema, 'FilesListResponse');
   }
 
   /**
@@ -75,7 +78,7 @@ class FilesApi {
     if (verbose) {
       console.log(`Done. Total files retrieved: ${allItems.length}`);
     }
-    return allItems;
+    return convertToModelList(allItems, FileSchema, 'File');
   }
 
   /**
@@ -208,9 +211,10 @@ class FilesApi {
     }
 
     // ID-based lookup (original behaviour)
-    const fileInfo = await this._client.get(
+    const rawResponse = await this._client.get(
       `/5.0/projects/${projectId}/file_areas/${fileAreaIdOrPath}/files/${fileId}`,
     );
+    const fileInfo = convertToModel(rawResponse, FileResponseSchema, 'FileResponse');
     if (options.download && fileInfo && fileInfo.data && fileInfo.data.downloadLink) {
       const name = fileInfo.data.fileName || fileId;
       const downloadedPath = await this.downloadFileFromLink(
@@ -538,11 +542,11 @@ class FilesApi {
     const question = (prompt) => new Promise((resolve) => rl.question(prompt, resolve));
 
     function getFid(f) {
-      const d = f.data || {};
+      const d = f.data || f || {};
       return d.id || d.fileId || null;
     }
     function getFname(f) {
-      return (f.data || {}).fileName || '<unknown>';
+      return (f.data || f || {}).fileName || '<unknown>';
     }
     function hasContent(node) {
       if (node.files.length) return true;

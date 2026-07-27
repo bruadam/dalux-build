@@ -23,6 +23,19 @@ class FileState:
     downloaded_path: Optional[str]
     updated_at: float
 
+    def __repr__(self) -> str:
+        return (
+            "FileState(\n"
+            f"  file_id={self.file_id!r},\n"
+            f"  revision_id={self.revision_id!r},\n"
+            f"  content_hash={self.content_hash!r},\n"
+            f"  last_modified={self.last_modified!r},\n"
+            f"  file_size={self.file_size!r},\n"
+            f"  downloaded_path={self.downloaded_path!r},\n"
+            f"  updated_at={self.updated_at!r}\n"
+            ")"
+        )
+
 
 _SCHEMA = """
 CREATE TABLE IF NOT EXISTS file_state (

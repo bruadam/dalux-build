@@ -7,14 +7,14 @@ name = "dalux-build-webhook-server"
 version = "0.1.0"
 description = "Webhook wrapper service that downloads Dalux Build files on change and triggers QA pipelines"
 readme = "README.md"
-requires-python = ">=3.9"
+requires-python = ">=3.10"
 license = "MIT"
 dependencies = [
     # fastapi/uvicorn/httpx now come from dalux-build's "webhook" extra, the
     # single source of truth for those pins (shared with the embedded
     # DaluxClient.webhook_server). Bump the lower bound to match whichever
     # dalux-build release first ships that extra.
-    "dalux-build[webhook]>=1.1.6",
+    "dalux-build[webhook]>=1.2.0",
 ]
 
 [project.optional-dependencies]

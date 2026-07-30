@@ -103,6 +103,49 @@ def test_webhook_ignores_unwatched_and_dedupes(tmp_path):
     assert second.json()["status"] == "duplicate"
 
 
+def test_webhook_retry_after_processing_failure_is_not_deduped(tmp_path):
+    class FlakyService:
+        def __init__(self):
+            self.calls = 0
+
+        def check(self, project_id, file_area_id, file_id, download=True):
+            self.calls += 1
+            if self.calls == 1:
+                raise RuntimeError("boom")
+            return CheckResult(
+                file_id,
+                True,
+                {"fileRevisionId": "r1", "fileName": "model.ifc", "contentHash": "abc"},
+                downloaded_path=str(tmp_path / "model.ifc"),
+                reason="changed",
+            )
+
+        def get_metadata(self, project_id, file_area_id, file_id):
+            return {}
+
+        def ensure_local_copy(self, project_id, file_area_id, file_id):
+            return CheckResult(file_id, False, {})
+
+    service = FlakyService()
+    app, _, _ = _build(
+        tmp_path,
+        watched=[WatchedFile("p1", "fa1", "f1")],
+        service=service,
+        qa_trigger=lambda cfg, event: None,
+    )
+    client = TestClient(app, raise_server_exceptions=False)
+    body = json.dumps({"eventId": "retry1", "fileId": "f1"}).encode()
+    headers = {"X-Dalux-Signature": _sign(body), "Content-Type": "application/json"}
+
+    first = client.post("/webhooks/dalux", content=body, headers=headers)
+    assert first.status_code == 500
+
+    second = client.post("/webhooks/dalux", content=body, headers=headers)
+    assert second.status_code == 200
+    assert second.json()["status"] == "ok"
+    assert service.calls == 2
+
+
 def test_healthz(tmp_path):
     app, _, _ = _build(tmp_path, watched=[WatchedFile("p", "fa", "f")])
     client = TestClient(app)

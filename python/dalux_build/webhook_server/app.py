@@ -90,29 +90,37 @@ def build_app(
             raise HTTPException(status_code=400, detail="body is not valid JSON")
 
         ev_id = webhook.event_id(payload)
-        if ev_id and not store.mark_event(ev_id):
-            return JSONResponse({"status": "duplicate", "eventId": ev_id})
+        event_marked = False
+        if ev_id:
+            event_marked = store.mark_event(ev_id)
+            if not event_marked:
+                return JSONResponse({"status": "duplicate", "eventId": ev_id})
 
         processed = []
-        for ref in webhook.extract_file_refs(payload):
-            if not watchlist.is_watched(ref.file_id):
-                continue
-            watched = watchlist.get(ref.file_id)
-            result = service.check(
-                watched.project_id, watched.file_area_id, watched.file_id, download=True
-            )
-            entry = {
-                "fileId": result.file_id,
-                "changed": result.changed,
-                "reason": result.reason,
-                "downloadedPath": result.downloaded_path,
-            }
-            if result.changed:
-                resolved_qa_trigger(
-                    resolved_qa_config,
-                    qa.build_event(result, watched.project_id, watched.file_area_id),
+        try:
+            for ref in webhook.extract_file_refs(payload):
+                if not watchlist.is_watched(ref.file_id):
+                    continue
+                watched = watchlist.get(ref.file_id)
+                result = service.check(
+                    watched.project_id, watched.file_area_id, watched.file_id, download=True
                 )
-            processed.append(entry)
+                entry = {
+                    "fileId": result.file_id,
+                    "changed": result.changed,
+                    "reason": result.reason,
+                    "downloadedPath": result.downloaded_path,
+                }
+                if result.changed:
+                    resolved_qa_trigger(
+                        resolved_qa_config,
+                        qa.build_event(result, watched.project_id, watched.file_area_id),
+                    )
+                processed.append(entry)
+        except Exception:
+            if ev_id and event_marked:
+                store.unmark_event(ev_id)
+            raise
 
         return JSONResponse({"status": "ok", "eventId": ev_id, "processed": processed})
 

@@ -46,7 +46,7 @@ def trigger(qa_config: QaConfig, event: Dict[str, Any]) -> None:
     if qa_config.qa_webhook_url:
         headers = {"Content-Type": "application/json"}
         if qa_config.qa_webhook_token:
-            headers["Authorization"] = f"Bearer {qa_config.qa_webhook_token}"
+            headers["Authorization"] = "Bearer " + qa_config.qa_webhook_token
         try:
             response = httpx.post(
                 qa_config.qa_webhook_url, json=event, headers=headers, timeout=30.0

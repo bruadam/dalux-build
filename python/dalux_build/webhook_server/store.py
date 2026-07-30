@@ -109,6 +109,11 @@ class Store:
         except sqlite3.IntegrityError:
             return False
 
+    def unmark_event(self, event_id: str) -> None:
+        """Remove a recorded event id so a failed webhook can be retried."""
+        with self._lock, self._conn:
+            self._conn.execute("DELETE FROM processed_events WHERE event_id = ?", (event_id,))
+
     def close(self) -> None:
         with self._lock:
             self._conn.close()

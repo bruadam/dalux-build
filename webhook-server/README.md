@@ -5,7 +5,14 @@ of files **only when they actually change**, attaches the Dalux provenance to
 each download, and triggers a downstream QA pipeline.
 
 It is built on the [`dalux-build`](../python) Python client and exposes a
-webhook receiver plus a conditional download endpoint.
+webhook receiver plus a conditional download endpoint. The actual receiver
+logic (signature verification, change detection, download + sidecar, QA
+trigger, polling) lives in `dalux_build.webhook_server` and is shared with
+the embedded `DaluxClient.webhook_server` sub-object in the client library —
+this package is a thin, env-var-driven CLI wrapper around it, meant for a
+long-running, containerized deployment (see "Deploying with Docker" below).
+Use the embedded `dalux.webhook_server.start()` API instead when you just
+need a webhook receiver inside a Python script for local testing.
 
 ## How it works
 
@@ -70,6 +77,13 @@ The environment is not auto-loaded from `.env`; export the variables yourself
 (for example with `set -a; . ./.env; set +a`, `direnv`, or your process
 manager / container runtime).
 
+**Secrets in production:** `DALUX_API_KEY`, `DALUX_WEBHOOK_SECRET`, and
+`QA_WEBHOOK_TOKEN` each also accept a `*_FILE` variant (e.g.
+`DALUX_API_KEY_FILE=/run/secrets/dalux_api_key`), which reads the value from
+a mounted file instead of the environment — the convention used by Docker/
+Swarm secrets and Kubernetes `Secret` volumes. If both are set, `*_FILE`
+wins. See "Deploying with Docker" below.
+
 ### Watch list
 
 The watch list defines exactly which files the service reacts to. Copy
@@ -115,6 +129,78 @@ Endpoints:
 - Webhook retries are deduplicated by event id (`STATE_DB_PATH`). The default
   SQLite store assumes a single instance; use an external store for multiple
   replicas.
+
+## Deploying with Docker
+
+The image is built from this directory (`webhook-server/Dockerfile`) and
+runs either the webhook receiver (default) or the poller from the same
+image, by overriding the container command — no separate image to build or
+maintain for scheduled polling.
+
+**Secrets are never baked into the image.** The Dockerfile only `COPY`s
+`pyproject.toml`, `README.md`, and `dalux_webhook/`; `.env`, `watchlist.json`,
+and anything under `secrets/`/`data/` are excluded via `.dockerignore` even
+if a future change adds a broader `COPY`. The Dalux API key and webhook
+secret are supplied at container **run** time only, and the production path
+is a mounted secret file (Docker/Swarm secret, or a Kubernetes `Secret`
+volume) referenced through a `*_FILE` env var — see `.env.example` and
+`docker-compose.yml`. A plain `-e DALUX_API_KEY=...` remains supported for
+local development, but is visible via `docker inspect` and should not be
+used on a server.
+
+### Quick start with Docker Compose (recommended)
+
+```bash
+mkdir -p secrets data
+echo -n "your-api-key"        > secrets/dalux_api_key.txt
+echo -n "your-webhook-secret" > secrets/dalux_webhook_secret.txt
+
+DALUX_BASE_URL=https://<company>.dalux.com/api docker compose up -d
+```
+
+This starts two containers from one image, both mounting `./data` (so
+`WATCHLIST_PATH`/`STATE_DB_PATH`/`DOWNLOAD_DIR` are shared and state survives
+restarts) and both reading secrets from `/run/secrets/*`:
+
+- **`server`** — the webhook receiver, listening on `:8000`.
+- **`poller`** — runs `dalux-webhook-poll --interval 300` as a long-lived
+  process, polling every 5 minutes. This is the "fetch on a cron job" path
+  for a containerized deployment: it authenticates with the same injected API
+  key and checks the same watched files as the receiver, without needing a
+  cron daemon inside the container. For orchestrated environments (Kubernetes,
+  Nomad, ...) prefer a native `CronJob`/periodic-job resource instead — same
+  image, `command: ["dalux-webhook-poll"]`, `restartPolicy: OnFailure`, secret
+  mounted the same way.
+
+### Manual `docker run`
+
+```bash
+docker build -t dalux-webhook-server .
+
+docker run -d --name dalux-webhook-server \
+  -p 8000:8000 \
+  -e DALUX_BASE_URL=https://<company>.dalux.com/api \
+  -e DALUX_API_KEY_FILE=/run/secrets/dalux_api_key \
+  -e DALUX_WEBHOOK_SECRET_FILE=/run/secrets/dalux_webhook_secret \
+  -v $(pwd)/secrets/dalux_api_key.txt:/run/secrets/dalux_api_key:ro \
+  -v $(pwd)/secrets/dalux_webhook_secret.txt:/run/secrets/dalux_webhook_secret:ro \
+  -v $(pwd)/data:/app/data \
+  dalux-webhook-server
+
+# Run the poller from the same image instead, by overriding the command:
+docker run -d --name dalux-webhook-poller \
+  -e DALUX_BASE_URL=https://<company>.dalux.com/api \
+  -e DALUX_API_KEY_FILE=/run/secrets/dalux_api_key \
+  -v $(pwd)/secrets/dalux_api_key.txt:/run/secrets/dalux_api_key:ro \
+  -v $(pwd)/data:/app/data \
+  dalux-webhook-server dalux-webhook-poll --interval 300
+```
+
+`curl localhost:8000/healthz` confirms the receiver is up (the image also
+declares a `HEALTHCHECK` hitting the same endpoint). TLS termination (Dalux
+must reach `/webhooks/dalux` over HTTPS) is handled by a reverse proxy or the
+platform's load balancer in front of the `server` container — the container
+itself only serves plain HTTP.
 
 ## Using the conditional download endpoint
 
@@ -247,15 +333,24 @@ webhook-server/
   pyproject.toml
   .env.example
   watchlist.example.json
+  Dockerfile
+  .dockerignore
+  docker-compose.yml
   dalux_webhook/
-    app.py            # FastAPI app: webhook receiver + conditional download
-    config.py         # env-driven settings
-    dalux.py          # dalux-build wrapper: metadata-first, then bytes
-    ifc_metadata.py   # JSON sidecar provenance for downloaded files
-    metadata.py       # change detection from the Dalux File schema
-    poller.py         # polling fallback
-    qa.py             # outbound QA trigger (HTTP or command)
-    store.py          # SQLite state: last-seen revision + idempotency
-    watchlist.py      # watched files index
+    app.py            # builds FastAPI app from this package's Settings, delegating
+                       # endpoint logic to dalux_build.webhook_server.app.build_app
+    config.py         # env-driven settings (with *_FILE secret support)
+    dalux.py          # DaluxService alias for dalux_build.webhook_server.service.DaluxFileService
+    ifc_metadata.py   # re-exports dalux_build.webhook_server.ifc_metadata
+    metadata.py       # re-exports dalux_build.webhook_server.metadata
+    poller.py         # CLI glue (arg parsing, interval loop) around the shared poll_once
+    qa.py             # thin wrapper around dalux_build.webhook_server.qa.trigger
+    store.py          # re-exports dalux_build.webhook_server.store
+    watchlist.py      # re-exports dalux_build.webhook_server.watchlist
   tests/
 ```
+
+The actual receiver/change-detection/QA logic lives in
+[`dalux_build.webhook_server`](../python/dalux_build/webhook_server) — see
+that package if you're modifying core behavior; it's shared with the embedded
+`DaluxClient.webhook_server` API.

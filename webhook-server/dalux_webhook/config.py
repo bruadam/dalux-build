@@ -5,9 +5,21 @@ import os
 from dataclasses import dataclass
 from typing import Optional
 
+from dalux_build.configuration import resolve_secret
+
 
 def _get(name: str, default: str = "") -> str:
     return os.environ.get(name, default).strip()
+
+
+def _get_secret(name: str, default: str = "") -> str:
+    """Resolve a secret, preferring ``<name>_FILE`` (Docker/Kubernetes secret mounts).
+
+    See :func:`dalux_build.configuration.resolve_secret`. Falls back to the
+    plain env var, which remains fine for local development but should not be
+    relied on in production deployments.
+    """
+    return (resolve_secret(name, default) or "").strip()
 
 
 @dataclass(frozen=True)
@@ -35,14 +47,14 @@ class Settings:
     def from_env(cls) -> "Settings":
         return cls(
             dalux_base_url=_get("DALUX_BASE_URL"),
-            dalux_api_key=_get("DALUX_API_KEY"),
-            webhook_secret=_get("DALUX_WEBHOOK_SECRET"),
+            dalux_api_key=_get_secret("DALUX_API_KEY"),
+            webhook_secret=_get_secret("DALUX_WEBHOOK_SECRET"),
             webhook_signature_header=_get("DALUX_WEBHOOK_SIGNATURE_HEADER", "X-Dalux-Signature"),
             watchlist_path=_get("WATCHLIST_PATH", "./watchlist.json"),
             state_db_path=_get("STATE_DB_PATH", "./state.sqlite3"),
             download_dir=_get("DOWNLOAD_DIR", "./downloads"),
             qa_webhook_url=_get("QA_WEBHOOK_URL"),
-            qa_webhook_token=_get("QA_WEBHOOK_TOKEN"),
+            qa_webhook_token=_get_secret("QA_WEBHOOK_TOKEN"),
             qa_command=_get("QA_COMMAND"),
             host=_get("HOST", "0.0.0.0"),
             port=int(_get("PORT", "8000") or "8000"),

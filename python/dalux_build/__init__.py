@@ -37,6 +37,7 @@ from .api import (
     VersionSetsApi,
     WorkPackagesApi,
 )
+from .webhook_server import WebhookServerApi
 
 
 @dataclass
@@ -59,6 +60,7 @@ class DaluxClient:
     users: UsersApi
     version_sets: VersionSetsApi
     work_packages: WorkPackagesApi
+    webhook_server: WebhookServerApi
 
 
 def create_client(base_url: str = None, api_key: str = None) -> DaluxClient:
@@ -103,8 +105,11 @@ def create_client(base_url: str = None, api_key: str = None) -> DaluxClient:
         users=UsersApi(api_client),
         version_sets=VersionSetsApi(api_client),
         work_packages=WorkPackagesApi(api_client),
+        webhook_server=WebhookServerApi(api_client),
     )
 
+# Version information
+__version__ = "0.2.0"
 
 __all__ = [
     "create_client",
@@ -127,6 +132,7 @@ __all__ = [
     "UsersApi",
     "VersionSetsApi",
     "WorkPackagesApi",
+    "WebhookServerApi",
     # Utilities
     "DaluxError",
     "NotFoundError",

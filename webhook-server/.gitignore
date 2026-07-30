@@ -3,8 +3,15 @@ downloads/
 *.sqlite3
 .venv/
 
+# Docker Compose runtime state and file-based secrets
+data/
+secrets/
+
 # Environment-specific watch list (commit watchlist.example.json instead)
 watchlist.json
 
 # Re-include the example env file (root .gitignore matches .env.*)
 !.env.example
+
+# Ignore sqlite database files in the root directory
+*.sqlite3

@@ -718,6 +718,21 @@ class FilesApi:
 
         return file_info
 
+    def download_file_from_link(
+        self,
+        download_link: str,
+        file_name: str,
+        save_path: Optional[str] = None,
+        verbose: bool = False,
+    ) -> str:
+        """Public entry point for downloading a file from its direct download link.
+
+        See :meth:`_download_file_from_link` for details.
+        """
+        return self._download_file_from_link(
+            download_link, file_name, save_path, verbose=verbose
+        )
+
     def _download_file_from_link(
         self,
         download_link: str,

@@ -1,0 +1,19 @@
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+tests/
+
+# Secrets and local runtime state must never enter the build context.
+.env
+.env.*
+!.env.example
+watchlist.json
+*.sqlite3
+downloads/
+data/
+secrets/
+
+.git
+.gitignore
+.DS_Store

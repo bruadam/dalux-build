@@ -42,7 +42,7 @@ jobs:
           python-version: ${{ matrix.python-version }}
 
       - name: Install dependencies
-        run: pip install -e ".[dev]"
+        run: pip install -e ".[dev,webhook]"
 
       - name: Run tests
         run: pytest --cov=dalux_build --cov-report=term-missing

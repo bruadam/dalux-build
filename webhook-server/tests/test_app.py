@@ -97,6 +97,43 @@ def test_webhook_ignores_unwatched_and_dedupes(tmp_path, monkeypatch):
     assert second.json()["status"] == "duplicate"
 
 
+def test_webhook_retry_after_processing_failure_is_not_deduped(tmp_path, monkeypatch):
+    watch = tmp_path / "watchlist.json"
+    watch.write_text(
+        json.dumps({"watch": [{"project_id": "p1", "file_area_id": "fa1", "file_id": "f1"}]})
+    )
+    app = create_app(_settings(tmp_path, watch))
+    ctx = app.state.ctx
+    monkeypatch.setattr(qa, "trigger", lambda settings, event: None)
+    calls = {"count": 0}
+
+    def flaky_check(project_id, file_area_id, file_id, download=True):
+        calls["count"] += 1
+        if calls["count"] == 1:
+            raise RuntimeError("boom")
+        return CheckResult(
+            file_id,
+            True,
+            {"fileRevisionId": "r1", "fileName": "model.ifc", "contentHash": "abc"},
+            downloaded_path=str(tmp_path / "model.ifc"),
+            reason="changed",
+        )
+
+    monkeypatch.setattr(ctx.dalux, "check", flaky_check)
+
+    client = TestClient(app, raise_server_exceptions=False)
+    body = json.dumps({"eventId": "retry1", "fileId": "f1"}).encode()
+    headers = {"X-Dalux-Signature": _sign(body), "Content-Type": "application/json"}
+
+    first = client.post("/webhooks/dalux", content=body, headers=headers)
+    assert first.status_code == 500
+
+    second = client.post("/webhooks/dalux", content=body, headers=headers)
+    assert second.status_code == 200
+    assert second.json()["status"] == "ok"
+    assert calls["count"] == 2
+
+
 def test_healthz(tmp_path):
     watch = tmp_path / "watchlist.json"
     watch.write_text(json.dumps({"watch": [{"project_id": "p", "file_area_id": "fa", "file_id": "f"}]}))

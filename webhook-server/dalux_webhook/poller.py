@@ -1,13 +1,8 @@
 """Polling fallback for when Dalux webhooks are unavailable or to heal gaps.
 
-Two modes per watched file area:
-
-* ``per-file`` (default): call ``get_file`` metadata for each watched file id
-  and download the ones that changed; simple and predictable.
-* ``list``: call ``list_files`` with ``updatedAfter`` (and ``folderId`` when
-  given) to shrink the candidate set, intersect with the watch list, then
-  confirm + download. The files endpoint has no OData ``$filter``, so the
-  intersection is done client-side.
+The actual per-tick logic lives in ``dalux_build.webhook_server.poller.poll_once``
+(shared with the embedded ``DaluxClient.webhook_server``); this module keeps
+only the CLI concerns: argument parsing and the interval/scheduling loop.
 
 Run once with ``python -m dalux_webhook.poller`` (ideal for an OS cron job or a
 systemd timer, which provide drift-free wall-clock scheduling), or run as a
@@ -20,45 +15,13 @@ from __future__ import annotations
 import argparse
 import logging
 import time
-from typing import Dict, List, Optional
 
-from . import qa
+from dalux_build.webhook_server.poller import poll_once  # noqa: F401
+
 from .app import AppContext
 from .config import get_settings
-from .watchlist import WatchedFile
 
 logger = logging.getLogger("dalux_webhook.poller")
-
-
-def _by_area(files: List[WatchedFile]) -> Dict[tuple, List[WatchedFile]]:
-    grouped: Dict[tuple, List[WatchedFile]] = {}
-    for f in files:
-        grouped.setdefault((f.project_id, f.file_area_id), []).append(f)
-    return grouped
-
-
-def poll_once(ctx: AppContext, updated_after: Optional[str] = None, mode: str = "per-file") -> int:
-    """Check every watched file once; return the number of changed files."""
-    changed = 0
-    for (project_id, file_area_id), watched in _by_area(ctx.watchlist.all()).items():
-        watched_ids = {w.file_id for w in watched}
-
-        if mode == "list":
-            params = {"updatedAfter": updated_after} if updated_after else None
-            candidates = ctx.dalux.list_all_files(project_id, file_area_id, params=params)
-            candidate_ids = {
-                (c.get("data") or {}).get("fileId") for c in candidates
-            } & watched_ids
-        else:
-            candidate_ids = watched_ids
-
-        for file_id in candidate_ids:
-            result = ctx.dalux.check(project_id, file_area_id, file_id, download=True)
-            if result.changed:
-                changed += 1
-                qa.trigger(ctx.settings, qa.build_event(result, project_id, file_area_id))
-                logger.info("Changed: %s -> %s", file_id, result.downloaded_path)
-    return changed
 
 
 def main() -> None:

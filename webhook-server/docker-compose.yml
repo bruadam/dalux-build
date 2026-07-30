@@ -1,0 +1,61 @@
+# Reference deployment: the webhook receiver (`server`) and a scheduled
+# poller (`poller`) built from the same image, sharing one data volume (so
+# they never duplicate downloads or diverge on which files are watched) and
+# one set of Compose file-based secrets (mounted at /run/secrets/<name>,
+# referenced via the *_FILE env var convention — see dalux_build.configuration
+# .resolve_secret). This is the production-appropriate way to inject the
+# Dalux API key: it never appears in `docker inspect`, `docker compose config`,
+# or a committed .env file.
+#
+# For local/dev use only, you can instead drop the `secrets:` blocks and add
+# `env_file: .env` to each service (see .env.example) — simpler, but the
+# secret values become visible via `docker inspect`.
+#
+# Quick start:
+#   mkdir -p secrets data
+#   echo -n "your-api-key"        > secrets/dalux_api_key.txt
+#   echo -n "your-webhook-secret" > secrets/dalux_webhook_secret.txt
+#   DALUX_BASE_URL=https://<company>.dalux.com/api docker compose up -d
+
+services:
+  server:
+    build: .
+    image: dalux-webhook-server:latest
+    ports:
+      - "8000:8000"
+    environment:
+      DALUX_BASE_URL: ${DALUX_BASE_URL:?set DALUX_BASE_URL}
+      DALUX_API_KEY_FILE: /run/secrets/dalux_api_key
+      DALUX_WEBHOOK_SECRET_FILE: /run/secrets/dalux_webhook_secret
+    volumes:
+      - ./data:/app/data
+    secrets:
+      - dalux_api_key
+      - dalux_webhook_secret
+    restart: unless-stopped
+
+  # Scheduled polling: a long-lived container on a fixed-rate interval,
+  # rather than a cron daemon inside the container (simpler, no extra
+  # process supervisor, no env-var-under-cron pitfalls). For orchestrated
+  # environments prefer a Kubernetes CronJob (or Swarm cron-style job) with
+  # `command: ["dalux-webhook-poll"]` and the same secret mounts instead.
+  poller:
+    build: .
+    image: dalux-webhook-server:latest
+    command: ["dalux-webhook-poll", "--interval", "300"]
+    environment:
+      DALUX_BASE_URL: ${DALUX_BASE_URL:?set DALUX_BASE_URL}
+      DALUX_API_KEY_FILE: /run/secrets/dalux_api_key
+    volumes:
+      - ./data:/app/data
+    secrets:
+      - dalux_api_key
+    depends_on:
+      - server
+    restart: unless-stopped
+
+secrets:
+  dalux_api_key:
+    file: ./secrets/dalux_api_key.txt
+  dalux_webhook_secret:
+    file: ./secrets/dalux_webhook_secret.txt

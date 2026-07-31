@@ -1,5 +1,5 @@
 """Inspection Plans API."""
-from typing import Dict, List, Optional
+from typing import Dict, List, Optional, Any
 
 from ..api_client import ApiClient
 from ..models import (

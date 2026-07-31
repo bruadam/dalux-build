@@ -19,9 +19,12 @@ jobs:
     name: Test
     uses: ./.github/workflows/tests.yml
 
-  # Changesets treat this single-package repo's root as one unit, so any diff
-  # (npm or python/) requires a changeset. Trivial changes can add one with
-  # `npx changeset add --empty`. See CONTRIBUTING.md.
+  # A changeset is required whenever javascript/ or python/dalux_build (the
+  # published code) changes, since both packages release together (see
+  # scripts/sync-python-version.mjs). This is a plain git-diff check rather
+  # than `npx changeset status`, because Changesets is workspace-scoped to
+  # javascript/ only and would silently miss python-only changes that still
+  # need a release. See CONTRIBUTING.md.
   changeset-check:
     name: Changeset present
     runs-on: ubuntu-latest
@@ -32,14 +35,19 @@ jobs:
         with:
           fetch-depth: 0
 
-      - uses: actions/setup-node@v7
-        with:
-          node-version: 20
-          cache: npm
-
-      - run: npm ci
-
       - name: Check for changeset
         env:
           BASE_REF: ${{ github.event.pull_request.base.ref }}
-        run: npx changeset status --since="origin/$BASE_REF"
+        run: |
+          set -euo pipefail
+          CHANGED=$(git diff --name-only "origin/$BASE_REF...HEAD")
+          if ! echo "$CHANGED" | grep -qE '^(javascript/(src|package\.json)|python/(dalux_build|pyproject\.toml))'; then
+            echo "No published code changed, no changeset required."
+            exit 0
+          fi
+          if echo "$CHANGED" | grep -qE '^\.changeset/.+\.md$'; then
+            echo "Changeset found."
+            exit 0
+          fi
+          echo "::error::javascript/ or python/ changed without a changeset. Run 'npx changeset' (or 'npx changeset add --empty' if this change doesn't need a release). See CONTRIBUTING.md."
+          exit 1

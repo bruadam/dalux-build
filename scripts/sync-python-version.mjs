@@ -1,10 +1,10 @@
 #!/usr/bin/env node
-// Keeps the Python package in lockstep with the npm package after
-// `changeset version` bumps package.json and writes CHANGELOG.md. Run as
-// part of the `version` script so both packages ship the same release
-// number and the same release notes:
+// Keeps the Python package in lockstep with the npm workspace package
+// (javascript/) after `changeset version` bumps javascript/package.json and
+// writes javascript/CHANGELOG.md. Run as part of the `version` script so
+// both packages ship the same release number and the same release notes:
 //   1. Copies the new version into python/pyproject.toml.
-//   2. Mirrors the newest `## X.Y.Z` section of CHANGELOG.md into
+//   2. Mirrors the newest `## X.Y.Z` section of javascript/CHANGELOG.md into
 //      python/CHANGELOG.md, retitled for the Python package. Idempotent:
 //      re-running before the version PR is merged (e.g. a second changeset
 //      landed) replaces that section instead of duplicating it.
@@ -13,11 +13,11 @@ import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 
 const rootDir = dirname(dirname(fileURLToPath(import.meta.url)));
-const pkg = JSON.parse(readFileSync(join(rootDir, "package.json"), "utf8"));
+const pkg = JSON.parse(readFileSync(join(rootDir, "javascript", "package.json"), "utf8"));
 const version = pkg.version;
 
 if (!/^\d+\.\d+\.\d+$/.test(version)) {
-  console.error(`package.json: expected an X.Y.Z version, got ${JSON.stringify(version)}`);
+  console.error(`javascript/package.json: expected an X.Y.Z version, got ${JSON.stringify(version)}`);
   process.exit(1);
 }
 
@@ -51,15 +51,15 @@ function firstSection(markdown) {
   };
 }
 
-const rootChangelogPath = join(rootDir, "CHANGELOG.md");
-if (!existsSync(rootChangelogPath)) {
+const jsChangelogPath = join(rootDir, "javascript", "CHANGELOG.md");
+if (!existsSync(jsChangelogPath)) {
   // Empty changesets (docs/CI-only PRs) bump nothing and write no changelog.
   process.exit(0);
 }
 
-const newest = firstSection(readFileSync(rootChangelogPath, "utf8"));
+const newest = firstSection(readFileSync(jsChangelogPath, "utf8"));
 if (!newest) {
-  console.log("CHANGELOG.md: no `## ` version section found, skipping python/CHANGELOG.md sync");
+  console.log("javascript/CHANGELOG.md: no `## ` version section found, skipping python/CHANGELOG.md sync");
   process.exit(0);
 }
 

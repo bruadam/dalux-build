@@ -25,9 +25,10 @@ jobs:
         with:
           node-version: ${{ matrix.node-version }}
           cache: npm
+          cache-dependency-path: package-lock.json
 
       - run: npm ci
-      - run: npm test
+      - run: npm test --workspace=javascript
 
   test-python:
     name: Test Python (${{ matrix.python-version }})

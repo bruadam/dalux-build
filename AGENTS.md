@@ -5,11 +5,13 @@ in this repo.
 
 ## What this repo is
 
-Two hand-written clients for the Dalux Build REST API — Node.js (`src/`,
-published as `dalux-build-api`) and Python (`python/dalux_build/`, published
-as `dalux-build`) — plus a standalone webhook server (`webhook-server/`)
-built on the Python client. See `README.md` for usage and `CONTRIBUTING.md`
-for how tests, changesets, and releases work.
+Two hand-written clients for the Dalux Build REST API — Node.js
+(`javascript/src/`, published as `dalux-build-api`) and Python
+(`python/dalux_build/`, published as `dalux-build`) — plus a standalone
+webhook server (`webhook-server/`) built on the Python client. The repo root
+is an npm workspace root (`package.json` has `"workspaces": ["javascript"]`);
+the Node.js package itself lives under `javascript/`. See `README.md` for
+usage and `CONTRIBUTING.md` for how tests, changesets, and releases work.
 
 ## Source of truth for the Dalux Build API
 
@@ -35,7 +37,7 @@ than fabricating API behavior.
 
 ## Where the API surface lives in this repo
 
-- Node.js: `src/api/<Group>Api.js` — one file per API group (e.g.
+- Node.js: `javascript/src/api/<Group>Api.js` — one file per API group (e.g.
   `ProjectsApi.js`, `TasksApi.js`, `FilesApi.js`).
 - Python: `python/dalux_build/api/<group>.py`, with response/request models
   under `python/dalux_build/models/<group>/` (one folder per endpoint group).
@@ -45,8 +47,9 @@ than fabricating API behavior.
 
 ## Versioning and releases
 
-Don't hand-edit the `version` field in `package.json` or
+Don't hand-edit the `version` field in `javascript/package.json` or
 `python/pyproject.toml` — both are bumped together by Changesets. Every PR
-that touches `src/`, `package.json`, or `python/dalux_build/` needs a
-changeset (`npx changeset`; `npx changeset add --empty` for changes that
-don't need a release). See `CONTRIBUTING.md` for the full flow.
+that touches `javascript/src/`, `javascript/package.json`, or
+`python/dalux_build/` needs a changeset (`npx changeset`; `npx changeset
+add --empty` for changes that don't need a release). See `CONTRIBUTING.md`
+for the full flow.

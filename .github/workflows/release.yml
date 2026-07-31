@@ -6,13 +6,14 @@
 #     else runs. Nothing publishes if any of it fails.
 #   - if changesets are pending, `changesets/action` opens/updates a
 #     "Version Packages" PR that runs `npm run version`, which bumps
-#     package.json + CHANGELOG.md via `changeset version` and then syncs
-#     python/pyproject.toml + python/CHANGELOG.md to match
-#     (scripts/sync-python-version.mjs).
+#     javascript/package.json + javascript/CHANGELOG.md via `changeset
+#     version` and then syncs python/pyproject.toml + python/CHANGELOG.md to
+#     match (scripts/sync-python-version.mjs).
 #   - once that PR is merged (no changesets left, version already bumped),
-#     it runs `npm run release` (`npm test && changeset publish`), which
-#     publishes to npm. A GitHub Release and the PyPI publish (with its own
-#     pytest re-run) follow only when that succeeded.
+#     it runs `npm run release` (tests the javascript workspace, then
+#     `changeset publish`), which publishes to npm. A GitHub Release and the
+#     PyPI publish (with its own pytest re-run) follow only when that
+#     succeeded.
 #
 # npm publishing uses npm's OIDC Trusted Publisher (no NPM_TOKEN secret) via
 # `permissions.id-token: write` + registry-url below. Trusted Publisher config
@@ -86,7 +87,7 @@ jobs:
           GH_TOKEN: ${{ secrets.RELEASE_PAT || secrets.GITHUB_TOKEN }}
         run: |
           set -euo pipefail
-          VERSION=$(node -p "require('./package.json').version")
+          VERSION=$(node -p "require('./javascript/package.json').version")
           TAG="v${VERSION}"
           if gh release view "$TAG" >/dev/null 2>&1; then
             echo "Release $TAG already exists, skipping."

@@ -2,10 +2,10 @@
 
 A lightweight Python client for the [Dalux Build REST API](https://app.swaggerhub.com/apis-docs/Dalux/DaluxBuild-api/4.14).
 
-See the [repo root README](../README.md) for the Node.js client
-(`dalux-build-api`) and the [webhook server](../webhook-server/README.md)
-built on this package — the two clients are versioned, tested, and released
-together; see [../CONTRIBUTING.md](../CONTRIBUTING.md).
+See the [Node.js client](../javascript/README.md) (`dalux-build-api`) and
+the [webhook server](../webhook-server/README.md) built on this package —
+the two clients are versioned, tested, and released together; see
+[../CONTRIBUTING.md](../CONTRIBUTING.md).
 
 ## Requirements
 

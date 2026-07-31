@@ -1,11 +1,14 @@
 # Dalux Build API
 
-API clients for the [Dalux Build REST API](https://app.swaggerhub.com/apis-docs/Dalux/DaluxBuild-api/4.14), available in two languages:
+API clients for the [Dalux Build REST API](https://app.swaggerhub.com/apis-docs/Dalux/DaluxBuild-api/4.14), available in two languages, plus a standalone webhook server built on the Python client:
 
-| Language | Location             | Documentation                        |
-| -------- | -------------------- | ------------------------------------ |
-| Node.js  | [`/`](.)             | See below                            |
-| Python   | [`/python`](python/) | [python/README.md](python/README.md) |
+| Package                        | Location                             | Documentation                                         |
+| ------------------------------- | ------------------------------------- | ------------------------------------------------------ |
+| Node.js (`dalux-build-api`)    | [`/`](.)                             | This document                                         |
+| Python (`dalux-build`)         | [`/python`](python/)                 | [python/README.md](python/README.md)                  |
+| Webhook server                 | [`/webhook-server`](webhook-server/) | [webhook-server/README.md](webhook-server/README.md)  |
+
+The Node.js and Python clients are kept in behavioral parity and are versioned, tested, and released together — see [Testing](#testing) and [Releasing](#releasing) below, and [CONTRIBUTING.md](CONTRIBUTING.md) for the full contributor flow. [AGENTS.md](AGENTS.md) has pointers to the canonical upstream Dalux Build API docs and where each client's API surface lives in this repo.
 
 ---
 
@@ -365,39 +368,43 @@ const projects = new ProjectsApi(apiClient);
 const tasks = new TasksApi(apiClient);
 ```
 
-## Development
+## Testing
 
 ```bash
-# Install dependencies
 npm install
-
-# Run tests with coverage
-npm test
+npm test    # Jest, with coverage
 ```
 
-## Maintainer: npm releases
+The full suite — Node.js on 20/22/24, Python on 3.11/3.13, and the webhook
+server tested against this checkout's *unreleased* Python code (not the
+published PyPI package) — is defined once in
+[`.github/workflows/tests.yml`](.github/workflows/tests.yml) and run by
+both `ci.yml` (every push and pull request) and `release.yml` (as a hard
+gate immediately before anything is allowed to publish). See
+[CONTRIBUTING.md](CONTRIBUTING.md#running-tests) for the Python and
+webhook-server commands to run these locally.
 
-### Automatic (push to `main`)
+## Releasing
 
-1. Merge to `main` (or push directly). **CI** must pass.
-2. After **both** the Node and Python test jobs succeed, **CI** calls **Publish npm Package** via `workflow_call` (same run as CI, so it does not depend on `workflow_run`).
-3. The publish job only runs when that push changes `package.json`, `package-lock.json`, `src/`, or `test/`.
-4. **Version bump** uses the same rules as the Python publisher ([commit message tokens](python/README.md#maintainer-pypi-releases)), but the **current** semver is **`max(python/pyproject.toml, package.json)`** so npm catches up when the Python package is ahead.
-5. It runs tests again, publishes to npm, then pushes `chore: release vX.Y.Z [skip npm]`, tag `vX.Y.Z`, and a **GitHub Release** (unless the tag already exists). **`[skip npm]`** skips a second publish pass and skips **CI** on that sync commit.
+Releases are fully automated by [Changesets](https://github.com/changesets/changesets)
+via [`.github/workflows/release.yml`](.github/workflows/release.yml) — there
+is no manual version bump, and nothing publishes unless the full test suite
+above passes:
 
-### Manual
+1. Every PR that changes published code (`src/`, `package.json`,
+   `python/dalux_build/`, or `python/pyproject.toml`) needs a changeset
+   (`npx changeset`). CI enforces this.
+2. Merging such a PR to `main` makes the workflow open or update a
+   **"chore: version packages"** PR, which bumps `package.json` +
+   `CHANGELOG.md` and syncs `python/pyproject.toml` + `python/CHANGELOG.md`
+   to match, so both packages always ship one release number.
+3. Merging that PR runs the full test suite once more, then publishes to
+   npm (via npm's OIDC Trusted Publisher — no static token) and to PyPI,
+   and creates a GitHub Release.
 
-- **Actions → Publish npm Package → Run workflow** for **patch / minor / major** (same test → publish → sync commit → tag → **GitHub Release**). The entry workflow is [npm-publish.yml](.github/workflows/npm-publish.yml); it delegates to [npm-publish-reusable.yml](.github/workflows/npm-publish-reusable.yml) (GitHub requires `workflow_call` in its own file).
-- **GitHub Release (published)** publishes the version already in `package.json` at that tag (no version bump in the workflow).
-
-Create a GitHub **environment** named `npm` with secret **`NPM_TOKEN`**. If pushes or releases from `GITHUB_TOKEN` are blocked, set **`RELEASE_PAT`** as described in [python/README.md](python/README.md#maintainer-pypi-releases).
-
-### First publish and `E404` on `npm publish`
-
-If CI fails with **`404 Not Found - PUT …/dalux-build-api`** and **`is not in this registry`**, the package does not exist on npm yet **or** your token is not allowed to **create** it.
-
-- **Classic [Automation](https://docs.npmjs.com/about-access-tokens#automation-tokens)** tokens only publish packages your account **already** maintains. They cannot create a **new** package name. Fix: use a **granular access token** with write access to the `@bruadam` scope (or all packages), or run **`npm publish --access public`** once locally while logged in as the owner, then switch CI back to an automation token.
-- Confirm the package is not taken by someone else: [https://www.npmjs.com/package/dalux-build-api](https://www.npmjs.com/package/dalux-build-api).
+See [CONTRIBUTING.md](CONTRIBUTING.md#how-releases-work) for the complete
+flow, including how to add a changeset for a change that doesn't need a
+release.
 
 ## License
 

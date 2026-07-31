@@ -2,9 +2,14 @@
 
 A lightweight Python client for the [Dalux Build REST API](https://app.swaggerhub.com/apis-docs/Dalux/DaluxBuild-api/4.14).
 
+See the [repo root README](../README.md) for the Node.js client
+(`dalux-build-api`) and the [webhook server](../webhook-server/README.md)
+built on this package — the two clients are versioned, tested, and released
+together; see [../CONTRIBUTING.md](../CONTRIBUTING.md).
+
 ## Requirements
 
-- Python 3.8 or later
+- Python 3.10 or later
 - [requests](https://pypi.org/project/requests/) ≥ 2.28
 
 ## Installation
@@ -274,36 +279,26 @@ projects = ProjectsApi(api_client)
 tasks    = TasksApi(api_client)
 ```
 
-## Development
+## Testing
 
 ```bash
 cd python
-pip install -e ".[dev]"
-pytest tests/ --cov=dalux_build
+pip install -e ".[dev,webhook]"
+pytest --cov=dalux_build --cov-report=term-missing
 ```
 
-## Maintainer: PyPI releases
+CI runs this on Python 3.11 and 3.13, plus the [webhook server](../webhook-server/)'s
+own tests against this checkout's editable install (not the published PyPI
+package) — see [`../.github/workflows/tests.yml`](../.github/workflows/tests.yml).
 
-### Automatic (push to `main`)
+## Releasing
 
-1. Open a PR and merge to `main` (or push directly). **CI** must pass.
-2. When **CI** completes successfully for that push, **Publish Python Package** runs:
-   - It only considers commits that change files under `python/`.
-   - **Patch `Z`** in `X.Y.Z` is incremented by default (from the last line `version = "…"` in `python/pyproject.toml`).
-   - If the **commit message** contains a **full** version token `vX.Y.Z`, that exact version is used (unless it is not greater than the current version, in which case the workflow falls back to a patch bump).
-   - If the message contains **`vX.Y`** (two numbers only, no third segment), the version becomes **`X.Y.0`** (same fallback rule if that would not increase semver).
-3. The workflow runs tests again, builds, publishes to PyPI, then pushes a sync commit: `chore: release vX.Y.Z [skip pypi]`, pushes tag `vX.Y.Z`, and opens a **GitHub Release** for that tag (auto-generated release notes). That marker makes **CI** skip redundant runs and tells this workflow not to publish again for that commit.
-
-Put an explicit line in the subject or body when you want a new **X.Y** line, for example: `feat: add filters v1.2` or `release v2.0`.
-
-### Manual
-
-- **Actions → Publish Python Package → Run workflow** for a fixed **patch / minor / major** bump (same test → build → publish → sync commit → tag → **GitHub Release** flow, except **release** events below).
-- **GitHub Release (published)** still triggers publish **without** changing `pyproject.toml` (the tag must already match the packaged version).
-
-If branch protection blocks pushes from `GITHUB_TOKEN`, set secret **`RELEASE_PAT`** (`contents:write`). Use the same token for checkout and **`GH_TOKEN`** in the release step when you need chained workflows (for example **Publish npm Package** after a release); releases created with the default `GITHUB_TOKEN` do not start new workflow runs.
-
-Configure [PyPI Trusted Publishing](https://docs.pypi.org/trusted-publishers/) for this repo, workflow `python-publish.yml`, environment `pypi`. Remove **`PYPI_API_TOKEN`** when OIDC is active; if the secret remains set, uploads use the token.
+This package is versioned and published together with the Node.js client by
+[Changesets](https://github.com/changesets/changesets) — there is no manual
+edit of `version` in `pyproject.toml`, and nothing publishes to PyPI unless
+the full test suite (Node.js, Python, webhook server) passes first. See
+[../CONTRIBUTING.md](../CONTRIBUTING.md#how-releases-work) for the full flow
+and [../README.md](../README.md#releasing) for the npm side of it.
 
 ## License
 

@@ -42,12 +42,27 @@ from .companies import CompaniesListResponse, CompanyResponse
 from .company_catalog import CompanyCatalogListResponse, CompanyCatalogResponse
 
 # Endpoint models - inspection plans
-from .inspection_plans import InspectionPlan
-from .inspection_plans import InspectionPlansListResponse
+from .inspection_plans import (
+    InspectionPlan,
+    InspectionPlanItem,
+    InspectionPlanItemZone,
+    InspectionPlanRegistration,
+)
+from .inspection_plans import (
+    InspectionPlanItemZonesListResponse,
+    InspectionPlanItemsListResponse,
+    InspectionPlanRegistrationsListResponse,
+    InspectionPlansListResponse,
+)
 
 # Endpoint models - test plans
-from .test_plans import TestPlan
-from .test_plans import TestPlansListResponse
+from .test_plans import TestPlan, TestPlanItem, TestPlanItemZone, TestPlanRegistration
+from .test_plans import (
+    TestPlanItemZonesListResponse,
+    TestPlanItemsListResponse,
+    TestPlanRegistrationsListResponse,
+    TestPlansListResponse,
+)
 
 # Endpoint models - forms
 from .forms import Form
@@ -120,10 +135,22 @@ __all__ = [
     "CompanyCatalogResponse",
     # Inspection Plans
     "InspectionPlan",
+    "InspectionPlanItem",
+    "InspectionPlanItemZone",
+    "InspectionPlanRegistration",
     "InspectionPlansListResponse",
+    "InspectionPlanItemsListResponse",
+    "InspectionPlanItemZonesListResponse",
+    "InspectionPlanRegistrationsListResponse",
     # Test Plans
     "TestPlan",
+    "TestPlanItem",
+    "TestPlanItemZone",
+    "TestPlanRegistration",
     "TestPlansListResponse",
+    "TestPlanItemsListResponse",
+    "TestPlanItemZonesListResponse",
+    "TestPlanRegistrationsListResponse",
     # Forms
     "Form",
     "FormsListResponse",

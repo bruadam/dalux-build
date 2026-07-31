@@ -4,11 +4,11 @@ from typing import Any, Dict, List, Optional, Union
 
 from pydantic import BaseModel, field_validator
 
-from ..common import Link, Metadata
+from ..common import ItemsToDataFrameMixin, Link, Metadata
 from .models import Folder
 
 
-class FoldersListResponse(BaseModel):
+class FoldersListResponse(ItemsToDataFrameMixin, BaseModel):
     """Response from GET /5.1/projects/{projectId}/file_areas/{fileAreaId}/folders - List folders."""
 
     items: List[Folder] = []

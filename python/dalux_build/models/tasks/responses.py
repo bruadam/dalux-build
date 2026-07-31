@@ -4,11 +4,11 @@ from typing import Any, Dict, List, Optional, Union
 
 from pydantic import BaseModel, field_validator, model_validator
 
-from ..common import Link, Metadata
+from ..common import ItemsToDataFrameMixin, Link, Metadata
 from .models import Task, TaskAttachment, TaskChange
 
 
-class TasksListResponse(BaseModel):
+class TasksListResponse(ItemsToDataFrameMixin, BaseModel):
     """Response from GET /5.2/projects/{projectId}/tasks - List tasks."""
 
     items: List[Task] = []
@@ -65,7 +65,7 @@ class TaskChangeResponse(BaseModel):
         populate_by_name = True
 
 
-class TaskChanges(BaseModel):
+class TaskChanges(ItemsToDataFrameMixin, BaseModel):
     """Response from GET /2.2/projects/{projectId}/tasks/changes."""
 
     items: List[TaskChange] = []
@@ -110,7 +110,7 @@ class TaskChanges(BaseModel):
         return cls.from_dict(data)
 
 
-class TaskAttachmentsListResponse(BaseModel):
+class TaskAttachmentsListResponse(ItemsToDataFrameMixin, BaseModel):
     """Response from GET /1.1/projects/{projectId}/tasks/attachments."""
 
     items: List[TaskAttachment] = []

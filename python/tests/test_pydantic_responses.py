@@ -20,6 +20,7 @@ from dalux_build.models import (
     FoldersListResponse, FolderResponse, Folder,
     UsersListResponse, UserResponse, User,
     CompaniesListResponse, CompanyResponse,
+    CompanyCatalogListResponse,
     VersionSetsListResponse, VersionSetResponse,
     Task,
     TaskAttachmentsListResponse,
@@ -29,9 +30,24 @@ from dalux_build.models import (
     TaskChanges,
     TaskResponse,
     TasksListResponse,
+    TestPlan,
+        TestPlanItem,
+        TestPlanItemZone,
+        TestPlanRegistration,
     TestPlansListResponse,
+        TestPlanItemsListResponse,
+        TestPlanItemZonesListResponse,
+        TestPlanRegistrationsListResponse,
     FormsListResponse, FormResponse,
+    InspectionPlan,
+        InspectionPlanItem,
+        InspectionPlanItemZone,
+        InspectionPlanRegistration,
     InspectionPlansListResponse,
+        InspectionPlanItemsListResponse,
+        InspectionPlanItemZonesListResponse,
+        InspectionPlanRegistrationsListResponse,
+    WorkPackagesListResponse,
 )
 
 BASE_URL = "https://api.example.com/build"
@@ -47,6 +63,39 @@ def _make_client():
 def _reg(method, path, body=None, status=200):
     """Register a `responses` mock for BASE_URL + path."""
     rsps_lib.add(method, f"{BASE_URL}{path}", json=body if body is not None else {}, status=status)
+
+
+class TestListResponsesToDataFrame:
+    """Verify all list responses expose DataFrame export."""
+
+    def test_all_items_responses_have_to_dataframe(self):
+        """Every response model with `items` should expose to_dataframe()."""
+        response_classes = [
+            ProjectsListResponse,
+            FileAreasListResponse,
+            FilesListResponse,
+            FoldersListResponse,
+            UsersListResponse,
+            CompaniesListResponse,
+            CompanyCatalogListResponse,
+            VersionSetsListResponse,
+            FormsListResponse,
+            TasksListResponse,
+            TaskChanges,
+            TaskAttachmentsListResponse,
+            WorkPackagesListResponse,
+            TestPlansListResponse,
+            TestPlanItemsListResponse,
+            TestPlanItemZonesListResponse,
+            TestPlanRegistrationsListResponse,
+            InspectionPlansListResponse,
+            InspectionPlanItemsListResponse,
+            InspectionPlanItemZonesListResponse,
+            InspectionPlanRegistrationsListResponse,
+        ]
+
+        for response_cls in response_classes:
+            assert callable(getattr(response_cls, "to_dataframe", None))
 
 
 class TestProjectsPydantic:
@@ -824,6 +873,85 @@ class TestTestPlansPydantic:
         response = api.list_test_plans("p1")
 
         assert isinstance(response, TestPlansListResponse)
+        assert isinstance(response.items[0], TestPlan)
+
+    @rsps_lib.activate
+    def test_list_test_plan_items_returns_pydantic_model(self):
+        _reg(rsps_lib.GET, "/1.1/projects/p1/testPlanItems", body={
+            "items": [
+                {
+                    "testPlanItemId": "tpi1",
+                    "testPlanId": "tp1",
+                    "subject": "Subject 1"
+                }
+            ]
+        })
+        api = TestPlansApi(_make_client())
+        response = api.list_test_plan_items("p1")
+
+        assert isinstance(response, TestPlanItemsListResponse)
+        assert isinstance(response.items[0], TestPlanItem)
+        assert response.items[0].test_plan_item_id == "tpi1"
+
+    @rsps_lib.activate
+    def test_list_test_plan_item_zones_returns_pydantic_model(self):
+        _reg(rsps_lib.GET, "/1.1/projects/p1/testPlanItemZones", body={
+            "items": [
+                {
+                    "testPlanItemZoneId": "tpiz1",
+                    "testPlanItemId": "tpi1",
+                    "name": "Zone 1"
+                }
+            ]
+        })
+        api = TestPlansApi(_make_client())
+        response = api.list_test_plan_item_zones("p1")
+
+        assert isinstance(response, TestPlanItemZonesListResponse)
+        assert isinstance(response.items[0], TestPlanItemZone)
+        assert response.items[0].test_plan_item_zone_id == "tpiz1"
+
+    @rsps_lib.activate
+    def test_list_test_plan_registrations_returns_pydantic_model(self):
+        _reg(rsps_lib.GET, "/1.1/projects/p1/testPlanRegistrations", body={
+            "items": [
+                {
+                    "taskId": "t1",
+                    "testPlanItemId": "tpi1",
+                    "testPlanItemZoneId": "tpiz1",
+                    "status": "planned"
+                }
+            ]
+        })
+        api = TestPlansApi(_make_client())
+        response = api.list_test_plan_registrations("p1")
+
+        assert isinstance(response, TestPlanRegistrationsListResponse)
+        assert isinstance(response.items[0], TestPlanRegistration)
+        assert response.items[0].task_id == "t1"
+
+    @rsps_lib.activate
+    def test_list_test_plans_to_dataframe_flattens_nested_fields(self):
+        """to_dataframe should flatten nested payloads using :: separators."""
+        pd = pytest.importorskip("pandas")
+        _reg(rsps_lib.GET, "/1.2/projects/p1/testPlans", body={
+            "items": [
+                {
+                    "testPlanId": "tp1",
+                    "name": "Test Plan 1",
+                    "owner": {"userId": "u1", "displayName": "Owner"}
+                }
+            ]
+        })
+        api = TestPlansApi(_make_client())
+        response = api.list_test_plans("p1")
+
+        df = response.to_dataframe()
+
+        assert isinstance(df, pd.DataFrame)
+        assert "testPlanId" in df.columns
+        assert "owner::userId" in df.columns
+        assert df.loc[0, "owner::userId"] == "u1"
 
 
 class TestFormsPydantic:
@@ -878,6 +1006,85 @@ class TestInspectionPlansPydantic:
         response = api.list_inspection_plans("p1")
 
         assert isinstance(response, InspectionPlansListResponse)
+        assert isinstance(response.items[0], InspectionPlan)
+
+    @rsps_lib.activate
+    def test_list_inspection_plan_items_returns_pydantic_model(self):
+        _reg(rsps_lib.GET, "/1.1/projects/p1/inspectionPlanItems", body={
+            "items": [
+                {
+                    "inspectionPlanItemId": "ipi1",
+                    "inspectionPlanId": "ip1",
+                    "subject": "Subject 1"
+                }
+            ]
+        })
+        api = InspectionPlansApi(_make_client())
+        response = api.list_inspection_plan_items("p1")
+
+        assert isinstance(response, InspectionPlanItemsListResponse)
+        assert isinstance(response.items[0], InspectionPlanItem)
+        assert response.items[0].inspection_plan_item_id == "ipi1"
+
+    @rsps_lib.activate
+    def test_list_inspection_plan_item_zones_returns_pydantic_model(self):
+        _reg(rsps_lib.GET, "/1.1/projects/p1/inspectionPlanItemZones", body={
+            "items": [
+                {
+                    "inspectionPlanItemZoneId": "ipiz1",
+                    "inspectionPlanItemId": "ipi1",
+                    "name": "Zone 1"
+                }
+            ]
+        })
+        api = InspectionPlansApi(_make_client())
+        response = api.list_inspection_plan_item_zones("p1")
+
+        assert isinstance(response, InspectionPlanItemZonesListResponse)
+        assert isinstance(response.items[0], InspectionPlanItemZone)
+        assert response.items[0].inspection_plan_item_zone_id == "ipiz1"
+
+    @rsps_lib.activate
+    def test_list_inspection_plan_registrations_returns_pydantic_model(self):
+        _reg(rsps_lib.GET, "/2.1/projects/p1/inspectionPlanRegistrations", body={
+            "items": [
+                {
+                    "taskId": "t1",
+                    "inspectionPlanItemId": "ipi1",
+                    "inspectionPlanItemZoneId": "ipiz1",
+                    "status": "planned"
+                }
+            ]
+        })
+        api = InspectionPlansApi(_make_client())
+        response = api.list_inspection_plan_registrations("p1")
+
+        assert isinstance(response, InspectionPlanRegistrationsListResponse)
+        assert isinstance(response.items[0], InspectionPlanRegistration)
+        assert response.items[0].task_id == "t1"
+
+    @rsps_lib.activate
+    def test_list_inspection_plans_to_dataframe_flattens_nested_fields(self):
+        """to_dataframe should flatten nested payloads using :: separators."""
+        pd = pytest.importorskip("pandas")
+        _reg(rsps_lib.GET, "/1.2/projects/p1/inspectionPlans", body={
+            "items": [
+                {
+                    "inspectionPlanId": "ip1",
+                    "name": "Inspection Plan 1",
+                    "location": {"zone": "Z1", "level": "L2"}
+                }
+            ]
+        })
+        api = InspectionPlansApi(_make_client())
+        response = api.list_inspection_plans("p1")
+
+        df = response.to_dataframe()
+
+        assert isinstance(df, pd.DataFrame)
+        assert "inspectionPlanId" in df.columns
+        assert "location::zone" in df.columns
+        assert df.loc[0, "location::zone"] == "Z1"
 
 
 class TestCompanyCatalogPydantic:

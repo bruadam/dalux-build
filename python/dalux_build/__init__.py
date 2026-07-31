@@ -109,7 +109,7 @@ def create_client(base_url: str = None, api_key: str = None) -> DaluxClient:
     )
 
 # Version information
-__version__ = "0.2.0"
+__version__ = "2.0.0"
 
 __all__ = [
     "create_client",

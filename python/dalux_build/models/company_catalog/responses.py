@@ -4,10 +4,10 @@ from typing import Any, Dict, List, Optional, Union
 
 from pydantic import BaseModel, field_validator
 
-from ..common import Link, Metadata
+from ..common import ItemsToDataFrameMixin, Link, Metadata
 
 
-class CompanyCatalogListResponse(BaseModel):
+class CompanyCatalogListResponse(ItemsToDataFrameMixin, BaseModel):
     """Response from GET /1.0/companyCatalog - List company catalog."""
 
     items: List[Any]

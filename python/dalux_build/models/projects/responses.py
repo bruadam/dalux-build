@@ -4,11 +4,11 @@ from typing import Any, Dict, List, Optional, Union
 
 from pydantic import BaseModel, field_validator
 
-from ..common import Link, Metadata
+from ..common import ItemsToDataFrameMixin, Link, Metadata
 from .models import Project
 
 
-class ProjectsListResponse(BaseModel):
+class ProjectsListResponse(ItemsToDataFrameMixin, BaseModel):
     """Response from GET /5.1/projects - List all projects."""
 
     items: List[Project] = []

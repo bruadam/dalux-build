@@ -1,5 +1,24 @@
 """Inspection Plans endpoint models."""
-from .models import InspectionPlan
-from .responses import InspectionPlansListResponse
+from .models import (
+	InspectionPlan,
+	InspectionPlanItem,
+	InspectionPlanItemZone,
+	InspectionPlanRegistration,
+)
+from .responses import (
+	InspectionPlanItemZonesListResponse,
+	InspectionPlanItemsListResponse,
+	InspectionPlanRegistrationsListResponse,
+	InspectionPlansListResponse,
+)
 
-__all__ = ["InspectionPlan", "InspectionPlansListResponse"]
+__all__ = [
+	"InspectionPlan",
+	"InspectionPlanItem",
+	"InspectionPlanItemZone",
+	"InspectionPlanRegistration",
+	"InspectionPlansListResponse",
+	"InspectionPlanItemsListResponse",
+	"InspectionPlanItemZonesListResponse",
+	"InspectionPlanRegistrationsListResponse",
+]

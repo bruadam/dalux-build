@@ -4,10 +4,10 @@ from typing import Any, Dict, List, Optional, Union
 
 from pydantic import BaseModel, field_validator
 
-from ..common import Link, Metadata
+from ..common import ItemsToDataFrameMixin, Link, Metadata
 
 
-class FormsListResponse(BaseModel):
+class FormsListResponse(ItemsToDataFrameMixin, BaseModel):
     """Response from GET /2.2/projects/{projectId}/forms - List forms."""
 
     items: List[Any]

@@ -14,12 +14,20 @@ from dalux_build.api import (
     VersionSetsApi, WorkPackagesApi,
 )
 from dalux_build.models import (
+    InspectionPlan,
+    InspectionPlanItem,
+    InspectionPlanItemZone,
+    InspectionPlanRegistration,
     Task,
     TaskAttachmentsListResponse,
     TaskChange,
     TaskChanges,
     TaskListParams,
     TaskResponse,
+    TestPlan,
+    TestPlanItem,
+    TestPlanItemZone,
+    TestPlanRegistration,
     TasksListResponse,
 )
 
@@ -681,23 +689,139 @@ class TestProjectTemplatesApi:
 class TestInspectionPlansApi:
     @rsps_lib.activate
     def test_list_inspection_plans(self):
-        _reg(rsps_lib.GET, "/1.2/projects/p1/inspectionPlans", body=[])
-        assert InspectionPlansApi(_make_client()).list_inspection_plans("p1") == []
+        _reg(rsps_lib.GET, "/1.2/projects/p1/inspectionPlans", body={"items": []})
+        response = InspectionPlansApi(_make_client()).list_inspection_plans("p1")
+        assert response is not None
+        assert response.items == []
 
     @rsps_lib.activate
     def test_list_inspection_plan_items(self):
-        _reg(rsps_lib.GET, "/1.1/projects/p1/inspectionPlanItems", body=[])
-        assert InspectionPlansApi(_make_client()).list_inspection_plan_items("p1") == []
+        _reg(rsps_lib.GET, "/1.1/projects/p1/inspectionPlanItems", body={"items": []})
+        response = InspectionPlansApi(_make_client()).list_inspection_plan_items("p1")
+        assert response is not None
+        assert response.items == []
 
     @rsps_lib.activate
     def test_list_inspection_plan_item_zones(self):
-        _reg(rsps_lib.GET, "/1.1/projects/p1/inspectionPlanItemZones", body=[])
-        assert InspectionPlansApi(_make_client()).list_inspection_plan_item_zones("p1") == []
+        _reg(rsps_lib.GET, "/1.1/projects/p1/inspectionPlanItemZones", body={"items": []})
+        response = InspectionPlansApi(_make_client()).list_inspection_plan_item_zones("p1")
+        assert response is not None
+        assert response.items == []
 
     @rsps_lib.activate
     def test_list_inspection_plan_registrations(self):
-        _reg(rsps_lib.GET, "/2.1/projects/p1/inspectionPlanRegistrations", body=[])
-        assert InspectionPlansApi(_make_client()).list_inspection_plan_registrations("p1") == []
+        _reg(rsps_lib.GET, "/2.1/projects/p1/inspectionPlanRegistrations", body={"items": []})
+        response = InspectionPlansApi(_make_client()).list_inspection_plan_registrations("p1")
+        assert response is not None
+        assert response.items == []
+
+    @rsps_lib.activate
+    def test_get_all_inspection_plans_follows_pagination(self):
+        page1 = {
+            "items": [{"data": {"inspectionPlanId": "ip1"}}],
+            "metadata": {"totalRemainingItems": 1},
+            "links": [
+                {
+                    "rel": "nextPage",
+                    "href": f"{BASE_URL}/1.2/projects/p1/inspectionPlans?bookmark=bm1",
+                    "method": "GET",
+                }
+            ],
+        }
+        page2 = {
+            "items": [{"data": {"inspectionPlanId": "ip2"}}],
+            "metadata": {"totalRemainingItems": 0},
+            "links": [],
+        }
+        rsps_lib.add(rsps_lib.GET, f"{BASE_URL}/1.2/projects/p1/inspectionPlans", json=page1, status=200)
+        rsps_lib.add(rsps_lib.GET, f"{BASE_URL}/1.2/projects/p1/inspectionPlans", json=page2, status=200)
+
+        result = InspectionPlansApi(_make_client()).get_all_inspection_plans("p1")
+        assert len(result) == 2
+        assert all(isinstance(item, InspectionPlan) for item in result)
+        assert result[0].inspection_plan_id == "ip1"
+        assert result[1].inspection_plan_id == "ip2"
+
+    @rsps_lib.activate
+    def test_get_all_inspection_plan_items_follows_pagination(self):
+        page1 = {
+            "items": [{"inspectionPlanItemId": "ipi1"}],
+            "metadata": {"totalRemainingItems": 1},
+            "links": [
+                {
+                    "rel": "nextPage",
+                    "href": f"{BASE_URL}/1.1/projects/p1/inspectionPlanItems?bookmark=bm1",
+                    "method": "GET",
+                }
+            ],
+        }
+        page2 = {
+            "items": [{"inspectionPlanItemId": "ipi2"}],
+            "metadata": {"totalRemainingItems": 0},
+            "links": [],
+        }
+        rsps_lib.add(rsps_lib.GET, f"{BASE_URL}/1.1/projects/p1/inspectionPlanItems", json=page1, status=200)
+        rsps_lib.add(rsps_lib.GET, f"{BASE_URL}/1.1/projects/p1/inspectionPlanItems", json=page2, status=200)
+
+        result = InspectionPlansApi(_make_client()).get_all_inspection_plan_items("p1")
+        assert len(result) == 2
+        assert all(isinstance(item, InspectionPlanItem) for item in result)
+        assert result[0].inspection_plan_item_id == "ipi1"
+        assert result[1].inspection_plan_item_id == "ipi2"
+
+    @rsps_lib.activate
+    def test_get_all_inspection_plan_item_zones_follows_pagination(self):
+        page1 = {
+            "items": [{"inspectionPlanItemZoneId": "iz1", "name": "z1"}],
+            "metadata": {"totalRemainingItems": 1},
+            "links": [
+                {
+                    "rel": "nextPage",
+                    "href": f"{BASE_URL}/1.1/projects/p1/inspectionPlanItemZones?bookmark=bm1",
+                    "method": "GET",
+                }
+            ],
+        }
+        page2 = {
+            "items": [{"inspectionPlanItemZoneId": "iz2", "name": "z2"}],
+            "metadata": {"totalRemainingItems": 0},
+            "links": [],
+        }
+        rsps_lib.add(rsps_lib.GET, f"{BASE_URL}/1.1/projects/p1/inspectionPlanItemZones", json=page1, status=200)
+        rsps_lib.add(rsps_lib.GET, f"{BASE_URL}/1.1/projects/p1/inspectionPlanItemZones", json=page2, status=200)
+
+        result = InspectionPlansApi(_make_client()).get_all_inspection_plan_item_zones("p1")
+        assert len(result) == 2
+        assert all(isinstance(item, InspectionPlanItemZone) for item in result)
+        assert result[0].name == "z1"
+        assert result[1].name == "z2"
+
+    @rsps_lib.activate
+    def test_get_all_inspection_plan_registrations_follows_pagination(self):
+        page1 = {
+            "items": [{"taskId": "r1", "inspectionPlanItemId": "ipi1"}],
+            "metadata": {"totalRemainingItems": 1},
+            "links": [
+                {
+                    "rel": "nextPage",
+                    "href": f"{BASE_URL}/2.1/projects/p1/inspectionPlanRegistrations?bookmark=bm1",
+                    "method": "GET",
+                }
+            ],
+        }
+        page2 = {
+            "items": [{"taskId": "r2", "inspectionPlanItemId": "ipi2"}],
+            "metadata": {"totalRemainingItems": 0},
+            "links": [],
+        }
+        rsps_lib.add(rsps_lib.GET, f"{BASE_URL}/2.1/projects/p1/inspectionPlanRegistrations", json=page1, status=200)
+        rsps_lib.add(rsps_lib.GET, f"{BASE_URL}/2.1/projects/p1/inspectionPlanRegistrations", json=page2, status=200)
+
+        result = InspectionPlansApi(_make_client()).get_all_inspection_plan_registrations("p1")
+        assert len(result) == 2
+        assert all(isinstance(item, InspectionPlanRegistration) for item in result)
+        assert result[0].task_id == "r1"
+        assert result[1].task_id == "r2"
 
 
 # ---------- TestPlansApi ----------
@@ -705,23 +829,139 @@ class TestInspectionPlansApi:
 class TestTestPlansApi:
     @rsps_lib.activate
     def test_list_test_plans(self):
-        _reg(rsps_lib.GET, "/1.2/projects/p1/testPlans", body=[])
-        assert DaluxTestPlansApi(_make_client()).list_test_plans("p1") == []
+        _reg(rsps_lib.GET, "/1.2/projects/p1/testPlans", body={"items": []})
+        response = DaluxTestPlansApi(_make_client()).list_test_plans("p1")
+        assert response is not None
+        assert response.items == []
 
     @rsps_lib.activate
     def test_list_test_plan_items(self):
-        _reg(rsps_lib.GET, "/1.1/projects/p1/testPlanItems", body=[])
-        assert DaluxTestPlansApi(_make_client()).list_test_plan_items("p1") == []
+        _reg(rsps_lib.GET, "/1.1/projects/p1/testPlanItems", body={"items": []})
+        response = DaluxTestPlansApi(_make_client()).list_test_plan_items("p1")
+        assert response is not None
+        assert response.items == []
 
     @rsps_lib.activate
     def test_list_test_plan_item_zones(self):
-        _reg(rsps_lib.GET, "/1.1/projects/p1/testPlanItemZones", body=[])
-        assert DaluxTestPlansApi(_make_client()).list_test_plan_item_zones("p1") == []
+        _reg(rsps_lib.GET, "/1.1/projects/p1/testPlanItemZones", body={"items": []})
+        response = DaluxTestPlansApi(_make_client()).list_test_plan_item_zones("p1")
+        assert response is not None
+        assert response.items == []
 
     @rsps_lib.activate
     def test_list_test_plan_registrations(self):
-        _reg(rsps_lib.GET, "/1.1/projects/p1/testPlanRegistrations", body=[])
-        assert DaluxTestPlansApi(_make_client()).list_test_plan_registrations("p1") == []
+        _reg(rsps_lib.GET, "/1.1/projects/p1/testPlanRegistrations", body={"items": []})
+        response = DaluxTestPlansApi(_make_client()).list_test_plan_registrations("p1")
+        assert response is not None
+        assert response.items == []
+
+    @rsps_lib.activate
+    def test_get_all_test_plans_follows_pagination(self):
+        page1 = {
+            "items": [{"data": {"testPlanId": "tp1"}}],
+            "metadata": {"totalRemainingItems": 1},
+            "links": [
+                {
+                    "rel": "nextPage",
+                    "href": f"{BASE_URL}/1.2/projects/p1/testPlans?bookmark=bm1",
+                    "method": "GET",
+                }
+            ],
+        }
+        page2 = {
+            "items": [{"data": {"testPlanId": "tp2"}}],
+            "metadata": {"totalRemainingItems": 0},
+            "links": [],
+        }
+        rsps_lib.add(rsps_lib.GET, f"{BASE_URL}/1.2/projects/p1/testPlans", json=page1, status=200)
+        rsps_lib.add(rsps_lib.GET, f"{BASE_URL}/1.2/projects/p1/testPlans", json=page2, status=200)
+
+        result = DaluxTestPlansApi(_make_client()).get_all_test_plans("p1")
+        assert len(result) == 2
+        assert all(isinstance(item, TestPlan) for item in result)
+        assert result[0].test_plan_id == "tp1"
+        assert result[1].test_plan_id == "tp2"
+
+    @rsps_lib.activate
+    def test_get_all_test_plan_items_follows_pagination(self):
+        page1 = {
+            "items": [{"testPlanItemId": "tpi1"}],
+            "metadata": {"totalRemainingItems": 1},
+            "links": [
+                {
+                    "rel": "nextPage",
+                    "href": f"{BASE_URL}/1.1/projects/p1/testPlanItems?bookmark=bm1",
+                    "method": "GET",
+                }
+            ],
+        }
+        page2 = {
+            "items": [{"testPlanItemId": "tpi2"}],
+            "metadata": {"totalRemainingItems": 0},
+            "links": [],
+        }
+        rsps_lib.add(rsps_lib.GET, f"{BASE_URL}/1.1/projects/p1/testPlanItems", json=page1, status=200)
+        rsps_lib.add(rsps_lib.GET, f"{BASE_URL}/1.1/projects/p1/testPlanItems", json=page2, status=200)
+
+        result = DaluxTestPlansApi(_make_client()).get_all_test_plan_items("p1")
+        assert len(result) == 2
+        assert all(isinstance(item, TestPlanItem) for item in result)
+        assert result[0].test_plan_item_id == "tpi1"
+        assert result[1].test_plan_item_id == "tpi2"
+
+    @rsps_lib.activate
+    def test_get_all_test_plan_item_zones_follows_pagination(self):
+        page1 = {
+            "items": [{"testPlanItemZoneId": "tz1", "name": "z1"}],
+            "metadata": {"totalRemainingItems": 1},
+            "links": [
+                {
+                    "rel": "nextPage",
+                    "href": f"{BASE_URL}/1.1/projects/p1/testPlanItemZones?bookmark=bm1",
+                    "method": "GET",
+                }
+            ],
+        }
+        page2 = {
+            "items": [{"testPlanItemZoneId": "tz2", "name": "z2"}],
+            "metadata": {"totalRemainingItems": 0},
+            "links": [],
+        }
+        rsps_lib.add(rsps_lib.GET, f"{BASE_URL}/1.1/projects/p1/testPlanItemZones", json=page1, status=200)
+        rsps_lib.add(rsps_lib.GET, f"{BASE_URL}/1.1/projects/p1/testPlanItemZones", json=page2, status=200)
+
+        result = DaluxTestPlansApi(_make_client()).get_all_test_plan_item_zones("p1")
+        assert len(result) == 2
+        assert all(isinstance(item, TestPlanItemZone) for item in result)
+        assert result[0].name == "z1"
+        assert result[1].name == "z2"
+
+    @rsps_lib.activate
+    def test_get_all_test_plan_registrations_follows_pagination(self):
+        page1 = {
+            "items": [{"taskId": "r1", "testPlanItemId": "tpi1"}],
+            "metadata": {"totalRemainingItems": 1},
+            "links": [
+                {
+                    "rel": "nextPage",
+                    "href": f"{BASE_URL}/1.1/projects/p1/testPlanRegistrations?bookmark=bm1",
+                    "method": "GET",
+                }
+            ],
+        }
+        page2 = {
+            "items": [{"taskId": "r2", "testPlanItemId": "tpi2"}],
+            "metadata": {"totalRemainingItems": 0},
+            "links": [],
+        }
+        rsps_lib.add(rsps_lib.GET, f"{BASE_URL}/1.1/projects/p1/testPlanRegistrations", json=page1, status=200)
+        rsps_lib.add(rsps_lib.GET, f"{BASE_URL}/1.1/projects/p1/testPlanRegistrations", json=page2, status=200)
+
+        result = DaluxTestPlansApi(_make_client()).get_all_test_plan_registrations("p1")
+        assert len(result) == 2
+        assert all(isinstance(item, TestPlanRegistration) for item in result)
+        assert result[0].task_id == "r1"
+        assert result[1].task_id == "r2"
 
 
 # ---------- VersionSetsApi ----------

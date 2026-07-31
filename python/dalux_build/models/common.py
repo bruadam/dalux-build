@@ -1,5 +1,5 @@
 """Common base models shared across all API responses."""
-from typing import Optional
+from typing import Any, Optional
 
 from pydantic import BaseModel, Field
 
@@ -23,3 +23,31 @@ class Metadata(BaseModel):
 
     class Config:
         populate_by_name = True
+
+
+class ItemsToDataFrameMixin:
+    """Mixin adding dataframe export support for responses with an ``items`` field."""
+
+    def to_dataframe(self) -> Any:
+        """Convert ``items`` to a flattened pandas DataFrame using ``::`` separators."""
+        try:
+            import pandas as pd
+        except ImportError as exc:
+            raise ImportError(
+                "pandas is required for to_dataframe(). Install it with `pip install pandas`."
+            ) from exc
+
+        items = getattr(self, "items", None)
+        if not items:
+            return pd.DataFrame()
+
+        rows = []
+        for item in items:
+            if hasattr(item, "model_dump"):
+                rows.append(item.model_dump(by_alias=True, mode="json"))
+            elif isinstance(item, dict):
+                rows.append(item)
+            else:
+                rows.append({"value": item})
+
+        return pd.json_normalize(rows, sep="::")

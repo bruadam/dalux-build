@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "dalux-build"
-version = "1.2.0"
+version = "2.0.0"
 description = "Python client for the Dalux Build REST API"
 readme = "README.md"
 requires-python = ">=3.10"
@@ -29,9 +29,9 @@ dependencies = [
 ]
 
 [project.urls]
-Homepage = "https://github.com/bruadam/Dalux-Build-API"
-Repository = "https://github.com/bruadam/Dalux-Build-API"
-Issues = "https://github.com/bruadam/Dalux-Build-API/issues"
+Homepage = "https://github.com/bruadam/dalux-build"
+Repository = "https://github.com/bruadam/dalux-build"
+Issues = "https://github.com/bruadam/dalux-build/issues"
 
 [project.optional-dependencies]
 dev = [

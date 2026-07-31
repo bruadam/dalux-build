@@ -1,115 +1,149 @@
-# Pushes and releases done with the default GITHUB_TOKEN do not trigger other
-# workflows (e.g. Publish Python Package on `release: published`). Set secret
-# RELEASE_WORKFLOW_PAT to a fine-grained or classic PAT with contents:write so
-# tag push + GitHub Release chain into publish jobs.
+# Changesets-driven release. Every PR that touches published code should add a
+# changeset (`npx changeset`, see CONTRIBUTING.md; CI enforces this via the
+# `changeset-check` job in ci.yml). On push to main:
+#   - the full test suite (tests.yml: JS matrix, Python matrix, webhook-server
+#     against this checkout's *local* dalux-build) must pass before anything
+#     else runs. Nothing publishes if any of it fails.
+#   - if changesets are pending, `changesets/action` opens/updates a
+#     "Version Packages" PR that runs `npm run version`, which bumps
+#     package.json + CHANGELOG.md via `changeset version` and then syncs
+#     python/pyproject.toml + python/CHANGELOG.md to match
+#     (scripts/sync-python-version.mjs).
+#   - once that PR is merged (no changesets left, version already bumped),
+#     it runs `npm run release` (`npm test && changeset publish`), which
+#     publishes to npm. A GitHub Release and the PyPI publish (with its own
+#     pytest re-run) follow only when that succeeded.
+#
+# npm publishing uses npm's OIDC Trusted Publisher (no NPM_TOKEN secret) via
+# `permissions.id-token: write` + registry-url below. Trusted Publisher config
+# on npmjs.com is pinned to this exact workflow file
+# (.github/workflows/release.yml) — renaming/moving this file requires
+# updating that config on npmjs.com or npm publish will fail auth.
 
 name: Release
 
 on:
-  workflow_dispatch:
-    inputs:
-      bump:
-        description: "Version bump type"
-        required: true
-        default: patch
-        type: choice
-        options:
-          - patch
-          - minor
-          - major
-      scope:
-        description: "What to bump (Python-only skips package.json / npm)"
-        required: true
-        default: all
-        type: choice
-        options:
-          - all
-          - python
+  push:
+    branches: [main]
 
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+# Least-privilege default; the `release` and `publish-python` jobs each
+# request exactly what they need via their own `permissions:` block below.
 permissions:
-  contents: write
+  contents: read
 
 jobs:
-  release:
-    name: Bump version, commit & create release
-    runs-on: ubuntu-latest
+  test:
+    name: Test
+    if: ${{ !contains(github.event.head_commit.message, '[skip release]') }}
+    uses: ./.github/workflows/tests.yml
 
+  release:
+    name: Version or publish npm package
+    needs: test
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    environment:
+      name: npm
+      url: https://www.npmjs.com/package/dalux-build-api
+    permissions:
+      contents: write
+      pull-requests: write
+      id-token: write
+    outputs:
+      published: ${{ steps.changesets.outputs.published }}
+      publishedPackages: ${{ steps.changesets.outputs.publishedPackages }}
     steps:
       - uses: actions/checkout@v4
         with:
-          token: ${{ secrets.RELEASE_WORKFLOW_PAT || secrets.GITHUB_TOKEN }}
           fetch-depth: 0
+          token: ${{ secrets.RELEASE_PAT || secrets.GITHUB_TOKEN }}
 
-      - name: Configure git
-        run: |
-          git config user.name  "github-actions[bot]"
-          git config user.email "github-actions[bot]@users.noreply.github.com"
-
-      # ---------- all: bump package.json (and package-lock.json) + pyproject ----------
-      - uses: actions/setup-node@v4
-        if: inputs.scope == 'all'
+      - uses: actions/setup-node@v6
         with:
-          node-version: 20
+          node-version: 24
+          registry-url: https://registry.npmjs.org/
 
-      - name: Bump version (npm + Python)
-        id: bump_all
-        if: inputs.scope == 'all'
-        run: |
-          TAG=$(npm version ${{ inputs.bump }} --no-git-tag-version)
-          VERSION=${TAG#v}
-          echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
-          echo "tag=${TAG}" >> "$GITHUB_OUTPUT"
-          sed -i "s/^version = \".*\"/version = \"${VERSION}\"/" python/pyproject.toml
+      - run: npm ci
 
-      # ---------- python only: semver bump in pyproject.toml ----------
-      - name: Bump version (Python only)
-        id: bump_python
-        if: inputs.scope == 'python'
-        run: |
-          set -euo pipefail
-          VER=$(grep -E '^version = ' python/pyproject.toml | head -1 | sed -E 's/^version = "([^"]+)".*/\1/')
-          if ! echo "$VER" | grep -qE '^[0-9]+\.[0-9]+\.[0-9]+$'; then
-            echo "Expected pyproject version like 1.2.3, got: $VER" >&2
-            exit 1
-          fi
-          IFS=. read -r MA MI PA <<< "$VER"
-          case "${{ inputs.bump }}" in
-            major) MA=$((MA + 1)); MI=0; PA=0 ;;
-            minor) MI=$((MI + 1)); PA=0 ;;
-            patch) PA=$((PA + 1)) ;;
-          esac
-          VERSION="${MA}.${MI}.${PA}"
-          TAG="v${VERSION}"
-          echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
-          echo "tag=${TAG}" >> "$GITHUB_OUTPUT"
-          sed -i "s/^version = \".*\"/version = \"${VERSION}\"/" python/pyproject.toml
-
-      - name: Resolve version outputs
-        id: bump
-        run: |
-          if [ "${{ inputs.scope }}" = "all" ]; then
-            echo "version=${{ steps.bump_all.outputs.version }}" >> "$GITHUB_OUTPUT"
-            echo "tag=${{ steps.bump_all.outputs.tag }}" >> "$GITHUB_OUTPUT"
-          else
-            echo "version=${{ steps.bump_python.outputs.version }}" >> "$GITHUB_OUTPUT"
-            echo "tag=${{ steps.bump_python.outputs.tag }}" >> "$GITHUB_OUTPUT"
-          fi
-
-      - name: Commit & push version bump
-        run: |
-          if [ "${{ inputs.scope }}" = "all" ]; then
-            git add package.json package-lock.json python/pyproject.toml
-          else
-            git add python/pyproject.toml
-          fi
-          git commit -m "chore: release ${{ steps.bump.outputs.tag }}"
-          git tag "${{ steps.bump.outputs.tag }}"
-          git push origin HEAD --tags
+      - name: Create Version Packages PR, or publish to npm
+        id: changesets
+        uses: changesets/action@v1
+        with:
+          version: npm run version
+          publish: npm run release
+          commit: "chore: version packages"
+          title: "chore: version packages"
+        env:
+          GITHUB_TOKEN: ${{ secrets.RELEASE_PAT || secrets.GITHUB_TOKEN }}
 
       - name: Create GitHub Release
-        run: |
-          gh release create "${{ steps.bump.outputs.tag }}" \
-            --title "${{ steps.bump.outputs.tag }}" \
-            --generate-notes
+        if: steps.changesets.outputs.published == 'true'
         env:
-          GH_TOKEN: ${{ secrets.RELEASE_WORKFLOW_PAT || secrets.GITHUB_TOKEN }}
+          GH_TOKEN: ${{ secrets.RELEASE_PAT || secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          VERSION=$(node -p "require('./package.json').version")
+          TAG="v${VERSION}"
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            echo "Release $TAG already exists, skipping."
+          else
+            gh release create "$TAG" --title "$TAG" --generate-notes
+          fi
+
+  publish-python:
+    name: Publish Python package
+    needs: release
+    if: needs.release.outputs.published == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+    environment:
+      name: pypi
+      url: https://pypi.org/project/dalux-build/
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.x"
+          cache: pip
+          cache-dependency-path: python/pyproject.toml
+
+      - name: Install dependencies
+        working-directory: python
+        run: pip install -e ".[dev]" build
+
+      - name: Run tests
+        working-directory: python
+        run: pytest
+
+      - name: Build distributions
+        working-directory: python
+        run: python -m build
+
+      - name: Check whether version is already on PyPI
+        id: check
+        working-directory: python
+        run: |
+          set -euo pipefail
+          VERSION=$(grep -E '^version = ' pyproject.toml | head -1 | sed -E 's/^version = "([^"]+)".*/\1/')
+          STATUS=$(curl -s -o /dev/null -w "%{http_code}" "https://pypi.org/pypi/dalux-build/${VERSION}/json")
+          if [ "$STATUS" = "200" ]; then
+            echo "exists=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "exists=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Publish to PyPI
+        if: steps.check.outputs.exists != 'true'
+        uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          packages-dir: python/dist/
+          password: ${{ secrets.PYPI_API_TOKEN }}

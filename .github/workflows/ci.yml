@@ -5,14 +5,32 @@ on:
     branches: [main]
   pull_request:
     branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
 
 jobs:
-  test-js:
-    name: Test Node.js
+  test:
+    name: Test
+    uses: ./.github/workflows/tests.yml
+
+  # Changesets treat this single-package repo's root as one unit, so any diff
+  # (npm or python/) requires a changeset. Trivial changes can add one with
+  # `npx changeset add --empty`. See CONTRIBUTING.md.
+  changeset-check:
+    name: Changeset present
     runs-on: ubuntu-latest
-    if: ${{ github.event_name != 'push' || github.event.head_commit == null || (!contains(github.event.head_commit.message, '[skip pypi]') && !contains(github.event.head_commit.message, '[skip npm]')) }}
+    timeout-minutes: 5
+    if: github.event_name == 'pull_request'
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - uses: actions/setup-node@v4
         with:
@@ -20,48 +38,8 @@ jobs:
           cache: npm
 
       - run: npm ci
-      - run: npm test
 
-  test-python:
-    name: Test Python
-    runs-on: ubuntu-latest
-    if: ${{ github.event_name != 'push' || github.event.head_commit == null || (!contains(github.event.head_commit.message, '[skip pypi]') && !contains(github.event.head_commit.message, '[skip npm]')) }}
-    defaults:
-      run:
-        working-directory: python
-
-    strategy:
-      matrix:
-        python-version: ["3.11", "3.13"]
-
-    steps:
-      - uses: actions/checkout@v4
-
-      - uses: actions/setup-python@v5
-        with:
-          python-version: ${{ matrix.python-version }}
-
-      - name: Install dependencies
-        run: pip install -e ".[dev,webhook]"
-
-      - name: Run tests
-        run: pytest --cov=dalux_build --cov-report=term-missing
-
-  # Chained after tests (reliable); npm semver uses max(pyproject, package.json) like Python.
-  publish-npm:
-    name: Publish npm Package
-    needs: [test-js, test-python]
-    if: >
-      github.ref == 'refs/heads/main' &&
-      github.event_name == 'push' &&
-      needs.test-js.result != 'failure' &&
-      needs.test-python.result != 'failure' &&
-      (needs.test-js.result == 'success' || needs.test-python.result == 'success')
-    # Reusable workflow needs contents:write (push, tag, release); caller default is often read-only.
-    permissions:
-      contents: write
-      id-token: write
-    uses: ./.github/workflows/npm-publish-reusable.yml
-    with:
-      mode: post_ci
-    secrets: inherit
+      - name: Check for changeset
+        env:
+          BASE_REF: ${{ github.event.pull_request.base.ref }}
+        run: npx changeset status --since="origin/$BASE_REF"

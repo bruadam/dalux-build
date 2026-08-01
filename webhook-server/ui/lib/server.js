@@ -21,6 +21,15 @@ export function requireString(value, name) {
   return result;
 }
 
+// Dalux is a multi-node SaaS (node1.field.dalux.com, node2..., etc.), so the
+// base URL can't be pinned to one host — but it's also attacker-controlled
+// input on this route (POST body from the browser), so it must stay
+// constrained to Dalux's own domain. Without this, a caller could point the
+// server at an arbitrary internal host (SSRF) and have the response, plus
+// whatever API key they supplied, relayed back through this proxy.
+const ALLOWED_BASE_URL_HOST_SUFFIX = ".dalux.com";
+const ALLOWED_BASE_URL_HOST = "dalux.com";
+
 export function resolveBaseUrl(value) {
   const raw =
     (typeof value === "string" && value.trim()) ||
@@ -34,8 +43,19 @@ export function resolveBaseUrl(value) {
     error.status = 400;
     throw error;
   }
-  if (!['http:', 'https:'].includes(parsed.protocol)) {
-    const error = new Error("Dalux base URL must use HTTP or HTTPS");
+  if (parsed.protocol !== "https:") {
+    const error = new Error("Dalux base URL must use HTTPS");
+    error.status = 400;
+    throw error;
+  }
+  const hostname = parsed.hostname.toLowerCase().replace(/\.$/, "");
+  if (
+    hostname !== ALLOWED_BASE_URL_HOST &&
+    !hostname.endsWith(ALLOWED_BASE_URL_HOST_SUFFIX)
+  ) {
+    const error = new Error(
+      `Dalux base URL host must be ${ALLOWED_BASE_URL_HOST} or a subdomain of it`,
+    );
     error.status = 400;
     throw error;
   }

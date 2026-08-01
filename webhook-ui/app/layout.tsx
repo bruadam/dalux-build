@@ -1,4 +1,5 @@
 import { ClerkProvider } from "@clerk/nextjs";
+import { Analytics } from "@vercel/analytics/next";
 import "./globals.css";
 import { Geist, JetBrains_Mono, IBM_Plex_Sans } from "next/font/google";
 import { cn } from "@/lib/utils";
@@ -22,6 +23,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         <ClerkProvider>
           <TooltipProvider>{children}</TooltipProvider>
         </ClerkProvider>
+        <Analytics />
       </body>
     </html>
   );

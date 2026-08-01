@@ -82,7 +82,13 @@ def setup(env_file: Path, secrets_dir: Path, *, assume_saved: bool, quiet: bool)
 
     assert token is not None
     assert master_key is not None
-    _replace_values(env_file, {TOKEN_KEY: token, MASTER_KEY: master_key})
+    _replace_values(
+        env_file,
+        {
+            TOKEN_KEY: token,
+            MASTER_KEY: master_key,
+        },
+    )
     _write_secret(secrets_dir / "monitor_api_token.txt", token)
     _write_secret(secrets_dir / "monitor_master_key.txt", master_key)
 
@@ -91,7 +97,7 @@ def setup(env_file: Path, secrets_dir: Path, *, assume_saved: bool, quiet: bool)
 
     action = "Generated credentials" if generated else "Existing credentials"
     print(f"\n{action} saved to {env_file} and synchronized to {secrets_dir} (permissions: 0600).")
-    print("\nSave both values in your password manager now:\n")
+    print("\nSave these values in your password manager now:\n")
     print(f"{TOKEN_KEY}={token}")
     print(f"{MASTER_KEY}={master_key}")
     print("\nThe API token authenticates management requests.")

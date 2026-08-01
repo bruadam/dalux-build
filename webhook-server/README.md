@@ -6,8 +6,8 @@ endpoint on persistent cron schedules, comparing the result with SQLite state,
 and POSTing batched results to destinations such as n8n.
 
 It stores metadata only, never file contents. API keys and callback secrets are
-encrypted with a Fernet master key. Each poll follows Dalux bookmark
-pagination and replaces the job's previous raw-page snapshot.
+encrypted with a Fernet master key. Each poll follows Dalux bookmark pagination
+and replaces the job's previous raw-page snapshot.
 
 ## Configuration
 
@@ -25,13 +25,13 @@ uv run python -m dalux_webhook
 
 The repository configures uv to install `dalux-build` from `../python`, so it
 does not depend on an unreleased PyPI version. If you already activated the
-repository-root virtual environment, use `uv sync --active --extra dev` and
-run `python -m dalux_webhook` directly.
+repository-root virtual environment, use `uv sync --active --extra dev` and run
+`python -m dalux_webhook` directly.
 
 For Docker, run the setup profile before starting the monitor. Terminate TLS at
 a reverse proxy in front of the management API on port 8000 and the registration
-UI on port 3000. The UI intentionally has no separate login screen, so protect
-port 3000 with your reverse proxy's authentication and do not expose it publicly.
+UI on port 3000. The UI now uses Clerk for sign-in and user sessions. Keep port
+3000 private and continue protecting it with your reverse proxy policy.
 
 The complete management API and outbound webhook payload contract is available
 in [`openapi.yaml`](openapi.yaml). A running server also exposes FastAPI's
@@ -50,17 +50,16 @@ docker compose up --build -d
 docker compose logs -f monitor
 ```
 
-Open `http://localhost:3000` to register a webhook with the guided interface.
-It connects to Dalux through a server-side proxy, lets you browse projects,
-file areas, folders, and files, and registers change or freshness jobs with the
-monitor over the private Compose network. The UI reads the management token
-from the same Docker secret as the monitor; it never sends that token to the
-browser. `DALUX_BASE_URL` defaults to
-`https://node1.field.dalux.com/service/api/` and can be changed in the UI for
-an individual job.
+This Compose stack runs the monitor API (`http://localhost:8000`) only. The
+registration UI is now a standalone Next.js app under `webhook-ui/` and can be
+deployed separately (for example with Vercel).
 
-For UI development outside Docker, run `npm install && npm run dev` in
-`webhook-server/ui` and set `MONITOR_API_TOKEN` plus, if needed,
+Before accessing the registration UI, configure Clerk keys in `.env`:
+`NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY` and `CLERK_SECRET_KEY`.
+
+For UI development outside Docker, run the standalone Next.js app from
+`webhook-ui/` (`npm install && npm run dev`) and set `MONITOR_API_TOKEN`,
+`NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY`, and `CLERK_SECRET_KEY`, plus, if needed,
 `MONITOR_INTERNAL_URL` (defaults to `http://127.0.0.1:8000`).
 
 The setup command preserves existing credentials, updates their `.env` entries,
@@ -81,8 +80,8 @@ while browsing and passes it to the monitor when you submit the job.
 
 For n8n, create and activate a Webhook node before registering its production
 URL as `callback.url`. If n8n runs outside this container, do not use
-`localhost` as the callback host: from inside the monitor container,
-`localhost` refers to the monitor itself.
+`localhost` as the callback host: from inside the monitor container, `localhost`
+refers to the monitor itself.
 
 ## Register a change monitor
 
@@ -130,9 +129,9 @@ curl -X POST http://localhost:8000/jobs/freshness \
   }'
 ```
 
-Freshness jobs always emit `compliant` plus violations. Use `folderIds` to
-apply filename filters only to selected folders; omit it or send an empty array
-to include the whole file area. `maxAge` accepts whole days only because Dalux
+Freshness jobs always emit `compliant` plus violations. Use `folderIds` to apply
+filename filters only to selected folders; omit it or send an empty array to
+include the whole file area. `maxAge` accepts whole days only because Dalux
 reports `lastModified` at date precision. The registration UI previews the
 matching files before schedule and delivery fields become available.
 
@@ -147,14 +146,14 @@ curl -X POST http://localhost:8000/jobs/JOB_ID/test \
   -H 'Authorization: Bearer YOUR_MONITOR_TOKEN'
 ```
 
-The service sends a realistic event with `"test": true` and returns its
-delivery ID plus n8n's HTTP status. For an n8n Test URL, configure that URL on
-the job and click **Listen for test event** before calling this endpoint. For a
+The service sends a realistic event with `"test": true` and returns its delivery
+ID plus n8n's HTTP status. For an n8n Test URL, configure that URL on the job
+and click **Listen for test event** before calling this endpoint. For a
 Production URL, set the n8n Webhook node to `POST` and activate the workflow.
 After creating a job, the registration UI provides actions to send this test
 event or delete the job and its saved state.
 
-Callback authentication can be `none`, `bearer`, or `hmac-sha256`. HMAC uses
-the exact JSON body and the `X-Webhook-Signature: sha256=<hex>` header. Every
+Callback authentication can be `none`, `bearer`, or `hmac-sha256`. HMAC uses the
+exact JSON body and the `X-Webhook-Signature: sha256=<hex>` header. Every
 attempt also carries a stable `X-Delivery-ID`; consumers should deduplicate on
 that value because retries are at-least-once.

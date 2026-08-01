@@ -93,12 +93,12 @@ omit it everywhere else:
 dalux = create_client(
     base_url="https://<your-company>.dalux.com/api",
     api_key="YOUR_API_KEY",
-    project_id="my-project-id",   # or set DALUX_PROJECT_ID
+    project_id="my-project-id",  # or set DALUX_PROJECT_ID
     file_area_id="my-file-area-id",  # or set DALUX_FILE_AREA_ID
 )
 
-dalux.tasks.get_project_tasks()          # uses the default project_id
-dalux.files.list_files()                 # uses the default project_id + file_area_id
+dalux.tasks.get_project_tasks()  # uses the default project_id
+dalux.files.list_files()  # uses the default project_id + file_area_id
 dalux.tasks.get_project_tasks(project_id="other-project-id")  # explicit value wins
 ```
 
@@ -115,9 +115,9 @@ response model instead, which also exposes `.metadata` (pagination info) and `.l
 files = dalux.files.list_files(project_id="p1", file_area_id="fa1")  # list[File]
 
 response = dalux.files.list_files(project_id="p1", file_area_id="fa1", full_response=True)
-response.items          # same list[File]
-response.metadata       # Metadata(total_items=..., total_remaining_items=...)
-response.links          # pagination links
+response.items  # same list[File]
+response.metadata  # Metadata(total_items=..., total_remaining_items=...)
+response.links  # pagination links
 ```
 
 ### `to_dataframe`
@@ -129,7 +129,7 @@ installed (`pip install pandas`); takes precedence over `full_response` if both 
 
 ```python
 df = dalux.tasks.get_project_tasks(project_id="p1", to_dataframe=True)
-df.columns   # e.g. Index(['taskId', 'title', 'type::typeId', 'type::name', ...])
+df.columns  # e.g. Index(['taskId', 'title', 'type::typeId', 'type::name', ...])
 
 # Equivalent to, but shorter than:
 response = dalux.tasks.get_project_tasks(project_id="p1", full_response=True)

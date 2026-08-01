@@ -7,6 +7,7 @@ import responses as rsps_lib
 
 from dalux_build.api_client import ApiClient
 from dalux_build.configuration import Configuration
+from dalux_build.utils.exceptions import NotFoundError, ValidationError
 from dalux_build.utils.pagination import get_next_page_params, has_next_page
 from dalux_build.utils.search import find_all_by_field, find_by_field
 from dalux_build.utils.validation import validate_file_area_id, validate_project_id
@@ -117,11 +118,11 @@ class TestValidationUtils:
         validate_project_id("a")
 
         # Invalid project IDs
-        with pytest.raises(Exception):
+        with pytest.raises(ValidationError):
             validate_project_id(None)
-        with pytest.raises(Exception):
+        with pytest.raises(ValidationError):
             validate_project_id("")
-        with pytest.raises(Exception):
+        with pytest.raises(ValidationError):
             validate_project_id("   ")
 
     def test_validate_file_area_id(self):
@@ -129,9 +130,9 @@ class TestValidationUtils:
         validate_file_area_id("area-456")
 
         # Invalid file area IDs
-        with pytest.raises(Exception):
+        with pytest.raises(ValidationError):
             validate_file_area_id(None)
-        with pytest.raises(Exception):
+        with pytest.raises(ValidationError):
             validate_file_area_id("")
 
 
@@ -197,5 +198,5 @@ def test_http_error_raises():
     )
     config = Configuration(base_url=BASE_URL, api_key=API_KEY)
     client = ApiClient(config)
-    with pytest.raises(Exception):
+    with pytest.raises(NotFoundError):
         client.get("/5.0/projects/bad")

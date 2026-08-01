@@ -128,9 +128,7 @@ class ProjectsApi:
         project_id = resolve_project_id(project_id, self._client.configuration.project_id)
         return self._client.get(f"/1.0/projects/{project_id}/metadata")
 
-    def list_project_metadata_mappings(
-        self, *, project_id: str | None = None
-    ) -> JSONValue | None:
+    def list_project_metadata_mappings(self, *, project_id: str | None = None) -> JSONValue | None:
         """GET /1.0/projects/{projectId}/metadata/1.0/mappings."""
         project_id = resolve_project_id(project_id, self._client.configuration.project_id)
         return self._client.get(f"/1.0/projects/{project_id}/metadata/1.0/mappings")

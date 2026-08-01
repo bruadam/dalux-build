@@ -359,7 +359,13 @@ class TestFilesPydantic:
         )
 
         def fake_get_all_files_in_folder(
-            folder_id=None, params=None, verbose=False, *, path=None, project_id=None, file_area_id=None
+            folder_id=None,
+            params=None,
+            verbose=False,
+            *,
+            path=None,
+            project_id=None,
+            file_area_id=None,
         ):
             assert path == "Files/Design/Models"
             assert folder_id is None
@@ -420,9 +426,7 @@ class TestFilesPydantic:
         monkeypatch.setattr(
             api,
             "get_all_files_in_folder",
-            lambda folder_id=None, params=None, verbose=False, *, path=None, project_id=None, file_area_id=None: [
-                file_obj
-            ],
+            lambda *args, **kwargs: [file_obj],
         )
 
         def fail_download(*args, **kwargs):
@@ -464,9 +468,7 @@ class TestFilesPydantic:
         monkeypatch.setattr(
             api,
             "get_all_files_in_folder",
-            lambda folder_id=None, params=None, verbose=False, *, path=None, project_id=None, file_area_id=None: [
-                file_obj
-            ],
+            lambda *args, **kwargs: [file_obj],
         )
         monkeypatch.setattr(api, "_download_file_from_link", fake_download)
 
@@ -520,9 +522,7 @@ class TestFilesPydantic:
         monkeypatch.setattr(
             api,
             "get_all_files_in_folder",
-            lambda folder_id=None, params=None, verbose=False, *, path=None, project_id=None, file_area_id=None: [
-                file_obj
-            ],
+            lambda *args, **kwargs: [file_obj],
         )
         monkeypatch.setattr(api, "_download_file_from_link", fake_download)
 
@@ -572,9 +572,7 @@ class TestFilesPydantic:
         monkeypatch.setattr(
             api,
             "get_all_files_in_folder",
-            lambda folder_id=None, params=None, verbose=False, *, path=None, project_id=None, file_area_id=None: [
-                file_obj
-            ],
+            lambda *args, **kwargs: [file_obj],
         )
         monkeypatch.setattr(api, "_download_file_from_link", fail_download)
 
@@ -827,9 +825,7 @@ class TestTasksPydantic:
         """get_all_project_tasks(to_dataframe=True) should return a flattened DataFrame."""
         pd = pytest.importorskip("pandas")
         page1 = {
-            "items": [
-                {"data": {"taskId": "t1", "type": {"typeId": "ty1", "name": "Observation"}}}
-            ],
+            "items": [{"data": {"taskId": "t1", "type": {"typeId": "ty1", "name": "Observation"}}}],
             "metadata": {"totalRemainingItems": 0},
             "links": [],
         }

@@ -86,9 +86,7 @@ class UsersApi:
             return result
         return result.items if result is not None else []
 
-    def get_project_user(
-        self, user_id: str, *, project_id: str | None = None
-    ) -> JSONValue | None:
+    def get_project_user(self, user_id: str, *, project_id: str | None = None) -> JSONValue | None:
         """GET /1.1/projects/{projectId}/users/{userId}."""
         project_id = resolve_project_id(project_id, self._client.configuration.project_id)
         return self._client.get(f"/1.1/projects/{project_id}/users/{user_id}")

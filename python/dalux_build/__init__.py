@@ -139,7 +139,7 @@ def create_client(
 
 
 # Version information
-__version__ = "2.0.1"
+__version__ = "2.0.2"
 
 __all__ = [
     "create_client",

@@ -169,9 +169,7 @@ class Monitor:
             return delivery_id if payload else None
 
         rules = cast(JSONDict, config["fileNameFilter"])
-        folder_ids = {
-            str(value) for value in cast(list[object], config.get("folderIds", []))
-        }
+        folder_ids = {str(value) for value in cast(list[object], config.get("folderIds", []))}
         current = {
             fid: data
             for fid, data in current_all.items()

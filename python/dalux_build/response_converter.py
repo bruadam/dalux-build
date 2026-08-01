@@ -1,10 +1,17 @@
 """Utilities for converting API responses to Pydantic models."""
 
-from typing import TypeVar, cast
+from typing import TYPE_CHECKING, Protocol, TypeVar, cast
 
 from pydantic import BaseModel
 
+if TYPE_CHECKING:
+    import pandas as pd
+
 T = TypeVar("T", bound=BaseModel)
+
+
+class _HasToDataFrame(Protocol):
+    def to_dataframe(self) -> "pd.DataFrame": ...
 
 
 def convert_to_list_response(response: object, model_class: type[T]) -> T | None:
@@ -24,6 +31,51 @@ def convert_to_list_response(response: object, model_class: type[T]) -> T | None
     if isinstance(cast(object, result), list):
         return model_class.model_validate({"items": result})
     return result
+
+
+def to_dataframe_or_empty(result: "_HasToDataFrame | None") -> "pd.DataFrame":
+    """Flatten a list-response model to a DataFrame, or an empty one if *result* is None.
+
+    Used by API methods' ``to_dataframe=True`` mode. Requires pandas to be
+    installed; raises ``ImportError`` with an actionable message if it isn't,
+    same as :meth:`ItemsToDataFrameMixin.to_dataframe`.
+    """
+    if result is None:
+        import pandas as pd
+
+        return pd.DataFrame()
+    return result.to_dataframe()
+
+
+def flatten_items_to_dataframe(items: list[object]) -> "pd.DataFrame":
+    """Flatten a plain list of items (models or raw dicts) into a DataFrame.
+
+    Same flattening rules as :meth:`ItemsToDataFrameMixin.to_dataframe` (which
+    delegates here), for API methods — the ``get_all_*`` pagination helpers —
+    that return a bare ``list[...]`` rather than a list-response model with an
+    ``items`` field. Requires pandas to be installed; raises ``ImportError``
+    with an actionable message if it isn't.
+    """
+    try:
+        import pandas as pd
+    except ImportError as exc:
+        raise ImportError(
+            "pandas is required for to_dataframe(). Install it with `pip install pandas`."
+        ) from exc
+
+    if not items:
+        return pd.DataFrame()
+
+    rows: list[dict[str, object]] = []
+    for item in items:
+        if hasattr(item, "model_dump"):
+            rows.append(item.model_dump(by_alias=True, mode="json"))
+        elif isinstance(item, dict):
+            rows.append(item)
+        else:
+            rows.append({"value": item})
+
+    return pd.json_normalize(rows, sep="::")
 
 
 def convert_to_model(response: object, model_class: type[T]) -> T | None:

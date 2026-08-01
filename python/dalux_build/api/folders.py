@@ -6,13 +6,20 @@ from typing import TYPE_CHECKING, Literal, TypedDict, overload
 from ..api_client import ApiClient
 from ..json_types import JSONDict, JSONValue, QueryParams
 from ..models import File, Folder, FolderResponse, FoldersListResponse
-from ..response_converter import convert_to_list_response, convert_to_model
+from ..response_converter import (
+    convert_to_list_response,
+    convert_to_model,
+    flatten_items_to_dataframe,
+    to_dataframe_or_empty,
+)
 from ..utils.pagination import paginate
 from ..utils.path_resolver import resolve_folder_id_from_named_path
 from ..utils.search import find_by_field
 from ..utils.validation import resolve_file_area_id, resolve_project_id
 
 if TYPE_CHECKING:
+    import pandas as pd
+
     from .files import FilesApi
 
 # get_all_folders() falls back to the raw payload (dict) when a page's item
@@ -75,6 +82,7 @@ class FoldersApi:
         self,
         params: QueryParams | None = None,
         full_response: Literal[False] = False,
+        to_dataframe: Literal[False] = False,
         *,
         project_id: str | None = None,
         file_area_id: str | None = None,
@@ -85,17 +93,29 @@ class FoldersApi:
         params: QueryParams | None = None,
         *,
         full_response: Literal[True],
+        to_dataframe: Literal[False] = False,
         project_id: str | None = None,
         file_area_id: str | None = None,
     ) -> FoldersListResponse | None: ...
+    @overload
+    def list_folders(
+        self,
+        params: QueryParams | None = None,
+        full_response: bool = ...,
+        *,
+        to_dataframe: Literal[True],
+        project_id: str | None = None,
+        file_area_id: str | None = None,
+    ) -> "pd.DataFrame": ...
     def list_folders(
         self,
         params: QueryParams | None = None,
         full_response: bool = False,
+        to_dataframe: bool = False,
         *,
         project_id: str | None = None,
         file_area_id: str | None = None,
-    ) -> FoldersListResponse | list[Folder] | None:
+    ) -> "FoldersListResponse | list[Folder] | pd.DataFrame | None":
         """GET /5.1/projects/{projectId}/file_areas/{fileAreaId}/folders.
 
         Args:
@@ -103,12 +123,14 @@ class FoldersApi:
             full_response: If True, return the full FoldersListResponse
                 (including metadata and links). If False (default), return
                 just the list of Folder items.
+            to_dataframe: If True, return the items flattened into a pandas
+                DataFrame (requires pandas). Takes precedence over full_response.
             project_id: Project ID. Falls back to the client's configured default.
             file_area_id: File area ID. Falls back to the client's configured default.
 
         Returns:
-            List of Folder items, or the full FoldersListResponse when
-            full_response=True.
+            List of Folder items, the full FoldersListResponse when
+            full_response=True, or a DataFrame when to_dataframe=True.
         """
         project_id = resolve_project_id(project_id, self._client.configuration.project_id)
         file_area_id = resolve_file_area_id(file_area_id, self._client.configuration.file_area_id)
@@ -117,29 +139,55 @@ class FoldersApi:
             params=params,
         )
         result = convert_to_list_response(response, FoldersListResponse)
+        if to_dataframe:
+            return to_dataframe_or_empty(result)
         if full_response:
             return result
         return result.items if result is not None else []
 
+    @overload
+    def get_all_folders(
+        self,
+        params: QueryParams | None = None,
+        verbose: bool = False,
+        to_dataframe: Literal[False] = False,
+        *,
+        project_id: str | None = None,
+        file_area_id: str | None = None,
+    ) -> list[FolderLike]: ...
+    @overload
     def get_all_folders(
         self,
         params: QueryParams | None = None,
         verbose: bool = False,
         *,
+        to_dataframe: Literal[True],
         project_id: str | None = None,
         file_area_id: str | None = None,
-    ) -> list[FolderLike]:
+    ) -> "pd.DataFrame": ...
+    def get_all_folders(
+        self,
+        params: QueryParams | None = None,
+        verbose: bool = False,
+        to_dataframe: bool = False,
+        *,
+        project_id: str | None = None,
+        file_area_id: str | None = None,
+    ) -> "list[FolderLike] | pd.DataFrame":
         """Retrieve all folders by following bookmark pagination automatically.
 
         Args:
             params: Optional query parameters.
             verbose: Whether to print progress information.
+            to_dataframe: If True, return the items flattened into a pandas
+                DataFrame (requires pandas) instead of a list.
             project_id: Project ID. Falls back to the client's configured default.
             file_area_id: File area ID. Falls back to the client's configured default.
 
         Returns:
             List of all folder items, as Folder objects where the payload
-            validated cleanly and raw dicts otherwise.
+            validated cleanly and raw dicts otherwise; or a DataFrame when
+            to_dataframe=True.
         """
         project_id = resolve_project_id(project_id, self._client.configuration.project_id)
         file_area_id = resolve_file_area_id(file_area_id, self._client.configuration.file_area_id)
@@ -162,6 +210,8 @@ class FoldersApi:
             elif isinstance(item, dict):
                 folders.append(item)
 
+        if to_dataframe:
+            return flatten_items_to_dataframe(list(folders))
         return folders
 
     def get_folder(

@@ -9,13 +9,20 @@ import requests
 from ..api_client import ApiClient
 from ..json_types import JSONDict, JSONValue, QueryParams
 from ..models import File, FileArea, FileNameFilter, FileResponse, FilesListResponse
-from ..response_converter import convert_to_list_response, convert_to_model
+from ..response_converter import (
+    convert_to_list_response,
+    convert_to_model,
+    flatten_items_to_dataframe,
+    to_dataframe_or_empty,
+)
 from ..utils.pagination import paginate
 from ..utils.path_resolver import resolve_folder_id_from_named_path
 from ..utils.search import find_all_by_field, find_by_field
 from ..utils.validation import resolve_file_area_id, resolve_project_id, validate_folder_id
 
 if TYPE_CHECKING:
+    import pandas as pd
+
     from .folders import FolderLike, FoldersApi, TreeNode
 
 
@@ -181,6 +188,7 @@ class FilesApi:
         self,
         params: QueryParams | None = None,
         full_response: Literal[False] = False,
+        to_dataframe: Literal[False] = False,
         *,
         project_id: str | None = None,
         file_area_id: str | None = None,
@@ -191,17 +199,29 @@ class FilesApi:
         params: QueryParams | None = None,
         *,
         full_response: Literal[True],
+        to_dataframe: Literal[False] = False,
         project_id: str | None = None,
         file_area_id: str | None = None,
     ) -> FilesListResponse | None: ...
+    @overload
+    def list_files(
+        self,
+        params: QueryParams | None = None,
+        full_response: bool = ...,
+        *,
+        to_dataframe: Literal[True],
+        project_id: str | None = None,
+        file_area_id: str | None = None,
+    ) -> "pd.DataFrame": ...
     def list_files(
         self,
         params: QueryParams | None = None,
         full_response: bool = False,
+        to_dataframe: bool = False,
         *,
         project_id: str | None = None,
         file_area_id: str | None = None,
-    ) -> FilesListResponse | list[File] | None:
+    ) -> "FilesListResponse | list[File] | pd.DataFrame | None":
         """GET /6.1/projects/{projectId}/file_areas/{fileAreaId}/files.
 
         See ``docs/official-api-docs/Dalux Build API.yaml`` (operationId: listFiles).
@@ -213,12 +233,14 @@ class FilesApi:
             full_response: If True, return the full FilesListResponse
                 (including metadata and links). If False (default), return
                 just the list of File items.
+            to_dataframe: If True, return the items flattened into a pandas
+                DataFrame (requires pandas). Takes precedence over full_response.
             project_id: Project ID. Falls back to the client's configured default.
             file_area_id: File area ID. Falls back to the client's configured default.
 
         Returns:
-            List of File items, or the full FilesListResponse when
-            full_response=True.
+            List of File items, the full FilesListResponse when
+            full_response=True, or a DataFrame when to_dataframe=True.
         """
         project_id = resolve_project_id(project_id, self._client.configuration.project_id)
         file_area_id = resolve_file_area_id(file_area_id, self._client.configuration.file_area_id)
@@ -227,29 +249,55 @@ class FilesApi:
             params=params,
         )
         result = convert_to_list_response(response, FilesListResponse)
+        if to_dataframe:
+            return to_dataframe_or_empty(result)
         if full_response:
             return result
         return result.items if result is not None else []
 
+    @overload
+    def get_all_files(
+        self,
+        params: QueryParams | None = None,
+        verbose: bool = False,
+        to_dataframe: Literal[False] = False,
+        *,
+        project_id: str | None = None,
+        file_area_id: str | None = None,
+    ) -> list[FileLike]: ...
+    @overload
     def get_all_files(
         self,
         params: QueryParams | None = None,
         verbose: bool = False,
         *,
+        to_dataframe: Literal[True],
         project_id: str | None = None,
         file_area_id: str | None = None,
-    ) -> list[FileLike]:
+    ) -> "pd.DataFrame": ...
+    def get_all_files(
+        self,
+        params: QueryParams | None = None,
+        verbose: bool = False,
+        to_dataframe: bool = False,
+        *,
+        project_id: str | None = None,
+        file_area_id: str | None = None,
+    ) -> "list[FileLike] | pd.DataFrame":
         """Retrieve all files by following bookmark pagination automatically.
 
         Args:
             params: Optional additional query parameters.
             verbose: If True, print progress information.
+            to_dataframe: If True, return the items flattened into a pandas
+                DataFrame (requires pandas) instead of a list.
             project_id: Project ID. Falls back to the client's configured default.
             file_area_id: File area ID. Falls back to the client's configured default.
 
         Returns:
             List of all file items, as File objects where the payload
-            validated cleanly and raw dicts otherwise.
+            validated cleanly and raw dicts otherwise; or a DataFrame when
+            to_dataframe=True.
         """
         project_id = resolve_project_id(project_id, self._client.configuration.project_id)
         file_area_id = resolve_file_area_id(file_area_id, self._client.configuration.file_area_id)
@@ -273,18 +321,45 @@ class FilesApi:
             elif isinstance(item, dict):
                 files.append(item)
 
+        if to_dataframe:
+            return flatten_items_to_dataframe(list(files))
         return files
 
+    @overload
+    def get_all_files_in_folder(
+        self,
+        folder_id: str | None = None,
+        params: QueryParams | None = None,
+        verbose: bool = False,
+        to_dataframe: Literal[False] = False,
+        *,
+        path: str | None = None,
+        project_id: str | None = None,
+        file_area_id: str | None = None,
+    ) -> list[FileLike]: ...
+    @overload
     def get_all_files_in_folder(
         self,
         folder_id: str | None = None,
         params: QueryParams | None = None,
         verbose: bool = False,
         *,
+        to_dataframe: Literal[True],
         path: str | None = None,
         project_id: str | None = None,
         file_area_id: str | None = None,
-    ) -> list[FileLike]:
+    ) -> "pd.DataFrame": ...
+    def get_all_files_in_folder(
+        self,
+        folder_id: str | None = None,
+        params: QueryParams | None = None,
+        verbose: bool = False,
+        to_dataframe: bool = False,
+        *,
+        path: str | None = None,
+        project_id: str | None = None,
+        file_area_id: str | None = None,
+    ) -> "list[FileLike] | pd.DataFrame":
         """Retrieve all files for a folder using either a folder ID or a full path.
 
         Supports either:
@@ -296,6 +371,8 @@ class FilesApi:
             folder_id: The folder ID to filter files by. Required unless *path* is given.
             params: Optional additional query parameters passed to the API.
             verbose: If True, print progress information.
+            to_dataframe: If True, return the items flattened into a pandas
+                DataFrame (requires pandas) instead of a list.
             path: A full path starting with the file area name, such as
                 ``"Files/4_Design/C07_Geometry/C07.05_BIM"``. Alternative to
                 *folder_id* + *file_area_id*.
@@ -305,7 +382,8 @@ class FilesApi:
                 when *path* is given.
 
         Returns:
-            A list of file items belonging to the specified folder.
+            A list of file items belonging to the specified folder, or a
+            DataFrame when to_dataframe=True.
 
         Raises:
             ValueError: If neither *folder_id* nor *path* is provided.
@@ -321,7 +399,7 @@ class FilesApi:
             if maybe_file_area_id is None or maybe_folder_id is None:
                 if verbose:
                     print(f"Could not resolve folder path: {path}")
-                return []
+                return flatten_items_to_dataframe([]) if to_dataframe else []
             resolved_file_area_id = maybe_file_area_id
             resolved_folder_id = maybe_folder_id
         else:
@@ -344,6 +422,8 @@ class FilesApi:
         )
         if verbose:
             print(f"Files matching folder {resolved_folder_id!r}: {len(filtered)}")
+        if to_dataframe:
+            return flatten_items_to_dataframe(list(filtered))
         return filtered
 
     def _extract_file_name(self, file_item: FileLike) -> str:

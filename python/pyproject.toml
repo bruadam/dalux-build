@@ -26,6 +26,7 @@ dependencies = [
     "pydantic[email]",
     "tqdm>=4.66.0",
     "fastapi>=0.141.1",
+    "pandas>=2.3.3",
 ]
 
 [project.urls]
@@ -51,6 +52,8 @@ webhook = [
     "fastapi>=0.110",
     "uvicorn[standard]>=0.27",
     "httpx>=0.27",
+    "cryptography>=42",
+    "croniter>=2",
 ]
 
 [tool.setuptools.packages.find]

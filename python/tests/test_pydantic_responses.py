@@ -286,6 +286,44 @@ class TestFilesPydantic:
         assert len(response.items) == 1
 
     @rsps_lib.activate
+    def test_get_all_files_to_dataframe_flattens_nested_fields(self):
+        """get_all_files(to_dataframe=True) should return a flattened DataFrame."""
+        pd = pytest.importorskip("pandas")
+        _reg(
+            rsps_lib.GET,
+            "/6.1/projects/p1/file_areas/fa1/files",
+            body={
+                "items": [
+                    {
+                        "data": {
+                            "fileId": "f1",
+                            "fileName": "document.pdf",
+                            "fileType": "pdf",
+                            "fileAreaId": "fa1",
+                        }
+                    }
+                ]
+            },
+        )
+        api = FilesApi(_make_client())
+        df = api.get_all_files(to_dataframe=True, project_id="p1", file_area_id="fa1")
+
+        assert isinstance(df, pd.DataFrame)
+        assert "fileId" in df.columns
+        assert df.loc[0, "fileId"] == "f1"
+
+    @rsps_lib.activate
+    def test_get_all_files_to_dataframe_empty_when_no_items(self):
+        """to_dataframe=True should return an empty DataFrame, not raise, for no items."""
+        pd = pytest.importorskip("pandas")
+        _reg(rsps_lib.GET, "/6.1/projects/p1/file_areas/fa1/files", body={"items": []})
+        api = FilesApi(_make_client())
+        df = api.get_all_files(to_dataframe=True, project_id="p1", file_area_id="fa1")
+
+        assert isinstance(df, pd.DataFrame)
+        assert df.empty
+
+    @rsps_lib.activate
     def test_get_file_returns_pydantic_model(self):
         """get_file should return FileResponse."""
         _reg(
@@ -715,6 +753,33 @@ class TestTasksPydantic:
         assert isinstance(response, TasksListResponse)
 
     @rsps_lib.activate
+    def test_get_project_tasks_to_dataframe_flattens_nested_fields(self):
+        """get_project_tasks(to_dataframe=True) should return a flattened DataFrame."""
+        pd = pytest.importorskip("pandas")
+        _reg(
+            rsps_lib.GET,
+            "/5.2/projects/p1/tasks",
+            body={
+                "items": [
+                    {
+                        "data": {
+                            "taskId": "t1",
+                            "title": "Task 1",
+                            "type": {"typeId": "ty1", "name": "Observation"},
+                        }
+                    }
+                ]
+            },
+        )
+        api = TasksApi(_make_client())
+        df = api.get_project_tasks(to_dataframe=True, project_id="p1")
+
+        assert isinstance(df, pd.DataFrame)
+        assert "taskId" in df.columns
+        assert "type::typeId" in df.columns
+        assert df.loc[0, "type::typeId"] == "ty1"
+
+    @rsps_lib.activate
     def test_get_task_returns_pydantic_model(self):
         """get_task should return TaskResponse."""
         _reg(
@@ -756,6 +821,27 @@ class TestTasksPydantic:
         assert all(isinstance(item, Task) for item in response)
         assert response[0].task_id == "t1"
         assert response[1].task_id == "t2"
+
+    @rsps_lib.activate
+    def test_get_all_project_tasks_to_dataframe_flattens_nested_fields(self):
+        """get_all_project_tasks(to_dataframe=True) should return a flattened DataFrame."""
+        pd = pytest.importorskip("pandas")
+        page1 = {
+            "items": [
+                {"data": {"taskId": "t1", "type": {"typeId": "ty1", "name": "Observation"}}}
+            ],
+            "metadata": {"totalRemainingItems": 0},
+            "links": [],
+        }
+        rsps_lib.add(rsps_lib.GET, f"{BASE_URL}/5.2/projects/p1/tasks", json=page1, status=200)
+
+        api = TasksApi(_make_client())
+        df = api.get_all_project_tasks(to_dataframe=True, project_id="p1")
+
+        assert isinstance(df, pd.DataFrame)
+        assert "taskId" in df.columns
+        assert "type::typeId" in df.columns
+        assert df.loc[0, "type::typeId"] == "ty1"
 
     @rsps_lib.activate
     def test_get_project_task_changes_returns_pydantic_model(self):
@@ -1018,6 +1104,42 @@ class TestTestPlansPydantic:
         assert "testPlanId" in df.columns
         assert "owner::userId" in df.columns
         assert df.loc[0, "owner::userId"] == "u1"
+
+    @rsps_lib.activate
+    def test_list_test_plans_to_dataframe_param_flattens_nested_fields(self):
+        """list_test_plans(to_dataframe=True) should return the same flattened DataFrame."""
+        pd = pytest.importorskip("pandas")
+        _reg(
+            rsps_lib.GET,
+            "/1.2/projects/p1/testPlans",
+            body={
+                "items": [
+                    {
+                        "testPlanId": "tp1",
+                        "name": "Test Plan 1",
+                        "owner": {"userId": "u1", "displayName": "Owner"},
+                    }
+                ]
+            },
+        )
+        api = TestPlansApi(_make_client())
+        df = api.list_test_plans(to_dataframe=True, project_id="p1")
+
+        assert isinstance(df, pd.DataFrame)
+        assert "testPlanId" in df.columns
+        assert "owner::userId" in df.columns
+        assert df.loc[0, "owner::userId"] == "u1"
+
+    @rsps_lib.activate
+    def test_list_test_plans_to_dataframe_param_empty_when_no_items(self):
+        """to_dataframe=True should return an empty DataFrame, not raise, for no items."""
+        pd = pytest.importorskip("pandas")
+        _reg(rsps_lib.GET, "/1.2/projects/p1/testPlans", body={"items": []})
+        api = TestPlansApi(_make_client())
+        df = api.list_test_plans(to_dataframe=True, project_id="p1")
+
+        assert isinstance(df, pd.DataFrame)
+        assert df.empty
 
 
 class TestFormsPydantic:

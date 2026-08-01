@@ -1,13 +1,16 @@
 """Projects API."""
 
-from typing import Literal, overload
+from typing import TYPE_CHECKING, Literal, overload
 
 from ..api_client import ApiClient
 from ..json_types import JSONDict, JSONValue, QueryParams
 from ..models import Project, ProjectResponse, ProjectsListResponse
-from ..response_converter import convert_to_list_response, convert_to_model
+from ..response_converter import convert_to_list_response, convert_to_model, to_dataframe_or_empty
 from ..utils.search import find_by_field
 from ..utils.validation import resolve_project_id
+
+if TYPE_CHECKING:
+    import pandas as pd
 
 
 class ProjectsApi:
@@ -22,15 +25,33 @@ class ProjectsApi:
 
     @overload
     def list_projects(
-        self, params: QueryParams | None = None, full_response: Literal[False] = False
+        self,
+        params: QueryParams | None = None,
+        full_response: Literal[False] = False,
+        to_dataframe: Literal[False] = False,
     ) -> list[Project]: ...
     @overload
     def list_projects(
-        self, params: QueryParams | None = None, *, full_response: Literal[True]
+        self,
+        params: QueryParams | None = None,
+        *,
+        full_response: Literal[True],
+        to_dataframe: Literal[False] = False,
     ) -> ProjectsListResponse | None: ...
+    @overload
     def list_projects(
-        self, params: QueryParams | None = None, full_response: bool = False
-    ) -> ProjectsListResponse | list[Project] | None:
+        self,
+        params: QueryParams | None = None,
+        full_response: bool = ...,
+        *,
+        to_dataframe: Literal[True],
+    ) -> "pd.DataFrame": ...
+    def list_projects(
+        self,
+        params: QueryParams | None = None,
+        full_response: bool = False,
+        to_dataframe: bool = False,
+    ) -> "ProjectsListResponse | list[Project] | pd.DataFrame | None":
         """GET /5.1/projects — List all available projects.
 
         Args:
@@ -38,13 +59,17 @@ class ProjectsApi:
             full_response: If True, return the full ProjectsListResponse
                 (including metadata and links). If False (default), return
                 just the list of Project items.
+            to_dataframe: If True, return the items flattened into a pandas
+                DataFrame (requires pandas). Takes precedence over full_response.
 
         Returns:
-            List of Project items, or the full ProjectsListResponse when
-            full_response=True.
+            List of Project items, the full ProjectsListResponse when
+            full_response=True, or a DataFrame when to_dataframe=True.
         """
         response = self._client.get("/5.1/projects", params=params)
         result = convert_to_list_response(response, ProjectsListResponse)
+        if to_dataframe:
+            return to_dataframe_or_empty(result)
         if full_response:
             return result
         return result.items if result is not None else []

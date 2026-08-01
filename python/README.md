@@ -120,6 +120,30 @@ response.metadata       # Metadata(total_items=..., total_remaining_items=...)
 response.links          # pagination links
 ```
 
+### `to_dataframe`
+
+The same list/collection methods also accept `to_dataframe=True`, returning the items
+flattened into a [pandas](https://pandas.pydata.org/) `DataFrame` directly — nested objects
+are flattened into `::`-separated column names (e.g. `owner::userId`). Requires pandas to be
+installed (`pip install pandas`); takes precedence over `full_response` if both are passed.
+
+```python
+df = dalux.tasks.get_project_tasks(project_id="p1", to_dataframe=True)
+df.columns   # e.g. Index(['taskId', 'title', 'type::typeId', 'type::name', ...])
+
+# Equivalent to, but shorter than:
+response = dalux.tasks.get_project_tasks(project_id="p1", full_response=True)
+df = response.to_dataframe() if response else pd.DataFrame()
+```
+
+The paginated `get_all_*` helpers (`get_all_files`, `get_all_folders`, `get_all_project_tasks`,
+`get_all_inspection_plans`, …) accept `to_dataframe=True` too — they have no `full_response`
+mode (they return a bare list already), but flatten the same way:
+
+```python
+df = dalux.files.get_all_files(project_id="p1", file_area_id="fa1", to_dataframe=True)
+```
+
 ## Authentication
 
 Every request automatically includes the `X-API-KEY` header with the API key supplied to `create_client`. No additional configuration is required.
@@ -163,7 +187,9 @@ except requests.HTTPError as exc:
 `project_id` and `file_area_id` are keyword-only in every method below (e.g.
 `get_task(task_id, *, project_id=None)`) and fall back to the client's configured
 default when omitted — see [Client-level defaults](#client-level-defaults-project_id--file_area_id).
-List methods additionally accept `full_response=False` — see [`full_response`](#full_response).
+List methods additionally accept `full_response=False` (see [`full_response`](#full_response))
+and `to_dataframe=False` (see [`to_dataframe`](#to_dataframe)) — omitted from the signatures
+below for brevity.
 
 ### ProjectsApi
 

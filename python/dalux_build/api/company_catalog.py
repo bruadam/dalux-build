@@ -1,12 +1,15 @@
 """Company Catalog API."""
 
-from typing import Literal, overload
+from typing import TYPE_CHECKING, Literal, overload
 
 from ..api_client import ApiClient
 from ..json_types import JSONDict, JSONValue, QueryParams
 from ..models import CompaniesListResponse, CompanyResponse, ProjectCompany
-from ..response_converter import convert_to_list_response, convert_to_model
+from ..response_converter import convert_to_list_response, convert_to_model, to_dataframe_or_empty
 from ..utils.search import find_by_field
+
+if TYPE_CHECKING:
+    import pandas as pd
 
 
 class CompanyCatalogApi:
@@ -17,15 +20,33 @@ class CompanyCatalogApi:
 
     @overload
     def get_companies(
-        self, params: QueryParams | None = None, full_response: Literal[False] = False
+        self,
+        params: QueryParams | None = None,
+        full_response: Literal[False] = False,
+        to_dataframe: Literal[False] = False,
     ) -> list[ProjectCompany]: ...
     @overload
     def get_companies(
-        self, params: QueryParams | None = None, *, full_response: Literal[True]
+        self,
+        params: QueryParams | None = None,
+        *,
+        full_response: Literal[True],
+        to_dataframe: Literal[False] = False,
     ) -> CompaniesListResponse | None: ...
+    @overload
     def get_companies(
-        self, params: QueryParams | None = None, full_response: bool = False
-    ) -> CompaniesListResponse | list[ProjectCompany] | None:
+        self,
+        params: QueryParams | None = None,
+        full_response: bool = ...,
+        *,
+        to_dataframe: Literal[True],
+    ) -> "pd.DataFrame": ...
+    def get_companies(
+        self,
+        params: QueryParams | None = None,
+        full_response: bool = False,
+        to_dataframe: bool = False,
+    ) -> "CompaniesListResponse | list[ProjectCompany] | pd.DataFrame | None":
         """GET /2.2/companyCatalog — Companies in the catalog.
 
         Args:
@@ -33,13 +54,17 @@ class CompanyCatalogApi:
             full_response: If True, return the full CompaniesListResponse
                 (including metadata and links). If False (default), return
                 just the list of ProjectCompany items.
+            to_dataframe: If True, return the items flattened into a pandas
+                DataFrame (requires pandas). Takes precedence over full_response.
 
         Returns:
-            List of ProjectCompany items, or the full CompaniesListResponse
-            when full_response=True.
+            List of ProjectCompany items, the full CompaniesListResponse
+            when full_response=True, or a DataFrame when to_dataframe=True.
         """
         response = self._client.get("/2.2/companyCatalog", params=params)
         result = convert_to_list_response(response, CompaniesListResponse)
+        if to_dataframe:
+            return to_dataframe_or_empty(result)
         if full_response:
             return result
         return result.items if result is not None else []

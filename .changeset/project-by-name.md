@@ -1,5 +1,5 @@
 ---
-"dalux-build-api": minor
+"dalux-build-api": patch
 ---
 
 Return full Project object from get_project_by_name instead of just project ID.

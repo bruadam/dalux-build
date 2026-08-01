@@ -3,9 +3,9 @@ import path from "node:path";
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   output: "standalone",
-  outputFileTracingRoot: path.resolve(import.meta.dirname, "../.."),
+  outputFileTracingRoot: import.meta.dirname,
   turbopack: {
-    root: path.resolve(import.meta.dirname, "../.."),
+    root: import.meta.dirname,
   },
   webpack(config) {
     // dalux-build-api treats dotenv as optional. Runtime configuration is

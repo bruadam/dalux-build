@@ -47,6 +47,7 @@ from .webhook_server import WebhookServerApi
 class DaluxClient:
     """Container for all Dalux Build API namespaces."""
 
+    configuration: Configuration
     projects: ProjectsApi
     companies: CompaniesApi
     company_catalog: CompanyCatalogApi
@@ -64,6 +65,14 @@ class DaluxClient:
     version_sets: VersionSetsApi
     work_packages: WorkPackagesApi
     webhook_server: WebhookServerApi
+
+    def set_default_project(self, project_id: str) -> None:
+        """Set the default ``project_id`` used by API methods that accept one optionally."""
+        self.configuration.project_id = project_id
+
+    def set_default_file_area(self, file_area_id: str) -> None:
+        """Set the default ``file_area_id`` used by API methods that accept one optionally."""
+        self.configuration.file_area_id = file_area_id
 
 
 def create_client(
@@ -108,6 +117,7 @@ def create_client(
     api_client = ApiClient(configuration)
 
     return DaluxClient(
+        configuration=configuration,
         projects=ProjectsApi(api_client),
         companies=CompaniesApi(api_client),
         company_catalog=CompanyCatalogApi(api_client),

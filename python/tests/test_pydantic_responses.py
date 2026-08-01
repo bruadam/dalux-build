@@ -193,9 +193,10 @@ class TestProjectsPydantic:
             },
         )
         api = ProjectsApi(_make_client())
-        project_id = api.get_project_by_name("Project Two")
+        project = api.get_project_by_name("Project Two")
 
-        assert project_id == "p2"
+        assert isinstance(project, Project)
+        assert project.project_id == "p2"
 
 
 class TestFileAreasPydantic:

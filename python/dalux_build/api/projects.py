@@ -140,19 +140,18 @@ class ProjectsApi:
         project_id = resolve_project_id(project_id, self._client.configuration.project_id)
         return self._client.get(f"/1.0/projects/{project_id}/metadata/1.0/mappings/{key}/values")
 
-    def get_project_by_name(self, project_name: str) -> str | None:
-        """Get project ID by name.
+    def get_project_by_name(self, project_name: str) -> Project | None:
+        """Get a project by name.
 
         Args:
             project_name: Name of the project to search for.
 
         Returns:
-            The project ID if found, None otherwise.
+            The matching Project if found, None otherwise.
         """
         items = self.list_projects()
         if not items:
             return None
 
         # Use generic search utility - search by the Pydantic field name "project_name"
-        project = find_by_field(items, "project_name", project_name)
-        return project.project_id if project else None
+        return find_by_field(items, "project_name", project_name)

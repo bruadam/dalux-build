@@ -99,6 +99,34 @@ export default function Home() {
           credentials: creds,
         }),
       });
+
+      // Download methods respond with the raw file body (not JSON) on
+      // success; only their error path is JSON. Tell them apart by
+      // content-type rather than trusting methodSpec, since the server
+      // is the source of truth for what it actually sent back.
+      const contentType = res.headers.get('content-type') || '';
+      if (methodSpec.download && res.ok && !contentType.includes('application/json')) {
+        const blob = await res.blob();
+        const disposition = res.headers.get('content-disposition') || '';
+        const match = disposition.match(/filename="([^"]*)"/);
+        const filename = match ? decodeURIComponent(match[1]) : 'download';
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = filename;
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
+        URL.revokeObjectURL(url);
+        setResult({
+          ok: true,
+          data: { downloaded: filename, bytes: blob.size },
+          httpStatus: res.status,
+          clientMs: Date.now() - started,
+        });
+        return;
+      }
+
       const body = await res.json();
       setResult({ ...body, httpStatus: res.status, clientMs: Date.now() - started });
     } catch (e) {
@@ -171,6 +199,7 @@ export default function Home() {
             {selected.resource}.{selected.method}
           </h2>
           {methodSpec.write && <span className="warn-write">⚠ mutating</span>}
+          {methodSpec.download && <span className="pill ok">⬇ download</span>}
         </div>
         <p className="method-desc">{methodSpec.desc}</p>
 
@@ -203,7 +232,7 @@ export default function Home() {
 
         <div className="actions">
           <button className="run" onClick={run} disabled={loading}>
-            {loading ? 'Running…' : 'Send request'}
+            {loading ? 'Running…' : methodSpec.download ? 'Download' : 'Send request'}
           </button>
           {methodSpec.write && (
             <span className="warn-write">This performs a real write against the API.</span>

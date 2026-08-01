@@ -44,6 +44,9 @@ class ApiClient {
   _getErrorDetail(response) {
     try {
       const data = response.data;
+      if (Buffer.isBuffer(data) || data instanceof ArrayBuffer) {
+        return Buffer.from(data).toString('utf8').slice(0, 200);
+      }
       if (data && typeof data === 'object') {
         if (data.message) return data.message;
         if (data.error) return data.error;
@@ -76,11 +79,12 @@ class ApiClient {
    * Perform a GET request.
    * @param {string} path  - URL path (e.g. '/5.1/projects')
    * @param {object} [params] - Query string parameters
+   * @param {object} [config] - Extra axios config (e.g. { responseType: 'arraybuffer' } for binary content)
    * @returns {Promise<any>} Parsed response body
    */
-  async get(path, params = {}) {
+  async get(path, params = {}, config = {}) {
     try {
-      const response = await this._axios.get(path, { params });
+      const response = await this._axios.get(path, { params, ...config });
       return response.data;
     } catch (err) {
       this._handleAxiosError(err, path);

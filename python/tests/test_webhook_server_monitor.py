@@ -155,6 +155,53 @@ def test_freshness_empty_selection_is_not_compliant(tmp_path, monkeypatch):
     assert payload["violations"] == [{"reason": "emptySelection"}]
 
 
+def test_freshness_filters_files_to_selected_folders(tmp_path, monkeypatch):
+    store, _box, jobs, monitor, _scheduler = core(tmp_path)
+    request = FreshnessJobRequest(
+        projectId="p1",
+        fileAreaId="fa1",
+        daluxApiKey="secret",
+        cron="0 9 * * 1",
+        callback=CallbackConfig(url="https://n8n.example/fresh", authType="none"),
+        folderIds=["selected-folder"],
+        fileNameFilter=FileNameFilter(extensions=["ifc"]),
+        maxAge="P1D",
+    )
+    view, _ = jobs.create(request)
+    pages = [
+        {
+            "items": [
+                {
+                    "data": {
+                        "fileId": "selected",
+                        "folderId": "selected-folder",
+                        "fileName": "selected.ifc",
+                        "lastModified": datetime.now(timezone.utc).date().isoformat(),
+                    }
+                },
+                {
+                    "data": {
+                        "fileId": "other",
+                        "folderId": "other-folder",
+                        "fileName": "other.ifc",
+                        "lastModified": datetime.now(timezone.utc).date().isoformat(),
+                    }
+                },
+            ]
+        }
+    ]
+    monkeypatch.setattr("dalux_build.webhook_server.monitor.fetch_pages", lambda *args: pages)
+
+    monitor.run(store.get_job(view.job_id), datetime.now(timezone.utc))
+
+    payload = json.loads(store.pending_deliveries(utcnow())[0]["payload_json"])
+    assert payload["compliant"] is True
+    assert payload["filesChecked"] == 1
+    assert set(store.states(view.job_id)) == {"selected"}
+    config = json.loads(store.get_job(view.job_id)["config_json"])
+    assert config["folderIds"] == ["selected-folder"]
+
+
 def test_freshness_rejects_subday_duration():
     data = {
         "projectId": "p",

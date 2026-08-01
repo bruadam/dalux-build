@@ -12,11 +12,15 @@
 // This includes both the direct 1:1 endpoint wrappers AND the higher-level
 // convenience methods built on top of them (getAll* pagination helpers,
 // getFileAreaTree*, get*ByName/byPath resolvers) — the same surface the
-// Python client exposes. Methods that need a filesystem, stdin, or binary
-// streaming (bulk downloads, interactive file selection, chunked uploads,
-// raw revision content) are omitted because they don't make sense over a
-// stateless HTTP JSON console — they read/write the *server's* local disk
-// or block on a terminal prompt, not something a browser call fits into.
+// Python client exposes. Methods flagged `download: true` stream their
+// result to the browser as a file attachment (see app/api/call/route.js)
+// instead of the usual JSON response. Methods that need stdin, interactive
+// file selection, or chunked uploads are still omitted because they don't
+// make sense over a stateless HTTP console — they block on a terminal
+// prompt or require multi-step client-side chunking, not a single request.
+// Bulk download helpers (which write many files to the *server's* local
+// disk) are also omitted for the same reason single-file downloads used to
+// be: not something a stateless browser call fits into.
 
 const P = {
   projectId: { name: 'projectId', type: 'string', required: true, placeholder: 'e.g. 123456' },
@@ -83,6 +87,7 @@ export const catalog = {
       getAllFiles: { write: false, http: 'GET', desc: 'All files in a file area, following bookmark pagination until every page is retrieved.', params: [P.projectId, { name: 'fileAreaId', type: 'string', required: true }, P.query] },
       getAllFilesInFolder: { write: false, http: 'GET', desc: 'All files in a folder (paginates internally), by explicit folder ID or by a full path when folderId is left blank.', params: [P.projectId, { name: 'fileAreaIdOrPath', type: 'string', required: true, label: 'file area ID (or full path if folderId is blank)', placeholder: 'fa1 or "Files/4_Design/C07_Geometry"' }, { name: 'folderId', type: 'string', required: false, placeholder: 'leave blank when the previous field is a full path' }, P.query] },
       getFile: { write: false, http: 'GET', desc: 'File info by id (no download).', params: [P.projectId, { name: 'fileAreaId', type: 'string', required: true }, { name: 'fileId', type: 'string', required: true }] },
+      downloadFile: { write: false, http: 'GET', download: true, desc: 'Download a file\'s binary content to your browser.', params: [P.projectId, { name: 'fileAreaId', type: 'string', required: true }, { name: 'fileId', type: 'string', required: true }] },
       getFilePropertiesMapping: { write: false, http: 'GET', desc: 'Property mappings for a file.', params: [P.projectId, { name: 'fileAreaId', type: 'string', required: true }, { name: 'fileId', type: 'string', required: true }] },
       getFilePropertyMappingValues: { write: false, http: 'GET', desc: 'Allowed values for a file property.', params: [P.projectId, { name: 'fileAreaId', type: 'string', required: true }, { name: 'filePropertyId', type: 'string', required: true }] },
     },
@@ -99,6 +104,13 @@ export const catalog = {
       getFileAreaTreeByPath: { write: false, http: 'GET', desc: 'Resolve a folder path (e.g. "Folder1/Folder2", wildcards supported) to a folder ID.', params: [P.projectId, { name: 'fileAreaId', type: 'string', required: true }, { name: 'folderPath', type: 'string', required: true, placeholder: 'Folder1/SubFolder or */SubFolder' }] },
       getFileAreaTree: { write: false, http: 'GET', desc: 'Build the complete folder+file tree for a file area (fetches folders and files concurrently).', params: [P.projectId, { name: 'fileAreaId', type: 'string', required: true }] },
       getFolderFilesProperties: { write: false, http: 'GET', desc: 'File property definitions for a folder.', params: [P.projectId, { name: 'fileAreaId', type: 'string', required: true }, { name: 'folderId', type: 'string', required: true }] },
+    },
+  },
+
+  fileRevisions: {
+    label: 'File Revisions',
+    methods: {
+      downloadFileRevision: { write: false, http: 'GET', download: true, desc: 'Download the binary content of a specific file revision to your browser.', params: [P.projectId, { name: 'fileAreaId', type: 'string', required: true }, { name: 'fileId', type: 'string', required: true }, { name: 'fileRevisionId', type: 'string', required: true }] },
     },
   },
 

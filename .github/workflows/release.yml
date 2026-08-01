@@ -7,8 +7,9 @@
 #   - if changesets are pending, `changesets/action` opens/updates a
 #     "Version Packages" PR that runs `npm run version`, which bumps
 #     javascript/package.json + javascript/CHANGELOG.md via `changeset
-#     version` and then syncs python/pyproject.toml + python/CHANGELOG.md to
-#     match (scripts/sync-python-version.mjs).
+#     version` and then syncs python/pyproject.toml,
+#     python/dalux_build/__init__.py, and python/CHANGELOG.md to match
+#     (scripts/sync-python-version.mjs).
 #   - once that PR is merged (no changesets left, version already bumped),
 #     it runs `npm run release` (tests the javascript workspace, then
 #     `changeset publish`), which publishes to npm. A GitHub Release and the

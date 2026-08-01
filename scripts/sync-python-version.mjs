@@ -3,7 +3,8 @@
 // (javascript/) after `changeset version` bumps javascript/package.json and
 // writes javascript/CHANGELOG.md. Run as part of the `version` script so
 // both packages ship the same release number and the same release notes:
-//   1. Copies the new version into python/pyproject.toml.
+//   1. Copies the new version into python/pyproject.toml and the package's
+//      public `dalux_build.__version__` attribute.
 //   2. Mirrors the newest `## X.Y.Z` section of javascript/CHANGELOG.md into
 //      python/CHANGELOG.md, retitled for the Python package. Idempotent:
 //      re-running before the version PR is merged (e.g. a second changeset
@@ -32,6 +33,21 @@ if (!versionLineRe.test(pyproject)) {
 
 writeFileSync(pyprojectPath, pyproject.replace(versionLineRe, `version = "${version}"`));
 console.log(`python/pyproject.toml -> ${version}`);
+
+const pythonInitPath = join(rootDir, "python", "dalux_build", "__init__.py");
+const pythonInit = readFileSync(pythonInitPath, "utf8");
+const pythonVersionRe = /^__version__ = ".*"$/m;
+
+if (!pythonVersionRe.test(pythonInit)) {
+  console.error('python/dalux_build/__init__.py: no `__version__ = "..."` line was found to update');
+  process.exit(1);
+}
+
+writeFileSync(
+  pythonInitPath,
+  pythonInit.replace(pythonVersionRe, `__version__ = "${version}"`),
+);
+console.log(`python/dalux_build/__init__.py -> ${version}`);
 
 /** Returns { heading, section } for the first `## ` block in a changelog, or null. */
 function firstSection(markdown) {

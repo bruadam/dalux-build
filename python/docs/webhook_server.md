@@ -32,6 +32,7 @@ freshness_id = dalux.webhook_server.register_freshness_job(
     project_id="p1",
     file_area_id="fa1",
     cron="0 9 * * 1",
+    folder_ids=["coordination-folder-id"],
     file_name_filter=FileNameFilter(extensions=["ifc"]),
     max_age="P1D",
     callback_url="https://n8n.example/webhook/freshness",

@@ -169,15 +169,18 @@ class Monitor:
             return delivery_id if payload else None
 
         rules = cast(JSONDict, config["fileNameFilter"])
+        folder_ids = {str(value) for value in cast(list[object], config.get("folderIds", []))}
         current = {
             fid: data
             for fid, data in current_all.items()
-            if _matches(str(data.get("fileName", "")), rules)
+            if (not folder_ids or str(data.get("folderId", "")) in folder_ids)
+            and _matches(str(data.get("fileName", "")), rules)
         }
         previously_matching = {
             fid: data
             for fid, data in previous.items()
-            if _matches(str(data.get("fileName", "")), rules)
+            if (not folder_ids or str(data.get("folderId", "")) in folder_ids)
+            and _matches(str(data.get("fileName", "")), rules)
         }
         days = int(str(config["maxAge"])[1:-1])
         local_date = checked.astimezone(ZoneInfo(row["timezone"])).date()

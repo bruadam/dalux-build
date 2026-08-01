@@ -15,7 +15,7 @@ services:
     ports:
       - "8000:8000"
     environment:
-      DALUX_BASE_URL: ${DALUX_BASE_URL:-}
+      DALUX_BASE_URL: ${DALUX_BASE_URL:-https://node1.field.dalux.com/service/api/}
       MONITOR_API_TOKEN_FILE: /run/secrets/monitor_api_token
       MONITOR_MASTER_KEY_FILE: /run/secrets/monitor_master_key
       MONITOR_TIMEZONE: ${MONITOR_TIMEZONE:-UTC}
@@ -25,6 +25,24 @@ services:
     secrets:
       - monitor_api_token
       - monitor_master_key
+    restart: unless-stopped
+
+  ui:
+    build:
+      context: ..
+      dockerfile: webhook-server/ui/Dockerfile
+    image: dalux-webhook-ui:latest
+    ports:
+      - "3000:3000"
+    environment:
+      DALUX_BASE_URL: ${DALUX_BASE_URL:-https://node1.field.dalux.com/service/api/}
+      MONITOR_INTERNAL_URL: http://monitor:8000
+      MONITOR_API_TOKEN_FILE: /run/secrets/monitor_api_token
+    secrets:
+      - monitor_api_token
+    depends_on:
+      monitor:
+        condition: service_healthy
     restart: unless-stopped
 
 secrets:

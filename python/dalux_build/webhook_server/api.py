@@ -133,6 +133,7 @@ class WebhookServerApi:
         callback_url: str,
         file_name_filter: FileNameFilter,
         max_age: str,
+        folder_ids: list[str] | None = None,
         timezone: str | None = None,
         callback_auth_type: str = "none",
         callback_secret: str | None = None,
@@ -158,6 +159,7 @@ class WebhookServerApi:
                     "authType": callback_auth_type,
                     "secret": callback_secret,
                 },
+                "folderIds": folder_ids or [],
                 "fileNameFilter": file_name_filter,
                 "maxAge": max_age,
             }

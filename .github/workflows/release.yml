@@ -26,6 +26,7 @@ name: Release
 on:
   push:
     branches: [main]
+  workflow_dispatch:
 
 concurrency:
   group: release-${{ github.ref }}
@@ -45,6 +46,7 @@ jobs:
   release:
     name: Version or publish npm package
     needs: test
+    if: github.event_name == 'push'
     runs-on: ubuntu-latest
     timeout-minutes: 15
     environment:
@@ -97,8 +99,11 @@ jobs:
 
   publish-python:
     name: Publish Python package
-    needs: release
-    if: needs.release.outputs.published == 'true'
+    needs: [test, release]
+    if: >-
+      always() &&
+      needs.test.result == 'success' &&
+      (needs.release.outputs.published == 'true' || github.event_name == 'workflow_dispatch')
     runs-on: ubuntu-latest
     timeout-minutes: 15
     permissions:
@@ -119,7 +124,7 @@ jobs:
 
       - name: Install dependencies
         working-directory: python
-        run: pip install -e ".[dev]" build
+        run: pip install -e ".[dev,webhook]" build
 
       - name: Run tests
         working-directory: python

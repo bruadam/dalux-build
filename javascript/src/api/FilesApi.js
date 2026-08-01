@@ -162,6 +162,26 @@ class FilesApi {
   }
 
   /**
+   * Fetch a file's raw bytes from a direct download URL using X-API-KEY, without
+   * writing to disk. Useful when the caller needs to relay the content onward
+   * (e.g. as an HTTP response body) rather than save it to a local filesystem.
+   * @param {string} downloadLink
+   * @returns {Promise<{ buffer: Buffer, contentType: string|undefined }>}
+   */
+  async downloadFileBuffer(downloadLink) {
+    const apiKey = this._client.configuration.apiKey;
+    const response = await axios.get(downloadLink, {
+      headers: { 'X-API-KEY': apiKey },
+      responseType: 'arraybuffer',
+      validateStatus: () => true,
+    });
+    if (response.status !== 200) {
+      throw new Error(`Failed to download file. Status code: ${response.status}`);
+    }
+    return { buffer: Buffer.from(response.data), contentType: response.headers['content-type'] };
+  }
+
+  /**
    * Get a file by IDs or by full path.
    *
    * Supports two call styles matching the Python client:

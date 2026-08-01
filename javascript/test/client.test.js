@@ -610,12 +610,13 @@ describe('FileRevisionsApi', () => {
 
   afterEach(() => mock.restore());
 
-  it('getFileRevisionContent calls correct URL', async () => {
+  it('getFileRevisionContent calls correct URL and returns raw bytes', async () => {
     mock
       .onGet('/2.0/projects/p1/file_areas/fa1/files/f1/revisions/r1/content')
       .reply(200, Buffer.from('pdf-content'));
     const result = await api.getFileRevisionContent('p1', 'fa1', 'f1', 'r1');
-    expect(result).toBeDefined();
+    expect(result).toBeInstanceOf(Buffer);
+    expect(result.toString('utf8')).toBe('pdf-content');
   });
 });
 
@@ -1103,6 +1104,57 @@ describe('FilesApi.bulkDownloadFiles', () => {
     });
     const result = await api.bulkDownloadFiles('p1', ['file1'], 'fa1', undefined, { verbose: false });
     expect(result).toHaveLength(0);
+  });
+});
+
+// ---------- FilesApi – downloadFileBuffer ----------
+
+describe('FilesApi.downloadFileBuffer', () => {
+  let mock;
+  let api;
+
+  beforeEach(() => {
+    const { apiClient, mock: m } = createMockedClient();
+    mock = m;
+    api = new FilesApi(apiClient);
+  });
+
+  afterEach(() => mock.restore());
+
+  it('fetches bytes from the download link without writing to disk', async () => {
+    const axiosMod = require('axios');
+    const dlSpy = jest.spyOn(axiosMod, 'get').mockResolvedValue({
+      status: 200,
+      data: Buffer.from('hello'),
+      headers: { 'content-type': 'application/pdf' },
+    });
+    try {
+      const { buffer, contentType } = await api.downloadFileBuffer('https://files.example/download/1');
+      expect(buffer).toBeInstanceOf(Buffer);
+      expect(buffer.toString('utf8')).toBe('hello');
+      expect(contentType).toBe('application/pdf');
+      expect(dlSpy).toHaveBeenCalledWith(
+        'https://files.example/download/1',
+        expect.objectContaining({
+          headers: { 'X-API-KEY': API_KEY },
+          responseType: 'arraybuffer',
+        }),
+      );
+    } finally {
+      dlSpy.mockRestore();
+    }
+  });
+
+  it('throws when the download link returns a non-200 status', async () => {
+    const axiosMod = require('axios');
+    const dlSpy = jest.spyOn(axiosMod, 'get').mockResolvedValue({ status: 403, data: Buffer.from('') });
+    try {
+      await expect(api.downloadFileBuffer('https://files.example/download/1')).rejects.toThrow(
+        'Failed to download file. Status code: 403',
+      );
+    } finally {
+      dlSpy.mockRestore();
+    }
   });
 });
 

@@ -1,6 +1,13 @@
 # ── Node.js ──────────────────────────────────────────────
 node_modules/
 coverage/
+.next/
+.turbo/
+.vercel/
+out/
+dist/
+build/
+*.tsbuildinfo
 *.tgz
 
 # ── Python build ─────────────────────────────────────────
@@ -25,6 +32,7 @@ python/build/
 *.env
 .pypirc
 .npmrc
+!webhook-server/ui/.npmrc
 
 # ── Editor / OS ──────────────────────────────────────────
 .vscode/
@@ -42,6 +50,8 @@ Thumbs.db
 *.pdf
 *.jpg
 *.png
+!webhook-server/ui/public/
+!webhook-server/ui/public/*.png
 *.docx
 *.html
 

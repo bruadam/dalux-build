@@ -52,6 +52,7 @@ class Jobs:
             }
             if isinstance(request, ChangeJobRequest)
             else {
+                "folderIds": request.folder_ids,
                 "fileNameFilter": request.file_name_filter.model_dump(exclude_none=True),
                 "maxAge": request.max_age,
             }

@@ -35,6 +35,35 @@ class HttpError extends Error {
   }
 }
 
+// Resolves a `download: true` catalog method into raw bytes + a filename.
+// Kept separate from the generic dispatch above since these need a second
+// request (fetch metadata, then fetch the actual bytes) rather than a
+// single 1:1 client call.
+async function runDownload(client, resource, method, args) {
+  if (resource === 'files' && method === 'downloadFile') {
+    const [projectId, fileAreaId, fileId] = args;
+    const fileInfo = await client.files.getFile(projectId, fileAreaId, fileId);
+    const data = fileInfo && (fileInfo.data || fileInfo);
+    const downloadLink = data && data.downloadLink;
+    if (!downloadLink) {
+      throw new HttpError(404, `File ${fileId} has no downloadLink`);
+    }
+    const filename = (data && (data.fileName || data.file_name)) || fileId;
+    const { buffer, contentType } = await client.files.downloadFileBuffer(downloadLink);
+    return { buffer, filename, contentType };
+  }
+
+  if (resource === 'fileRevisions' && method === 'downloadFileRevision') {
+    const [projectId, fileAreaId, fileId, fileRevisionId] = args;
+    const buffer = await client.fileRevisions.getFileRevisionContent(
+      projectId, fileAreaId, fileId, fileRevisionId,
+    );
+    return { buffer, filename: `${fileId}-${fileRevisionId}`, contentType: 'application/octet-stream' };
+  }
+
+  throw new HttpError(400, `No download handler wired up for "${resource}.${method}"`);
+}
+
 export async function POST(request) {
   let payload;
   try {
@@ -114,6 +143,19 @@ export async function POST(request) {
     if (resource === 'folders' && method === 'getFileAreaTree') {
       args = [args[0], args[1], client.files];
     }
+
+    if (methodSpec.download) {
+      const { buffer, filename, contentType } = await runDownload(client, resource, method, args);
+      return new NextResponse(buffer, {
+        status: 200,
+        headers: {
+          'Content-Type': contentType || 'application/octet-stream',
+          'Content-Disposition': `attachment; filename="${encodeURIComponent(filename)}"`,
+          'X-Duration-Ms': String(Date.now() - started),
+        },
+      });
+    }
+
     const data = await client[resource][method](...args);
     return NextResponse.json({
       ok: true,

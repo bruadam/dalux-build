@@ -58,6 +58,7 @@ class ChangeJobRequest(JobBaseRequest):
 
 
 class FreshnessJobRequest(JobBaseRequest):
+    folder_ids: list[str] = Field(default_factory=list, alias="folderIds")
     file_name_filter: FileNameFilter = Field(alias="fileNameFilter")
     max_age: str = Field(alias="maxAge", pattern=r"^P[1-9][0-9]*D$")
 

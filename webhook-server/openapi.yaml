@@ -107,6 +107,7 @@ paths:
                   daluxApiKey: dalux-api-key
                   cron: "0 9 * * 1"
                   timezone: Europe/Copenhagen
+                  folderIds: [coordination-folder-id]
                   fileNameFilter:
                     contains: [coordination]
                     extensions: [ifc]
@@ -405,6 +406,11 @@ components:
         - type: object
           required: [fileNameFilter, maxAge]
           properties:
+            folderIds:
+              type: array
+              description: Folder IDs to include. An empty or omitted array includes the entire file area.
+              items:
+                type: string
             fileNameFilter:
               $ref: "#/components/schemas/FileNameFilter"
             maxAge:

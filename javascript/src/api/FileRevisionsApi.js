@@ -20,11 +20,13 @@ class FileRevisionsApi {
    * @param {string} fileRevisionId
    * @returns {Promise<Buffer>} Raw binary content
    */
-  getFileRevisionContent(projectId, fileAreaId, fileId, fileRevisionId) {
-    return this._client.get(
+  async getFileRevisionContent(projectId, fileAreaId, fileId, fileRevisionId) {
+    const data = await this._client.get(
       `/2.0/projects/${projectId}/file_areas/${fileAreaId}/files/${fileId}/revisions/${fileRevisionId}/content`,
       {},
+      { responseType: 'arraybuffer' },
     );
+    return Buffer.from(data);
   }
 }
 

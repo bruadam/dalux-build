@@ -29,7 +29,9 @@ repository-root virtual environment, use `uv sync --active --extra dev` and
 run `python -m dalux_webhook` directly.
 
 For Docker, run the setup profile before starting the monitor. Terminate TLS at
-a reverse proxy in front of port 8000.
+a reverse proxy in front of the management API on port 8000 and the registration
+UI on port 3000. The UI intentionally has no separate login screen, so protect
+port 3000 with your reverse proxy's authentication and do not expose it publicly.
 
 The complete management API and outbound webhook payload contract is available
 in [`openapi.yaml`](openapi.yaml). A running server also exposes FastAPI's
@@ -48,6 +50,19 @@ docker compose up --build -d
 docker compose logs -f monitor
 ```
 
+Open `http://localhost:3000` to register a webhook with the guided interface.
+It connects to Dalux through a server-side proxy, lets you browse projects,
+file areas, folders, and files, and registers change or freshness jobs with the
+monitor over the private Compose network. The UI reads the management token
+from the same Docker secret as the monitor; it never sends that token to the
+browser. `DALUX_BASE_URL` defaults to
+`https://node1.field.dalux.com/service/api/` and can be changed in the UI for
+an individual job.
+
+For UI development outside Docker, run `npm install && npm run dev` in
+`webhook-server/ui` and set `MONITOR_API_TOKEN` plus, if needed,
+`MONITOR_INTERNAL_URL` (defaults to `http://127.0.0.1:8000`).
+
 The setup command preserves existing credentials, updates their `.env` entries,
 and synchronizes Compose-mounted copies under `secrets/`, all with `0600`
 permissions. The mounted files keep credential values out of `docker inspect`.
@@ -61,7 +76,8 @@ curl http://localhost:8000/healthz
 
 The management bearer token is `MONITOR_API_TOKEN` in `.env`. The Dalux API key
 is not a server-wide secret; send it in each job registration, where it is
-encrypted before storage.
+encrypted before storage. The registration UI holds the key only in page memory
+while browsing and passes it to the monitor when you submit the job.
 
 For n8n, create and activate a Webhook node before registering its production
 URL as `callback.url`. If n8n runs outside this container, do not use
@@ -107,14 +123,18 @@ curl -X POST http://localhost:8000/jobs/freshness \
     "daluxApiKey": "dalux-api-key",
     "cron": "0 9 * * 1",
     "timezone": "Europe/Copenhagen",
+    "folderIds": ["coordination-folder-id"],
     "fileNameFilter": {"extensions": ["ifc"], "contains": ["coordination"]},
     "maxAge": "P1D",
     "callback": {"url": "https://n8n.example/webhook/freshness"}
   }'
 ```
 
-Freshness jobs always emit `compliant` plus violations. `maxAge` accepts whole
-days only because Dalux reports `lastModified` at date precision.
+Freshness jobs always emit `compliant` plus violations. Use `folderIds` to
+apply filename filters only to selected folders; omit it or send an empty array
+to include the whole file area. `maxAge` accepts whole days only because Dalux
+reports `lastModified` at date precision. The registration UI previews the
+matching files before schedule and delivery fields become available.
 
 Delete a job with authenticated `DELETE /jobs/{jobId}`. `GET /healthz` is an
 unauthenticated liveness endpoint and includes the failed-delivery count.
@@ -131,6 +151,8 @@ The service sends a realistic event with `"test": true` and returns its
 delivery ID plus n8n's HTTP status. For an n8n Test URL, configure that URL on
 the job and click **Listen for test event** before calling this endpoint. For a
 Production URL, set the n8n Webhook node to `POST` and activate the workflow.
+After creating a job, the registration UI provides actions to send this test
+event or delete the job and its saved state.
 
 Callback authentication can be `none`, `bearer`, or `hmac-sha256`. HMAC uses
 the exact JSON body and the `X-Webhook-Signature: sha256=<hex>` header. Every

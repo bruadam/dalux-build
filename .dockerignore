@@ -3,6 +3,8 @@
 !python/**
 !webhook-server/
 !webhook-server/**
+!javascript/
+!javascript/**
 python/.venv
 python/**/__pycache__
 python/.pytest_cache
@@ -19,3 +21,7 @@ webhook-server/tests
 webhook-server/secrets
 webhook-server/data
 webhook-server/*.sqlite3
+javascript/node_modules
+javascript/coverage
+webhook-server/ui/node_modules
+webhook-server/ui/.next

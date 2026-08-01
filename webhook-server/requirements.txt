@@ -1,1 +1,1 @@
-dalux-build[webhook]>=1.1.6
+dalux-build[webhook]>=2.0.0

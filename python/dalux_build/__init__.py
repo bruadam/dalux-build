@@ -10,32 +10,35 @@ Quickstart::
 """
 
 from dataclasses import dataclass
-from typing import Any
-
-from .api_client import ApiClient
-from .configuration import Configuration
-from .utils import (
-    DaluxError, NotFoundError, ApiError, ValidationError,
-    paginate, find_by_field, find_all_by_field
-)
 
 from .api import (
     CompaniesApi,
     CompanyCatalogApi,
     FileAreasApi,
     FileRevisionsApi,
-    FileUploadApi,
     FilesApi,
+    FileUploadApi,
     FoldersApi,
     FormsApi,
     InspectionPlansApi,
-    ProjectTemplatesApi,
     ProjectsApi,
+    ProjectTemplatesApi,
     TasksApi,
     TestPlansApi,
     UsersApi,
     VersionSetsApi,
     WorkPackagesApi,
+)
+from .api_client import ApiClient
+from .configuration import Configuration
+from .utils import (
+    ApiError,
+    DaluxError,
+    NotFoundError,
+    ValidationError,
+    find_all_by_field,
+    find_by_field,
+    paginate,
 )
 from .webhook_server import WebhookServerApi
 
@@ -63,12 +66,23 @@ class DaluxClient:
     webhook_server: WebhookServerApi
 
 
-def create_client(base_url: str = None, api_key: str = None) -> DaluxClient:
+def create_client(
+    base_url: str | None = None,
+    api_key: str | None = None,
+    project_id: str | None = None,
+    file_area_id: str | None = None,
+) -> DaluxClient:
     """Create a fully configured Dalux Build API client.
 
     Args:
         base_url: The API base URL. If not provided, loads from DALUX_BASE_URL env var.
         api_key: Your ``X-API-KEY``. If not provided, loads from DALUX_API_KEY env var.
+        project_id: Default project ID. When set, API methods that accept an
+            optional ``project_id`` keyword argument fall back to this value.
+            If not provided, loads from the DALUX_PROJECT_ID env var.
+        file_area_id: Default file area ID. When set, API methods that accept
+            an optional ``file_area_id`` keyword argument fall back to this
+            value. If not provided, loads from the DALUX_FILE_AREA_ID env var.
 
     Returns:
         A :class:`DaluxClient` with one attribute per API resource group.
@@ -82,10 +96,15 @@ def create_client(base_url: str = None, api_key: str = None) -> DaluxClient:
         dalux = create_client(
             base_url="https://<company>.dalux.com/api",
             api_key="YOUR_API_KEY",
+            project_id="S123",
         )
+        # project_id is now optional on every endpoint that accepts it
         projects = dalux.projects.list_projects()
+        file_areas = dalux.file_areas.get_file_areas()
     """
-    configuration = Configuration(base_url=base_url, api_key=api_key)
+    configuration = Configuration(
+        base_url=base_url, api_key=api_key, project_id=project_id, file_area_id=file_area_id
+    )
     api_client = ApiClient(configuration)
 
     return DaluxClient(
@@ -108,8 +127,9 @@ def create_client(base_url: str = None, api_key: str = None) -> DaluxClient:
         webhook_server=WebhookServerApi(api_client),
     )
 
+
 # Version information
-__version__ = "0.2.0"
+__version__ = "2.0.0"
 
 __all__ = [
     "create_client",
@@ -136,7 +156,7 @@ __all__ = [
     # Utilities
     "DaluxError",
     "NotFoundError",
-    "ApiError", 
+    "ApiError",
     "ValidationError",
     "paginate",
     "find_by_field",

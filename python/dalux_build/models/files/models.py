@@ -1,8 +1,10 @@
 """Data models for Files endpoint."""
-from datetime import date
-from typing import Any, List, Literal, Optional
 
-from pydantic import BaseModel, Field
+import datetime
+from datetime import date
+from typing import Literal
+
+from pydantic import BaseModel, ConfigDict, Field, JsonValue
 
 
 class Reference(BaseModel):
@@ -11,44 +13,44 @@ class Reference(BaseModel):
     key: str
     value: str
 
-    class Config:
-        populate_by_name = True
+    model_config = ConfigDict(populate_by_name=True)
 
 
 class FileIntegerProperty(BaseModel):
     """File integer property model."""
 
-    integer: Optional[float] = None
+    integer: float | None = None
 
-    class Config:
-        populate_by_name = True
+    model_config = ConfigDict(populate_by_name=True)
 
 
 class FileDateProperty(BaseModel):
     """File date property model."""
 
-    date: Optional[date] = None
+    # Annotated with `datetime.date` (not the bare `date` import) because the
+    # field is also named `date`: in a class body, the `= None` default is
+    # stored under the name `date` *before* the annotation `date | None` is
+    # evaluated, so a bare `date | None` here resolves to `None | None` and
+    # raises TypeError at class-definition time.
+    date: datetime.date | None = None
 
-    class Config:
-        populate_by_name = True
+    model_config = ConfigDict(populate_by_name=True)
 
 
 class FileTextProperty(BaseModel):
     """File text property model."""
 
-    text: Optional[str] = None
+    text: str | None = None
 
-    class Config:
-        populate_by_name = True
+    model_config = ConfigDict(populate_by_name=True)
 
 
 class FileReferenceProperty(BaseModel):
     """File reference property model."""
 
-    reference: Optional[Reference] = None
+    reference: Reference | None = None
 
-    class Config:
-        populate_by_name = True
+    model_config = ConfigDict(populate_by_name=True)
 
 
 class FilePropertyField(BaseModel):
@@ -56,50 +58,47 @@ class FilePropertyField(BaseModel):
 
     key: str
     name: str
-    values: Optional[List[Any]] = None
+    values: list[JsonValue] | None = None
 
-    class Config:
-        populate_by_name = True
+    model_config = ConfigDict(populate_by_name=True)
 
 
 class FileNameFilter(BaseModel):
     """Case-insensitive file name filter rules."""
 
-    contains: Optional[List[str]] = None
+    contains: list[str] | None = None
     contains_match: Literal["any", "all"] = "any"
-    not_contains: Optional[List[str]] = None
-    startswith: Optional[List[str]] = None
-    not_startswith: Optional[List[str]] = None
-    endswith: Optional[List[str]] = None
-    not_endswith: Optional[List[str]] = None
-    extensions: Optional[List[str]] = None
-    not_extensions: Optional[List[str]] = None
+    not_contains: list[str] | None = None
+    startswith: list[str] | None = None
+    not_startswith: list[str] | None = None
+    endswith: list[str] | None = None
+    not_endswith: list[str] | None = None
+    extensions: list[str] | None = None
+    not_extensions: list[str] | None = None
 
-    class Config:
-        populate_by_name = True
+    model_config = ConfigDict(populate_by_name=True)
 
 
 class File(BaseModel):
     """File model."""
 
     file_id: str = Field(..., alias="fileId")
-    file_revision_id: Optional[str] = Field(None, alias="fileRevisionId")
+    file_revision_id: str | None = Field(None, alias="fileRevisionId")
     file_name: str = Field(..., alias="fileName")
     file_area_id: str = Field(..., alias="fileAreaId")
-    folder_id: Optional[str] = Field(None, alias="folderId")
-    uploaded_by_user_id: Optional[str] = Field(None, alias="uploadedByUserId")
-    uploaded: Optional[date] = None
-    last_modified_by_user_id: Optional[str] = Field(None, alias="lastModifiedByUserId")
-    last_modified: Optional[date] = Field(None, alias="lastModified")
-    version: Optional[str] = None
-    deleted: Optional[bool] = False
-    file_type: Optional[str] = Field(None, alias="fileType")
-    file_size: Optional[int] = Field(None, alias="fileSize")
-    content_hash: Optional[str] = Field(None, alias="contentHash")
-    download_link: Optional[str] = Field(None, alias="downloadLink")
-    properties: Optional[List[FilePropertyField]] = None
-    saved_file_path: Optional[str] = None
-    saved_metadata_path: Optional[str] = None
+    folder_id: str | None = Field(None, alias="folderId")
+    uploaded_by_user_id: str | None = Field(None, alias="uploadedByUserId")
+    uploaded: date | None = None
+    last_modified_by_user_id: str | None = Field(None, alias="lastModifiedByUserId")
+    last_modified: date | None = Field(None, alias="lastModified")
+    version: str | None = None
+    deleted: bool | None = False
+    file_type: str | None = Field(None, alias="fileType")
+    file_size: int | None = Field(None, alias="fileSize")
+    content_hash: str | None = Field(None, alias="contentHash")
+    download_link: str | None = Field(None, alias="downloadLink")
+    properties: list[FilePropertyField] | None = None
+    saved_file_path: str | None = None
+    saved_metadata_path: str | None = None
 
-    class Config:
-        populate_by_name = True
+    model_config = ConfigDict(populate_by_name=True)

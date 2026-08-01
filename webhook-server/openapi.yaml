@@ -1,0 +1,571 @@
+openapi: 3.1.0
+info:
+  title: Dalux Scheduled Monitor API
+  version: 1.0.0
+  description: |
+    Register and delete persistent cron jobs that poll Dalux file metadata and
+    deliver outbound webhook batches. Dalux credentials and callback secrets
+    are write-only and encrypted at rest.
+servers:
+  - url: http://localhost:8000
+    description: Local Docker deployment
+tags:
+  - name: Health
+  - name: Jobs
+paths:
+  /healthz:
+    get:
+      tags: [Health]
+      operationId: getHealth
+      summary: Check process and scheduler health
+      security: []
+      responses:
+        "200":
+          description: Current health state
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Health"
+  /jobs/change:
+    post:
+      tags: [Jobs]
+      operationId: createChangeJob
+      summary: Register a scheduled file-change monitor
+      description: |
+        The first successful poll either establishes a silent baseline or emits
+        all current non-deleted matches, according to `initialRun`. Later polls
+        deliver a webhook only when the diff is non-empty.
+      security:
+        - MONITOR_API_TOKEN: []
+      parameters:
+        - $ref: "#/components/parameters/IdempotencyKey"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ChangeJobRequest"
+            examples:
+              selectedFiles:
+                value:
+                  name: Coordination models
+                  projectId: project-id
+                  fileAreaId: file-area-id
+                  daluxApiKey: dalux-api-key
+                  cron: "*/15 * * * *"
+                  timezone: Europe/Copenhagen
+                  scope:
+                    mode: fileIds
+                    fileIds: [file-id-1, file-id-2]
+                  initialRun: baseline
+                  callback:
+                    url: https://n8n.example/webhook/dalux-files
+                    authType: hmac-sha256
+                    secret: callback-signing-secret
+      responses:
+        "201":
+          description: Job created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Job"
+        "200":
+          description: Existing job returned for the same Idempotency-Key
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Job"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "422":
+          $ref: "#/components/responses/ValidationError"
+  /jobs/freshness:
+    post:
+      tags: [Jobs]
+      operationId: createFreshnessJob
+      summary: Register a scheduled filename-filtered freshness check
+      description: |
+        Every successful poll sends a result. A job is compliant only when at
+        least one file matches and every matching file was modified within the
+        whole-day `maxAge` window.
+      security:
+        - MONITOR_API_TOKEN: []
+      parameters:
+        - $ref: "#/components/parameters/IdempotencyKey"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/FreshnessJobRequest"
+            examples:
+              weeklyIfcCheck:
+                value:
+                  name: Weekly coordination freshness
+                  projectId: project-id
+                  fileAreaId: file-area-id
+                  daluxApiKey: dalux-api-key
+                  cron: "0 9 * * 1"
+                  timezone: Europe/Copenhagen
+                  fileNameFilter:
+                    contains: [coordination]
+                    extensions: [ifc]
+                  maxAge: P1D
+                  callback:
+                    url: https://n8n.example/webhook/dalux-freshness
+                    authType: bearer
+                    secret: n8n-webhook-token
+      responses:
+        "201":
+          description: Job created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Job"
+        "200":
+          description: Existing job returned for the same Idempotency-Key
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Job"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "422":
+          $ref: "#/components/responses/ValidationError"
+  /jobs/{job_id}:
+    delete:
+      tags: [Jobs]
+      operationId: deleteJob
+      summary: Delete a monitor job and its persisted state
+      description: Deletion is idempotent and also removes pending deliveries.
+      security:
+        - MONITOR_API_TOKEN: []
+      parameters:
+        - name: job_id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "204":
+          description: Job is absent after the request
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+  /jobs/{job_id}/test:
+    post:
+      tags: [Jobs]
+      operationId: testJobWebhook
+      summary: Send a sample event to an existing job's callback
+      description: |
+        Uses the job's saved callback URL and authentication. The payload is
+        marked `test: true` and does not poll Dalux, alter snapshots, or enter
+        the retry outbox.
+      security:
+        - MONITOR_API_TOKEN: []
+      parameters:
+        - name: job_id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: Callback accepted the test event
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TestWebhookResponse"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          description: Job not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "502":
+          description: The configured callback rejected the event or was unreachable
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+webhooks:
+  fileChanges:
+    post:
+      operationId: receiveFileChanges
+      summary: Change event sent to a job's callback URL
+      parameters:
+        - $ref: "#/components/parameters/DeliveryId"
+        - $ref: "#/components/parameters/WebhookSignature"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/FileChangeEvent"
+      responses:
+        "2XX":
+          description: Any successful status accepts the delivery
+  freshnessResult:
+    post:
+      operationId: receiveFreshnessResult
+      summary: Freshness result sent to a job's callback URL
+      parameters:
+        - $ref: "#/components/parameters/DeliveryId"
+        - $ref: "#/components/parameters/WebhookSignature"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/FreshnessEvent"
+      responses:
+        "2XX":
+          description: Any successful status accepts the delivery
+components:
+  securitySchemes:
+    MONITOR_API_TOKEN:
+      type: http
+      scheme: bearer
+      bearerFormat: MONITOR_API_TOKEN
+      description: Paste only the MONITOR_API_TOKEN value; the Bearer prefix is added automatically.
+  parameters:
+    IdempotencyKey:
+      name: Idempotency-Key
+      in: header
+      required: false
+      description: Reusing a value returns the previously created job instead of creating another.
+      schema:
+        type: string
+        minLength: 1
+    DeliveryId:
+      name: X-Delivery-ID
+      in: header
+      required: true
+      description: Stable across retries; use this value for n8n deduplication.
+      schema:
+        type: string
+        format: uuid
+    WebhookSignature:
+      name: X-Webhook-Signature
+      in: header
+      required: false
+      description: Present for hmac-sha256 callbacks as `sha256=<hex digest>`.
+      schema:
+        type: string
+        pattern: "^sha256=[a-f0-9]{64}$"
+  responses:
+    Unauthorized:
+      description: Missing or invalid management bearer token
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+    ValidationError:
+      description: Invalid request, cron expression, timezone, scope, filter, or duration
+      content:
+        application/json:
+          schema:
+            oneOf:
+              - $ref: "#/components/schemas/Error"
+              - $ref: "#/components/schemas/FastApiValidationError"
+  schemas:
+    Health:
+      type: object
+      required: [status, schedulerRunning, failedDeliveries]
+      properties:
+        status:
+          type: string
+          enum: [ok, starting]
+        schedulerRunning:
+          type: boolean
+        failedDeliveries:
+          type: integer
+          minimum: 0
+    Callback:
+      type: object
+      required: [url]
+      properties:
+        url:
+          type: string
+          format: uri
+        authType:
+          type: string
+          enum: [none, bearer, hmac-sha256]
+          default: none
+        secret:
+          type: [string, "null"]
+          writeOnly: true
+      allOf:
+        - if:
+            properties:
+              authType:
+                enum: [bearer, hmac-sha256]
+            required: [authType]
+          then:
+            required: [secret]
+    JobConnection:
+      type: object
+      required: [projectId, fileAreaId, daluxApiKey, cron, callback]
+      properties:
+        name:
+          type: [string, "null"]
+        projectId:
+          type: string
+          minLength: 1
+        fileAreaId:
+          type: string
+          minLength: 1
+        daluxApiKey:
+          type: string
+          minLength: 1
+          writeOnly: true
+        daluxBaseUrl:
+          type: [string, "null"]
+          description: Uses the server's DALUX_BASE_URL default when omitted.
+        cron:
+          type: string
+          description: Standard five-field minute/hour/day-of-month/month/day-of-week expression.
+          examples: ["*/15 * * * *", "0 9 * * 1"]
+        timezone:
+          type: [string, "null"]
+          description: IANA timezone; uses MONITOR_TIMEZONE when omitted.
+          examples: [Europe/Copenhagen]
+        callback:
+          $ref: "#/components/schemas/Callback"
+    FileScope:
+      oneOf:
+        - type: object
+          required: [mode]
+          properties:
+            mode:
+              const: all
+            fileIds:
+              type: array
+              maxItems: 0
+        - type: object
+          required: [mode, fileIds]
+          properties:
+            mode:
+              const: fileIds
+            fileIds:
+              type: array
+              minItems: 1
+              items:
+                type: string
+    ChangeJobRequest:
+      allOf:
+        - $ref: "#/components/schemas/JobConnection"
+        - type: object
+          required: [scope]
+          properties:
+            scope:
+              $ref: "#/components/schemas/FileScope"
+            initialRun:
+              type: string
+              enum: [baseline, emitCurrent]
+              default: baseline
+    FileNameFilter:
+      type: object
+      description: At least one rule other than contains_match must be supplied.
+      properties:
+        contains:
+          type: array
+          items: {type: string}
+        contains_match:
+          type: string
+          enum: [any, all]
+          default: any
+        not_contains:
+          type: array
+          items: {type: string}
+        startswith:
+          type: array
+          items: {type: string}
+        not_startswith:
+          type: array
+          items: {type: string}
+        endswith:
+          type: array
+          items: {type: string}
+        not_endswith:
+          type: array
+          items: {type: string}
+        extensions:
+          type: array
+          items: {type: string}
+        not_extensions:
+          type: array
+          items: {type: string}
+    FreshnessJobRequest:
+      allOf:
+        - $ref: "#/components/schemas/JobConnection"
+        - type: object
+          required: [fileNameFilter, maxAge]
+          properties:
+            fileNameFilter:
+              $ref: "#/components/schemas/FileNameFilter"
+            maxAge:
+              type: string
+              pattern: "^P[1-9][0-9]*D$"
+              description: Whole-day ISO 8601 duration, for example P1D or P7D.
+    Job:
+      type: object
+      required:
+        - jobId
+        - type
+        - name
+        - projectId
+        - fileAreaId
+        - daluxBaseUrl
+        - cron
+        - timezone
+        - callbackUrl
+        - callbackAuthType
+        - nextRunAt
+      properties:
+        jobId:
+          type: string
+          format: uuid
+        type:
+          type: string
+          enum: [change, freshness]
+        name:
+          type: [string, "null"]
+        projectId:
+          type: string
+        fileAreaId:
+          type: string
+        daluxBaseUrl:
+          type: string
+        cron:
+          type: string
+        timezone:
+          type: string
+        callbackUrl:
+          type: string
+          format: uri
+        callbackAuthType:
+          type: string
+          enum: [none, bearer, hmac-sha256]
+        nextRunAt:
+          type: string
+          format: date-time
+    TestWebhookResponse:
+      type: object
+      required: [deliveryId, eventType, statusCode]
+      properties:
+        deliveryId:
+          type: string
+          format: uuid
+        eventType:
+          type: string
+          enum: [change, freshness]
+        statusCode:
+          type: integer
+          minimum: 200
+          maximum: 299
+    DaluxFile:
+      type: object
+      description: Raw Dalux file metadata; additional upstream fields are preserved.
+      required: [fileId]
+      properties:
+        fileId: {type: string}
+        fileRevisionId: {type: [string, "null"]}
+        fileName: {type: [string, "null"]}
+        fileAreaId: {type: [string, "null"]}
+        folderId: {type: [string, "null"]}
+        lastModified: {type: [string, "null"], format: date}
+        fileSize: {type: [integer, "null"]}
+        contentHash: {type: [string, "null"]}
+        deleted: {type: [boolean, "null"]}
+      additionalProperties: true
+    FileChange:
+      type: object
+      required: [changeType, current, previous]
+      properties:
+        changeType:
+          type: string
+          enum: [added, modified, deleted]
+        current:
+          oneOf:
+            - $ref: "#/components/schemas/DaluxFile"
+            - type: "null"
+        previous:
+          oneOf:
+            - $ref: "#/components/schemas/DaluxFile"
+            - type: "null"
+    EventEnvelope:
+      type: object
+      required: [type, deliveryId, jobId, projectId, fileAreaId, scheduledAt, checkedAt]
+      properties:
+        type: {type: string}
+        deliveryId: {type: string, format: uuid}
+        jobId: {type: string, format: uuid}
+        projectId: {type: string}
+        fileAreaId: {type: string}
+        scheduledAt: {type: string, format: date-time}
+        checkedAt: {type: string, format: date-time}
+    FileChangeEvent:
+      allOf:
+        - $ref: "#/components/schemas/EventEnvelope"
+        - type: object
+          required: [files]
+          properties:
+            type:
+              const: dalux.files.changed
+            files:
+              type: array
+              minItems: 1
+              items:
+                $ref: "#/components/schemas/FileChange"
+    FreshnessViolation:
+      type: object
+      required: [reason]
+      properties:
+        reason:
+          type: string
+          enum: [stale, deleted, missing, missingLastModified, emptySelection]
+        fileId:
+          type: string
+        file:
+          $ref: "#/components/schemas/DaluxFile"
+        previous:
+          $ref: "#/components/schemas/DaluxFile"
+    FreshnessEvent:
+      allOf:
+        - $ref: "#/components/schemas/EventEnvelope"
+        - type: object
+          required: [maxAge, compliant, filesChecked, violations]
+          properties:
+            type:
+              const: dalux.files.freshness
+            maxAge:
+              type: string
+              pattern: "^P[1-9][0-9]*D$"
+            compliant:
+              type: boolean
+            filesChecked:
+              type: integer
+              minimum: 0
+            violations:
+              type: array
+              items:
+                $ref: "#/components/schemas/FreshnessViolation"
+    Error:
+      type: object
+      required: [detail]
+      properties:
+        detail:
+          type: string
+    FastApiValidationError:
+      type: object
+      required: [detail]
+      properties:
+        detail:
+          type: array
+          items:
+            type: object
+            additionalProperties: true

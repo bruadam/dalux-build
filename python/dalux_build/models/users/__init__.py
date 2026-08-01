@@ -1,4 +1,5 @@
 """Users endpoint models."""
+
 from .models import ProjectUser, User
 from .responses import UserResponse, UsersListResponse
 

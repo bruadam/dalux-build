@@ -1,26 +1,26 @@
 """API response models for Tasks endpoint."""
+
 import json
-from typing import Any, Dict, List, Optional, Union
 
-from pydantic import BaseModel, field_validator, model_validator
+from pydantic import BaseModel, ConfigDict, field_validator, model_validator
 
-from ..common import Link, Metadata
+from ...json_types import JSONDict
+from ..common import ItemsToDataFrameMixin, Link, Metadata
 from .models import Task, TaskAttachment, TaskChange
 
 
-class TasksListResponse(BaseModel):
+class TasksListResponse(ItemsToDataFrameMixin, BaseModel):
     """Response from GET /5.2/projects/{projectId}/tasks - List tasks."""
 
-    items: List[Task] = []
-    metadata: Optional[Metadata] = None
-    links: Optional[List[Link]] = None
+    items: list[Task] = []
+    metadata: Metadata | None = None
+    links: list[Link] | None = None
 
-    class Config:
-        populate_by_name = True
+    model_config = ConfigDict(populate_by_name=True)
 
     @field_validator("items", mode="before")
     @classmethod
-    def unwrap_items(cls, v):
+    def unwrap_items(cls, v: object) -> list[object]:
         """Automatically unwrap items that have 'data' wrapper."""
         if not isinstance(v, list):
             return []
@@ -32,15 +32,15 @@ class TasksListResponse(BaseModel):
         return unwrapped
 
     @classmethod
-    def from_dict(cls, data: Dict[str, Any]) -> "TasksListResponse":
+    def from_dict(cls, data: JSONDict) -> "TasksListResponse":
         """Create TasksListResponse from a dictionary."""
         return cls.model_validate(data)
 
     @classmethod
-    def from_json(cls, json_str: Union[str, bytes]) -> "TasksListResponse":
+    def from_json(cls, json_str: str | bytes) -> "TasksListResponse":
         """Create TasksListResponse from a JSON string."""
         if isinstance(json_str, bytes):
-            json_str = json_str.decode('utf-8')
+            json_str = json_str.decode("utf-8")
         data = json.loads(json_str)
         return cls.from_dict(data)
 
@@ -49,35 +49,32 @@ class TaskResponse(BaseModel):
     """Response from GET /3.4/projects/{projectId}/tasks/{taskId} - Get single task."""
 
     data: Task
-    links: Optional[List[Link]] = None
+    links: list[Link] | None = None
 
-    class Config:
-        populate_by_name = True
+    model_config = ConfigDict(populate_by_name=True)
 
 
 class TaskChangeResponse(BaseModel):
     """Response with a single task change payload."""
 
     data: TaskChange
-    links: Optional[List[Link]] = None
+    links: list[Link] | None = None
 
-    class Config:
-        populate_by_name = True
+    model_config = ConfigDict(populate_by_name=True)
 
 
-class TaskChanges(BaseModel):
+class TaskChanges(ItemsToDataFrameMixin, BaseModel):
     """Response from GET /2.2/projects/{projectId}/tasks/changes."""
 
-    items: List[TaskChange] = []
-    metadata: Optional[Metadata] = None
-    links: Optional[List[Link]] = None
+    items: list[TaskChange] = []
+    metadata: Metadata | None = None
+    links: list[Link] | None = None
 
-    class Config:
-        populate_by_name = True
+    model_config = ConfigDict(populate_by_name=True)
 
     @model_validator(mode="before")
     @classmethod
-    def wrap_list_payloads(cls, values: Any):
+    def wrap_list_payloads(cls, values: object) -> object:
         """Allow API payloads that are returned as a bare list."""
         if isinstance(values, list):
             return {"items": values}
@@ -85,7 +82,7 @@ class TaskChanges(BaseModel):
 
     @field_validator("items", mode="before")
     @classmethod
-    def unwrap_items(cls, v):
+    def unwrap_items(cls, v: object) -> list[object]:
         """Automatically unwrap items that have 'data' wrapper."""
         if not isinstance(v, list):
             return []
@@ -97,12 +94,12 @@ class TaskChanges(BaseModel):
         return unwrapped
 
     @classmethod
-    def from_dict(cls, data: Dict[str, Any]) -> "TaskChanges":
+    def from_dict(cls, data: JSONDict) -> "TaskChanges":
         """Create TaskChanges from a dictionary."""
         return cls.model_validate(data)
 
     @classmethod
-    def from_json(cls, json_str: Union[str, bytes]) -> "TaskChanges":
+    def from_json(cls, json_str: str | bytes) -> "TaskChanges":
         """Create TaskChanges from a JSON string."""
         if isinstance(json_str, bytes):
             json_str = json_str.decode("utf-8")
@@ -110,19 +107,18 @@ class TaskChanges(BaseModel):
         return cls.from_dict(data)
 
 
-class TaskAttachmentsListResponse(BaseModel):
+class TaskAttachmentsListResponse(ItemsToDataFrameMixin, BaseModel):
     """Response from GET /1.1/projects/{projectId}/tasks/attachments."""
 
-    items: List[TaskAttachment] = []
-    metadata: Optional[Metadata] = None
-    links: Optional[List[Link]] = None
+    items: list[TaskAttachment] = []
+    metadata: Metadata | None = None
+    links: list[Link] | None = None
 
-    class Config:
-        populate_by_name = True
+    model_config = ConfigDict(populate_by_name=True)
 
     @field_validator("items", mode="before")
     @classmethod
-    def unwrap_items(cls, v):
+    def unwrap_items(cls, v: object) -> list[object]:
         """Automatically unwrap items that have 'data' wrapper."""
         if not isinstance(v, list):
             return []

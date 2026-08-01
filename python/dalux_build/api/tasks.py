@@ -1,10 +1,13 @@
 """Tasks API."""
-from typing import Any, Dict, List, Optional, Union
+
+from typing import TYPE_CHECKING, Literal, overload
 from urllib.parse import parse_qs, urlparse
 
 from ..api_client import ApiClient
+from ..json_types import JSONDict, QueryParams
 from ..models import (
     Task,
+    TaskAttachment,
     TaskAttachmentsListResponse,
     TaskChange,
     TaskChanges,
@@ -12,13 +15,20 @@ from ..models import (
     TaskResponse,
     TasksListResponse,
 )
-from ..response_converter import convert_to_model
+from ..response_converter import (
+    convert_to_list_response,
+    convert_to_model,
+    flatten_items_to_dataframe,
+    to_dataframe_or_empty,
+)
 from ..utils.pagination import paginate
+from ..utils.validation import resolve_project_id
+
+if TYPE_CHECKING:
+    import pandas as pd
 
 
-def _normalize_task_params(
-    params: Optional[Union[Dict[str, Any], TaskListParams]]
-) -> Dict[str, Any]:
+def _normalize_task_params(params: QueryParams | TaskListParams | None) -> QueryParams:
     """Build query params for ``/5.2/projects/.../tasks`` (OData).
 
     If ``params`` contains ``typeId`` and no ``$filter`` is supplied, it is
@@ -31,6 +41,7 @@ def _normalize_task_params(
     is already set, ``typeId`` is removed from the outgoing query and not merged
     into ``$filter`` (callers must supply a full filter themselves).
     """
+    normalized: QueryParams
     if isinstance(params, TaskListParams):
         normalized = params.model_dump(by_alias=True, exclude_none=True)
     else:
@@ -48,35 +59,97 @@ class TasksApi:
     def __init__(self, api_client: ApiClient) -> None:
         self._client = api_client
 
+    @overload
     def get_project_tasks(
         self,
-        project_id: str,
-        params: Optional[Union[Dict[str, Any], TaskListParams]] = None,
-    ) -> Optional[TasksListResponse]:
+        params: QueryParams | TaskListParams | None = None,
+        full_response: Literal[False] = False,
+        to_dataframe: Literal[False] = False,
+        *,
+        project_id: str | None = None,
+    ) -> list[Task]: ...
+    @overload
+    def get_project_tasks(
+        self,
+        params: QueryParams | TaskListParams | None = None,
+        *,
+        full_response: Literal[True],
+        to_dataframe: Literal[False] = False,
+        project_id: str | None = None,
+    ) -> TasksListResponse | None: ...
+    @overload
+    def get_project_tasks(
+        self,
+        params: QueryParams | TaskListParams | None = None,
+        full_response: bool = ...,
+        *,
+        to_dataframe: Literal[True],
+        project_id: str | None = None,
+    ) -> "pd.DataFrame": ...
+    def get_project_tasks(
+        self,
+        params: QueryParams | TaskListParams | None = None,
+        full_response: bool = False,
+        to_dataframe: bool = False,
+        *,
+        project_id: str | None = None,
+    ) -> "TasksListResponse | list[Task] | pd.DataFrame | None":
         """GET /5.2/projects/{projectId}/tasks.
 
         Args:
-            project_id: Project ID.
             params: Optional query parameters. Pass ``typeId`` as a shorthand for
                 the OData ``$filter`` on task type (see :func:`_normalize_task_params`).
                 You may also pass ``$filter`` directly; other OData query options
                 supported by the API may be included as usual.
+            full_response: If True, return the full TasksListResponse
+                (including metadata and links). If False (default), return
+                just the list of Task items.
+            to_dataframe: If True, return the items flattened into a pandas
+                DataFrame (requires pandas). Takes precedence over full_response.
+            project_id: Project ID. Falls back to the client's configured default.
 
         Returns:
-            TasksListResponse with type-safe access to tasks.
+            List of Task items, the full TasksListResponse when
+            full_response=True, or a DataFrame when to_dataframe=True.
         """
+        project_id = resolve_project_id(project_id, self._client.configuration.project_id)
         response = self._client.get(
             f"/5.2/projects/{project_id}/tasks",
             params=_normalize_task_params(params),
         )
-        return convert_to_model(response, TasksListResponse)
+        result = convert_to_list_response(response, TasksListResponse)
+        if to_dataframe:
+            return to_dataframe_or_empty(result)
+        if full_response:
+            return result
+        return result.items if result is not None else []
 
+    @overload
     def get_all_project_tasks(
         self,
-        project_id: str,
-        params: Optional[Union[Dict[str, Any], TaskListParams]] = None,
+        params: QueryParams | TaskListParams | None = None,
         verbose: bool = False,
-    ) -> List[Task]:
+        to_dataframe: Literal[False] = False,
+        *,
+        project_id: str | None = None,
+    ) -> list[Task]: ...
+    @overload
+    def get_all_project_tasks(
+        self,
+        params: QueryParams | TaskListParams | None = None,
+        verbose: bool = False,
+        *,
+        to_dataframe: Literal[True],
+        project_id: str | None = None,
+    ) -> "pd.DataFrame": ...
+    def get_all_project_tasks(
+        self,
+        params: QueryParams | TaskListParams | None = None,
+        verbose: bool = False,
+        to_dataframe: bool = False,
+        *,
+        project_id: str | None = None,
+    ) -> "list[Task] | pd.DataFrame":
         """Retrieve all tasks by following bookmark pagination automatically.
 
         Combines all pages into a single list of items.
@@ -96,45 +169,50 @@ class TasksApi:
         If neither metadata field exists, ``remaining`` defaults to ``0`` (as in files).
 
         Args:
-            project_id: Project ID.
             params: Optional query parameters (OData). ``typeId`` is expanded to
                 ``$filter=data/type/typeId eq '<typeId>'`` when ``$filter`` is not
                 set (same as :meth:`get_project_tasks`). Pagination ``bookmark`` is
                 applied automatically across pages.
             verbose: If ``True``, print progress using the same pattern as
                 :meth:`FilesApi.get_all_files`, plus the next page URL when present.
+            to_dataframe: If True, return the items flattened into a pandas
+                DataFrame (requires pandas) instead of a list.
+            project_id: Project ID. Falls back to the client's configured default.
         """
-        all_items: List[Task] = []
+        project_id = resolve_project_id(project_id, self._client.configuration.project_id)
+        all_items: list[Task] = []
         base_params = _normalize_task_params(params)
-        current_params: Dict[str, Any] = dict(base_params)
+        current_params: QueryParams = dict(base_params)
         has_next_page = True
         # When only totalItems exists, max(...) across pages matches the full list size
         # (first pages carry the largest value); later pages may report a stale non-zero.
-        tasks_items_ceiling: Optional[int] = None
+        tasks_items_ceiling: int | None = None
 
         while has_next_page:
-            response = self._client.get(
+            raw_response = self._client.get(
                 f"/5.2/projects/{project_id}/tasks", params=current_params
             )
-            raw_items = response.get("items") if response else None
-            items: List[Task] = []
+            response: JSONDict = raw_response if isinstance(raw_response, dict) else {}
+            raw_items = response.get("items")
+            items: list[Task] = []
             if isinstance(raw_items, list):
                 for item in raw_items:
                     task_data = (
                         item.get("data") if isinstance(item, dict) and "data" in item else item
                     )
-                    if isinstance(task_data, Task):
-                        items.append(task_data)
-                    elif isinstance(task_data, dict):
+                    if isinstance(task_data, dict):
                         items.append(Task.model_validate(task_data))
             if items:
                 all_items.extend(items)
-            meta = (response or {}).get("metadata") or {}
-            if "totalRemainingItems" in meta:
-                remaining = int(meta["totalRemainingItems"])
+            meta = response.get("metadata")
+            meta = meta if isinstance(meta, dict) else {}
+            total_remaining = meta.get("totalRemainingItems")
+            total_items = meta.get("totalItems")
+            if "totalRemainingItems" in meta and isinstance(total_remaining, (int, float, str)):
+                remaining = int(total_remaining)
                 use_files_remaining_stop = True
-            elif "totalItems" in meta:
-                ti = int(meta["totalItems"])
+            elif "totalItems" in meta and isinstance(total_items, (int, float, str)):
+                ti = int(total_items)
                 tasks_items_ceiling = max(tasks_items_ceiling or 0, ti)
                 remaining = ti
                 use_files_remaining_stop = False
@@ -142,8 +220,13 @@ class TasksApi:
                 remaining = 0
                 use_files_remaining_stop = True
 
+            links = response.get("links")
             next_link = next(
-                (l for l in (response.get("links") or []) if l.get("rel") == "nextPage"),
+                (
+                    link
+                    for link in (links if isinstance(links, list) else [])
+                    if isinstance(link, dict) and link.get("rel") == "nextPage"
+                ),
                 None,
             )
             next_href = next_link.get("href") if next_link else None
@@ -152,7 +235,8 @@ class TasksApi:
                 next_part = f" next: {next_href}" if next_href else " next: (none)"
                 if use_files_remaining_stop:
                     print(
-                        f"Retrieved {len(all_items)} tasks so far, {remaining} remaining...{next_part}"
+                        f"Retrieved {len(all_items)} tasks so far, "
+                        f"{remaining} remaining...{next_part}"
                     )
                 elif tasks_items_ceiling is not None:
                     rem_v = max(0, tasks_items_ceiling - len(all_items))
@@ -161,7 +245,8 @@ class TasksApi:
                     )
                 else:
                     print(
-                        f"Retrieved {len(all_items)} tasks so far, {remaining} remaining...{next_part}"
+                        f"Retrieved {len(all_items)} tasks so far, "
+                        f"{remaining} remaining...{next_part}"
                     )
 
             if not items:
@@ -175,8 +260,9 @@ class TasksApi:
             ):
                 has_next_page = False
             else:
-                if next_link:
-                    qs = parse_qs(urlparse(next_link["href"]).query)
+                href = next_link.get("href") if next_link else None
+                if isinstance(href, str):
+                    qs = parse_qs(urlparse(href).query)
                     bookmark = qs.get("bookmark", [None])[0]
                     current_params = {**base_params, "bookmark": bookmark}
                 else:
@@ -184,47 +270,120 @@ class TasksApi:
 
         if verbose:
             print(f"Done. Total tasks retrieved: {len(all_items)}")
+        if to_dataframe:
+            return flatten_items_to_dataframe(list(all_items))
         return all_items
 
-    def get_task(self, project_id: str, task_id: str) -> Optional[TaskResponse]:
+    def get_task(self, task_id: str, *, project_id: str | None = None) -> TaskResponse | None:
         """GET /3.3/projects/{projectId}/tasks/{taskId}.
 
         Returns:
             TaskResponse with task details.
         """
+        project_id = resolve_project_id(project_id, self._client.configuration.project_id)
         response = self._client.get(f"/3.3/projects/{project_id}/tasks/{task_id}")
         return convert_to_model(response, TaskResponse)
 
+    @overload
     def get_project_task_changes(
-        self, project_id: str, params: Optional[Dict[str, Any]] = None
-    ) -> Optional[TaskChanges]:
+        self,
+        params: QueryParams | None = None,
+        full_response: Literal[False] = False,
+        to_dataframe: Literal[False] = False,
+        *,
+        project_id: str | None = None,
+    ) -> list[TaskChange]: ...
+    @overload
+    def get_project_task_changes(
+        self,
+        params: QueryParams | None = None,
+        *,
+        full_response: Literal[True],
+        to_dataframe: Literal[False] = False,
+        project_id: str | None = None,
+    ) -> TaskChanges | None: ...
+    @overload
+    def get_project_task_changes(
+        self,
+        params: QueryParams | None = None,
+        full_response: bool = ...,
+        *,
+        to_dataframe: Literal[True],
+        project_id: str | None = None,
+    ) -> "pd.DataFrame": ...
+    def get_project_task_changes(
+        self,
+        params: QueryParams | None = None,
+        full_response: bool = False,
+        to_dataframe: bool = False,
+        *,
+        project_id: str | None = None,
+    ) -> "TaskChanges | list[TaskChange] | pd.DataFrame | None":
         """GET /2.2/projects/{projectId}/tasks/changes.
 
-        Returns:
-            TaskChanges model with a typed ``items`` collection.
-        """
-        response = self._client.get(
-            f"/2.2/projects/{project_id}/tasks/changes", params=params
-        )
-        return convert_to_model(response, TaskChanges)
+        Args:
+            params: Optional query parameters.
+            full_response: If True, return the full TaskChanges model
+                (including metadata and links). If False (default), return
+                just the list of TaskChange items.
+            to_dataframe: If True, return the items flattened into a pandas
+                DataFrame (requires pandas). Takes precedence over full_response.
+            project_id: Project ID. Falls back to the client's configured default.
 
+        Returns:
+            List of TaskChange items, the full TaskChanges model when
+            full_response=True, or a DataFrame when to_dataframe=True.
+        """
+        project_id = resolve_project_id(project_id, self._client.configuration.project_id)
+        response = self._client.get(f"/2.2/projects/{project_id}/tasks/changes", params=params)
+        result = convert_to_list_response(response, TaskChanges)
+        if to_dataframe:
+            return to_dataframe_or_empty(result)
+        if full_response:
+            return result
+        return result.items if result is not None else []
+
+    @overload
     def get_all_project_task_changes(
         self,
-        project_id: str,
-        params: Optional[Dict[str, Any]] = None,
+        params: QueryParams | None = None,
         verbose: bool = False,
-    ) -> List[TaskChange]:
+        to_dataframe: Literal[False] = False,
+        *,
+        project_id: str | None = None,
+    ) -> list[TaskChange]: ...
+    @overload
+    def get_all_project_task_changes(
+        self,
+        params: QueryParams | None = None,
+        verbose: bool = False,
+        *,
+        to_dataframe: Literal[True],
+        project_id: str | None = None,
+    ) -> "pd.DataFrame": ...
+    def get_all_project_task_changes(
+        self,
+        params: QueryParams | None = None,
+        verbose: bool = False,
+        to_dataframe: bool = False,
+        *,
+        project_id: str | None = None,
+    ) -> "list[TaskChange] | pd.DataFrame":
         """Retrieve all task changes by following bookmark pagination.
 
         Args:
-            project_id: Project ID.
             params: Optional query parameters. Pagination ``bookmark`` is applied
                 automatically across pages.
             verbose: If ``True``, print page-by-page pagination progress.
+            to_dataframe: If True, return the items flattened into a pandas
+                DataFrame (requires pandas) instead of a list.
+            project_id: Project ID. Falls back to the client's configured default.
 
         Returns:
-            List of task change objects across all available pages.
+            List of task change objects across all available pages, or a
+            DataFrame when to_dataframe=True.
         """
+        project_id = resolve_project_id(project_id, self._client.configuration.project_id)
         raw_items = paginate(
             endpoint=f"/2.2/projects/{project_id}/tasks/changes",
             client=self._client,
@@ -232,21 +391,67 @@ class TasksApi:
             verbose=verbose,
             item_accessor="items",
         )
-        typed_items: List[TaskChange] = []
+        typed_items: list[TaskChange] = []
         for item in raw_items:
-            if isinstance(item, TaskChange):
-                typed_items.append(item)
-            elif isinstance(item, dict):
+            if isinstance(item, dict):
                 typed_items.append(TaskChange.model_validate(item))
+        if to_dataframe:
+            return flatten_items_to_dataframe(list(typed_items))
         return typed_items
 
+    @overload
     def get_project_task_attachments(
-        self, project_id: str, params: Optional[Dict[str, Any]] = None
-    ) -> Optional[TaskAttachmentsListResponse]:
-        """GET /1.1/projects/{projectId}/tasks/attachments."""
-        response = self._client.get(
-            f"/1.1/projects/{project_id}/tasks/attachments", params=params
-        )
+        self,
+        params: QueryParams | None = None,
+        full_response: Literal[False] = False,
+        to_dataframe: Literal[False] = False,
+        *,
+        project_id: str | None = None,
+    ) -> list[TaskAttachment]: ...
+    @overload
+    def get_project_task_attachments(
+        self,
+        params: QueryParams | None = None,
+        *,
+        full_response: Literal[True],
+        to_dataframe: Literal[False] = False,
+        project_id: str | None = None,
+    ) -> TaskAttachmentsListResponse | None: ...
+    @overload
+    def get_project_task_attachments(
+        self,
+        params: QueryParams | None = None,
+        full_response: bool = ...,
+        *,
+        to_dataframe: Literal[True],
+        project_id: str | None = None,
+    ) -> "pd.DataFrame": ...
+    def get_project_task_attachments(
+        self,
+        params: QueryParams | None = None,
+        full_response: bool = False,
+        to_dataframe: bool = False,
+        *,
+        project_id: str | None = None,
+    ) -> "TaskAttachmentsListResponse | list[TaskAttachment] | pd.DataFrame | None":
+        """GET /1.1/projects/{projectId}/tasks/attachments.
+
+        Args:
+            params: Optional query parameters.
+            full_response: If True, return the full TaskAttachmentsListResponse
+                (including metadata and links). If False (default), return
+                just the list of TaskAttachment items.
+            to_dataframe: If True, return the items flattened into a pandas
+                DataFrame (requires pandas). Takes precedence over full_response.
+            project_id: Project ID. Falls back to the client's configured default.
+        """
+        project_id = resolve_project_id(project_id, self._client.configuration.project_id)
+        response = self._client.get(f"/1.1/projects/{project_id}/tasks/attachments", params=params)
         if isinstance(response, list):
             response = {"items": response}
-        return convert_to_model(response, TaskAttachmentsListResponse)
+        result = convert_to_list_response(response, TaskAttachmentsListResponse)
+        if to_dataframe:
+            return to_dataframe_or_empty(result)
+        if full_response:
+            return result
+        return result.items if result is not None else []

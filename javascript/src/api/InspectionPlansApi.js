@@ -1,7 +1,17 @@
 'use strict';
 
-const { convertToModel } = require('../models/convert');
-const { InspectionPlansListResponseSchema } = require('../models/inspectionPlans');
+const { convertToModel, convertToModelList } = require('../models/convert');
+const { paginate } = require('../utils/pagination');
+const {
+  InspectionPlanSchema,
+  InspectionPlanItemSchema,
+  InspectionPlanItemZoneSchema,
+  InspectionPlanRegistrationSchema,
+  InspectionPlansListResponseSchema,
+  InspectionPlanItemsListResponseSchema,
+  InspectionPlanItemZonesListResponseSchema,
+  InspectionPlanRegistrationsListResponseSchema,
+} = require('../models/inspectionPlans');
 
 /**
  * API methods for inspection plans.
@@ -19,11 +29,27 @@ class InspectionPlansApi {
    * GET /1.2/projects/{projectId}/inspectionPlans
    * @param {string} projectId
    * @param {object} [params]
-   * @returns {Promise<object>} InspectionPlansListResponse ({ items, metadata?, links? })
+   * @param {boolean} [fullResponse=false]
+   * @returns {Promise<object[]|object>}
    */
-  async listInspectionPlans(projectId, params = {}) {
+  async listInspectionPlans(projectId, params = {}, fullResponse = false) {
     const response = await this._client.get(`/1.2/projects/${projectId}/inspectionPlans`, params);
-    return convertToModel(response, InspectionPlansListResponseSchema, 'InspectionPlansListResponse');
+    const result = convertToModel(
+      response,
+      InspectionPlansListResponseSchema,
+      'InspectionPlansListResponse',
+    );
+    return fullResponse ? result : (result?.items || []);
+  }
+
+  async getAllInspectionPlans(projectId, params = {}, verbose = false) {
+    const items = await paginate(
+      `/1.2/projects/${projectId}/inspectionPlans`,
+      this._client,
+      params,
+      verbose,
+    );
+    return convertToModelList(items, InspectionPlanSchema, 'InspectionPlan');
   }
 
   /**
@@ -33,8 +59,24 @@ class InspectionPlansApi {
    * @param {object} [params]
    * @returns {Promise<object>}
    */
-  listInspectionPlanItems(projectId, params = {}) {
-    return this._client.get(`/1.1/projects/${projectId}/inspectionPlanItems`, params);
+  async listInspectionPlanItems(projectId, params = {}, fullResponse = false) {
+    const response = await this._client.get(`/1.1/projects/${projectId}/inspectionPlanItems`, params);
+    const result = convertToModel(
+      response,
+      InspectionPlanItemsListResponseSchema,
+      'InspectionPlanItemsListResponse',
+    );
+    return fullResponse ? result : (result?.items || []);
+  }
+
+  async getAllInspectionPlanItems(projectId, params = {}, verbose = false) {
+    const items = await paginate(
+      `/1.1/projects/${projectId}/inspectionPlanItems`,
+      this._client,
+      params,
+      verbose,
+    );
+    return convertToModelList(items, InspectionPlanItemSchema, 'InspectionPlanItem');
   }
 
   /**
@@ -44,8 +86,24 @@ class InspectionPlansApi {
    * @param {object} [params]
    * @returns {Promise<object>}
    */
-  listInspectionPlanItemZones(projectId, params = {}) {
-    return this._client.get(`/1.1/projects/${projectId}/inspectionPlanItemZones`, params);
+  async listInspectionPlanItemZones(projectId, params = {}, fullResponse = false) {
+    const response = await this._client.get(`/1.1/projects/${projectId}/inspectionPlanItemZones`, params);
+    const result = convertToModel(
+      response,
+      InspectionPlanItemZonesListResponseSchema,
+      'InspectionPlanItemZonesListResponse',
+    );
+    return fullResponse ? result : (result?.items || []);
+  }
+
+  async getAllInspectionPlanItemZones(projectId, params = {}, verbose = false) {
+    const items = await paginate(
+      `/1.1/projects/${projectId}/inspectionPlanItemZones`,
+      this._client,
+      params,
+      verbose,
+    );
+    return convertToModelList(items, InspectionPlanItemZoneSchema, 'InspectionPlanItemZone');
   }
 
   /**
@@ -55,11 +113,27 @@ class InspectionPlansApi {
    * @param {object} [params]
    * @returns {Promise<object>}
    */
-  listInspectionPlanRegistrations(projectId, params = {}) {
-    return this._client.get(
+  async listInspectionPlanRegistrations(projectId, params = {}, fullResponse = false) {
+    const response = await this._client.get(
       `/2.1/projects/${projectId}/inspectionPlanRegistrations`,
       params,
     );
+    const result = convertToModel(
+      response,
+      InspectionPlanRegistrationsListResponseSchema,
+      'InspectionPlanRegistrationsListResponse',
+    );
+    return fullResponse ? result : (result?.items || []);
+  }
+
+  async getAllInspectionPlanRegistrations(projectId, params = {}, verbose = false) {
+    const items = await paginate(
+      `/2.1/projects/${projectId}/inspectionPlanRegistrations`,
+      this._client,
+      params,
+      verbose,
+    );
+    return convertToModelList(items, InspectionPlanRegistrationSchema, 'InspectionPlanRegistration');
   }
 }
 

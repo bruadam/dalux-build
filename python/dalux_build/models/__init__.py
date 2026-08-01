@@ -1,18 +1,22 @@
 """Pydantic models for Dalux Build API responses."""
+
 # Base models
 from .common import Link, Metadata
 
-# Endpoint models - projects
-from .projects import Project, ProjectCompany, ProjectMetadata, ProjectModule, ProjectTemplate
-from .projects import ProjectResponse, ProjectsListResponse
+# Endpoint models - companies
+from .companies import CompaniesListResponse, CompanyResponse
+
+# Endpoint models - company catalog
+from .company_catalog import CompanyCatalogListResponse, CompanyCatalogResponse
 
 # Endpoint models - file areas
-from .file_areas import FileArea
-from .file_areas import FileAreaResponse, FileAreasListResponse
+from .file_areas import FileArea, FileAreaResponse, FileAreasListResponse
 
-# Endpoint models - folders
-from .folders import Folder
-from .folders import FolderResponse, FoldersListResponse
+# Endpoint models - file revisions
+from .file_revisions import FileRevision
+
+# Endpoint models - file upload
+from .file_upload import FileUpload
 
 # Endpoint models - files
 from .files import (
@@ -22,52 +26,74 @@ from .files import (
     FileNameFilter,
     FilePropertyField,
     FileReferenceProperty,
+    FileResponse,
+    FilesListResponse,
     FileTextProperty,
     Reference,
 )
-from .files import FileResponse, FilesListResponse
 
-# Endpoint models - version sets
-from .version_sets import VersionSet
-from .version_sets import VersionSetResponse, VersionSetsListResponse
-
-# Endpoint models - users
-from .users import ProjectUser, User
-from .users import UserResponse, UsersListResponse
-
-# Endpoint models - companies
-from .companies import CompaniesListResponse, CompanyResponse
-
-# Endpoint models - company catalog
-from .company_catalog import CompanyCatalogListResponse, CompanyCatalogResponse
-
-# Endpoint models - inspection plans
-from .inspection_plans import InspectionPlan
-from .inspection_plans import InspectionPlansListResponse
-
-# Endpoint models - test plans
-from .test_plans import TestPlan
-from .test_plans import TestPlansListResponse
+# Endpoint models - folders
+from .folders import Folder, FolderResponse, FoldersListResponse
 
 # Endpoint models - forms
-from .forms import Form
-from .forms import FormResponse, FormsListResponse
+from .forms import Form, FormResponse, FormsListResponse
+
+# Endpoint models - inspection plans
+from .inspection_plans import (
+    InspectionPlan,
+    InspectionPlanItem,
+    InspectionPlanItemsListResponse,
+    InspectionPlanItemZone,
+    InspectionPlanItemZonesListResponse,
+    InspectionPlanRegistration,
+    InspectionPlanRegistrationsListResponse,
+    InspectionPlansListResponse,
+)
+
+# Endpoint models - projects
+from .projects import (
+    Project,
+    ProjectCompany,
+    ProjectMetadata,
+    ProjectModule,
+    ProjectResponse,
+    ProjectsListResponse,
+    ProjectTemplate,
+)
 
 # Endpoint models - tasks
-from .tasks import Task, TaskAttachment, TaskChange, TaskChangeActor, TaskChangeFields, TaskChangeLocation, TaskListParams
 from .tasks import (
+    Task,
+    TaskAttachment,
     TaskAttachmentsListResponse,
+    TaskChange,
+    TaskChangeActor,
+    TaskChangeFields,
+    TaskChangeLocation,
     TaskChangeResponse,
     TaskChanges,
+    TaskListParams,
     TaskResponse,
     TasksListResponse,
 )
 
-# Endpoint models - file revisions
-from .file_revisions import FileRevision
+# Endpoint models - test plans
+from .test_plans import (
+    TestPlan,
+    TestPlanItem,
+    TestPlanItemsListResponse,
+    TestPlanItemZone,
+    TestPlanItemZonesListResponse,
+    TestPlanRegistration,
+    TestPlanRegistrationsListResponse,
+    TestPlansListResponse,
+)
 
-# Endpoint models - file upload
-from .file_upload import FileUpload
+# Endpoint models - users
+from .users import ProjectUser, User, UserResponse, UsersListResponse
+
+# Endpoint models - version sets
+from .version_sets import VersionSet, VersionSetResponse, VersionSetsListResponse
 
 # Endpoint models - work packages
 from .work_packages import WorkPackage, WorkPackagesListResponse
@@ -120,10 +146,22 @@ __all__ = [
     "CompanyCatalogResponse",
     # Inspection Plans
     "InspectionPlan",
+    "InspectionPlanItem",
+    "InspectionPlanItemZone",
+    "InspectionPlanRegistration",
     "InspectionPlansListResponse",
+    "InspectionPlanItemsListResponse",
+    "InspectionPlanItemZonesListResponse",
+    "InspectionPlanRegistrationsListResponse",
     # Test Plans
     "TestPlan",
+    "TestPlanItem",
+    "TestPlanItemZone",
+    "TestPlanRegistration",
     "TestPlansListResponse",
+    "TestPlanItemsListResponse",
+    "TestPlanItemZonesListResponse",
+    "TestPlanRegistrationsListResponse",
     # Forms
     "Form",
     "FormsListResponse",

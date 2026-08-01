@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "dalux-build"
-version = "1.2.0"
+version = "2.0.0"
 description = "Python client for the Dalux Build REST API"
 readme = "README.md"
 requires-python = ">=3.10"
@@ -26,12 +26,13 @@ dependencies = [
     "pydantic[email]",
     "tqdm>=4.66.0",
     "fastapi>=0.141.1",
+    "pandas>=2.3.3",
 ]
 
 [project.urls]
-Homepage = "https://github.com/bruadam/Dalux-Build-API"
-Repository = "https://github.com/bruadam/Dalux-Build-API"
-Issues = "https://github.com/bruadam/Dalux-Build-API/issues"
+Homepage = "https://github.com/bruadam/dalux-build"
+Repository = "https://github.com/bruadam/dalux-build"
+Issues = "https://github.com/bruadam/dalux-build/issues"
 
 [project.optional-dependencies]
 dev = [
@@ -41,16 +42,84 @@ dev = [
     "responses>=0.25",
     "twine>=6.0",
     "ipykernel>=7.3.0",
+    "ruff>=0.14",
+    "mypy>=1.15",
+    "pandas>=2.0",
+    "pandas-stubs>=2.0",
+    "types-tqdm>=4.66",
 ]
 webhook = [
     "fastapi>=0.110",
     "uvicorn[standard]>=0.27",
     "httpx>=0.27",
+    "cryptography>=42",
+    "croniter>=2",
 ]
 
 [tool.setuptools.packages.find]
 where = ["."]
 include = ["dalux_build*"]
 
+[tool.setuptools.package-data]
+dalux_build = ["py.typed"]
+
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+
+[tool.ruff]
+target-version = "py310"
+line-length = 100
+
+[tool.ruff.lint]
+select = [
+    "E",    # pycodestyle errors
+    "W",    # pycodestyle warnings
+    "F",    # pyflakes
+    "I",    # isort
+    "UP",   # pyupgrade
+    "B",    # flake8-bugbear
+    "C4",   # flake8-comprehensions
+    "ANN",  # flake8-annotations (ANN401 is our "no explicit Any" gate for
+             # dalux_build.models — mypy's disallow_any_explicit can't cover
+             # that package, see the mypy override below)
+]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/**" = ["ANN"]
+
+[tool.mypy]
+# Pinned above the package's actual 3.10 floor (see [project] requires-python)
+# because numpy's bundled stubs (pulled in transitively by the optional
+# pandas/to_dataframe() support) use PEP 695 `type` statements that mypy can
+# only parse when targeting 3.12+. The 3.10/3.11 test matrix in CI is the
+# real compatibility gate; this setting only controls what mypy assumes is
+# available while type-checking.
+python_version = "3.12"
+strict = true
+disallow_any_explicit = true
+disallow_any_decorated = true
+warn_unreachable = true
+exclude = ["build/", "dist/"]
+
+[[tool.mypy.overrides]]
+module = "tests.*"
+disallow_any_explicit = false
+disallow_untyped_defs = false
+
+[[tool.mypy.overrides]]
+# Every pydantic BaseModel subclass trips disallow_any_explicit here: pydantic
+# v2 marks BaseModel with @dataclass_transform, and mypy synthesizes a
+# "__mypy-replace" member for it that (per mypy, not our code) contains an
+# explicit Any — reproducible even for a bare `class X(BaseModel): ...` with
+# no Any anywhere in sight. ruff's ANN401 (still enabled, see [tool.ruff.lint])
+# is the real "no explicit Any" gate for this package.
+module = "dalux_build.models.*"
+disallow_any_explicit = false
+
+[[tool.mypy.overrides]]
+module = "dalux_build.webhook_server.models"
+disallow_any_explicit = false
+
+[[tool.mypy.overrides]]
+module = "croniter"
+ignore_missing_imports = true

@@ -1,10 +1,8 @@
 """File Upload API (chunked upload)."""
-from typing import Any, Dict, Optional
 
 from ..api_client import ApiClient
-from ..utils.search import find_by_field, find_all_by_field
-from ..utils.validation import validate_project_id, validate_file_area_id
-from ..utils.pagination import paginate
+from ..json_types import JSONDict, JSONValue
+from ..utils.validation import resolve_file_area_id, resolve_project_id
 
 
 class FileUploadApi:
@@ -14,11 +12,15 @@ class FileUploadApi:
         self._client = api_client
 
     def create_upload(
-        self, project_id: str, file_area_id: str, body: Dict[str, Any]
-    ) -> Any:
+        self,
+        body: JSONDict,
+        *,
+        project_id: str | None = None,
+        file_area_id: str | None = None,
+    ) -> JSONValue | None:
         """POST /1.0/.../upload — Create an upload slot and return its GUID."""
-        validate_project_id(project_id)
-        validate_file_area_id(file_area_id)
+        project_id = resolve_project_id(project_id, self._client.configuration.project_id)
+        file_area_id = resolve_file_area_id(file_area_id, self._client.configuration.file_area_id)
         return self._client.post(
             f"/1.0/projects/{project_id}/file_areas/{file_area_id}/upload",
             json=body,
@@ -26,14 +28,15 @@ class FileUploadApi:
 
     def upload_file_part(
         self,
-        project_id: str,
-        file_area_id: str,
         upload_guid: str,
         chunk: bytes,
-    ) -> Any:
+        *,
+        project_id: str | None = None,
+        file_area_id: str | None = None,
+    ) -> JSONValue | None:
         """POST /1.0/.../upload/{uploadGuid} — Upload a binary file chunk."""
-        validate_project_id(project_id)
-        validate_file_area_id(file_area_id)
+        project_id = resolve_project_id(project_id, self._client.configuration.project_id)
+        file_area_id = resolve_file_area_id(file_area_id, self._client.configuration.file_area_id)
         return self._client.post(
             f"/1.0/projects/{project_id}/file_areas/{file_area_id}/upload/{upload_guid}",
             data=chunk,
@@ -42,16 +45,16 @@ class FileUploadApi:
 
     def finish_upload(
         self,
-        project_id: str,
-        file_area_id: str,
         upload_guid: str,
-        body: Dict[str, Any],
-    ) -> Any:
+        body: JSONDict,
+        *,
+        project_id: str | None = None,
+        file_area_id: str | None = None,
+    ) -> JSONValue | None:
         """POST /2.0/.../upload/{uploadGuid}/finalize — Finalize the upload."""
-        validate_project_id(project_id)
-        validate_file_area_id(file_area_id)
+        project_id = resolve_project_id(project_id, self._client.configuration.project_id)
+        file_area_id = resolve_file_area_id(file_area_id, self._client.configuration.file_area_id)
         return self._client.post(
-            f"/2.0/projects/{project_id}/file_areas/{file_area_id}"
-            f"/upload/{upload_guid}/finalize",
+            f"/2.0/projects/{project_id}/file_areas/{file_area_id}/upload/{upload_guid}/finalize",
             json=body,
         )

@@ -1,9 +1,10 @@
 """Files endpoint models."""
+
 from .models import (
     File,
     FileDateProperty,
-    FileNameFilter,
     FileIntegerProperty,
+    FileNameFilter,
     FilePropertyField,
     FileReferenceProperty,
     FileTextProperty,

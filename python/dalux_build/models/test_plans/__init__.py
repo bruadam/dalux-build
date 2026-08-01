@@ -1,5 +1,20 @@
 """Test Plans endpoint models."""
-from .models import TestPlan
-from .responses import TestPlansListResponse
 
-__all__ = ["TestPlan", "TestPlansListResponse"]
+from .models import TestPlan, TestPlanItem, TestPlanItemZone, TestPlanRegistration
+from .responses import (
+    TestPlanItemsListResponse,
+    TestPlanItemZonesListResponse,
+    TestPlanRegistrationsListResponse,
+    TestPlansListResponse,
+)
+
+__all__ = [
+    "TestPlan",
+    "TestPlanItem",
+    "TestPlanItemZone",
+    "TestPlanRegistration",
+    "TestPlansListResponse",
+    "TestPlanItemsListResponse",
+    "TestPlanItemZonesListResponse",
+    "TestPlanRegistrationsListResponse",
+]

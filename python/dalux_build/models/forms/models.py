@@ -1,9 +1,9 @@
 """Data models for Forms endpoint."""
-from pydantic import BaseModel
+
+from pydantic import BaseModel, ConfigDict
 
 
 class Form(BaseModel):
     """Form model."""
 
-    class Config:
-        populate_by_name = True
+    model_config = ConfigDict(populate_by_name=True)

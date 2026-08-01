@@ -3,6 +3,11 @@
   "version": "2.0.0",
   "description": "Node.js client for the Dalux Build API",
   "main": "src/index.js",
+  "exports": {
+    ".": "./src/index.js",
+    "./browser": "./src/browser.js",
+    "./next": "./src/next.js"
+  },
   "files": [
     "src",
     "README.md"

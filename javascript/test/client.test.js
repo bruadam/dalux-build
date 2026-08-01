@@ -717,7 +717,16 @@ describe('InspectionPlansApi', () => {
 
   it('listInspectionPlans calls GET /1.2/projects/:id/inspectionPlans', async () => {
     mock.onGet('/1.2/projects/p1/inspectionPlans').reply(200, []);
-    expect(await api.listInspectionPlans('p1')).toEqual({ items: [] });
+    expect(await api.listInspectionPlans('p1')).toEqual([]);
+  });
+
+  it('listInspectionPlans can return the full typed response', async () => {
+    mock.onGet('/1.2/projects/p1/inspectionPlans').reply(200, {
+      items: [{ data: { inspectionPlanId: 'ip1', name: 'Plan' } }],
+    });
+    expect(await api.listInspectionPlans('p1', {}, true)).toEqual({
+      items: [{ inspectionPlanId: 'ip1', name: 'Plan' }],
+    });
   });
 
   it('listInspectionPlanItems calls correct URL', async () => {
@@ -733,6 +742,18 @@ describe('InspectionPlansApi', () => {
   it('listInspectionPlanRegistrations calls correct URL', async () => {
     mock.onGet('/2.1/projects/p1/inspectionPlanRegistrations').reply(200, []);
     expect(await api.listInspectionPlanRegistrations('p1')).toEqual([]);
+  });
+
+  it.each([
+    ['getAllInspectionPlans', '/1.2/projects/p1/inspectionPlans'],
+    ['getAllInspectionPlanItems', '/1.1/projects/p1/inspectionPlanItems'],
+    ['getAllInspectionPlanItemZones', '/1.1/projects/p1/inspectionPlanItemZones'],
+    ['getAllInspectionPlanRegistrations', '/2.1/projects/p1/inspectionPlanRegistrations'],
+  ])('%s follows bookmark pagination', async (method, endpoint) => {
+    mock.onGet(endpoint).reply((config) => config.params?.bookmark === 'next'
+      ? [200, { items: [{ data: { name: 'second' } }] }]
+      : [200, { items: [{ data: { name: 'first' } }], links: [{ rel: 'nextPage', href: 'https://example.test?bookmark=next' }] }]);
+    expect(await api[method]('p1')).toEqual([{ name: 'first' }, { name: 'second' }]);
   });
 });
 
@@ -752,7 +773,7 @@ describe('TestPlansApi', () => {
 
   it('listTestPlans calls GET /1.2/projects/:id/testPlans', async () => {
     mock.onGet('/1.2/projects/p1/testPlans').reply(200, []);
-    expect(await api.listTestPlans('p1')).toEqual({ items: [] });
+    expect(await api.listTestPlans('p1')).toEqual([]);
   });
 
   it('listTestPlanItems calls correct URL', async () => {
@@ -768,6 +789,18 @@ describe('TestPlansApi', () => {
   it('listTestPlanRegistrations calls correct URL', async () => {
     mock.onGet('/1.1/projects/p1/testPlanRegistrations').reply(200, []);
     expect(await api.listTestPlanRegistrations('p1')).toEqual([]);
+  });
+
+  it.each([
+    ['getAllTestPlans', '/1.2/projects/p1/testPlans'],
+    ['getAllTestPlanItems', '/1.1/projects/p1/testPlanItems'],
+    ['getAllTestPlanItemZones', '/1.1/projects/p1/testPlanItemZones'],
+    ['getAllTestPlanRegistrations', '/1.1/projects/p1/testPlanRegistrations'],
+  ])('%s follows bookmark pagination', async (method, endpoint) => {
+    mock.onGet(endpoint).reply((config) => config.params?.bookmark === 'next'
+      ? [200, { items: [{ data: { name: 'second' } }] }]
+      : [200, { items: [{ data: { name: 'first' } }], links: [{ rel: 'nextPage', href: 'https://example.test?bookmark=next' }] }]);
+    expect(await api[method]('p1')).toEqual([{ name: 'first' }, { name: 'second' }]);
   });
 });
 

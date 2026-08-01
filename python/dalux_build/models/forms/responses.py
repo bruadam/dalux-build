@@ -1,25 +1,24 @@
 """API response models for Forms endpoint."""
+
 import json
-from typing import Any, Dict, List, Optional, Union
 
-from pydantic import BaseModel, field_validator
+from pydantic import BaseModel, ConfigDict, JsonValue, field_validator
 
-from ..common import Link, Metadata
+from ..common import ItemsToDataFrameMixin, Link, Metadata
 
 
-class FormsListResponse(BaseModel):
+class FormsListResponse(ItemsToDataFrameMixin, BaseModel):
     """Response from GET /2.2/projects/{projectId}/forms - List forms."""
 
-    items: List[Any]
-    metadata: Optional[Metadata] = None
-    links: Optional[List[Link]] = None
+    items: list[dict[str, JsonValue]]
+    metadata: Metadata | None = None
+    links: list[Link] | None = None
 
-    class Config:
-        populate_by_name = True
+    model_config = ConfigDict(populate_by_name=True)
 
     @field_validator("items", mode="before")
     @classmethod
-    def unwrap_items(cls, v):
+    def unwrap_items(cls, v: object) -> list[object]:
         """Automatically unwrap items that have 'data' wrapper."""
         if not isinstance(v, list):
             return []
@@ -31,15 +30,15 @@ class FormsListResponse(BaseModel):
         return unwrapped
 
     @classmethod
-    def from_dict(cls, data: Dict[str, Any]) -> "FormsListResponse":
+    def from_dict(cls, data: dict[str, JsonValue]) -> "FormsListResponse":
         """Create FormsListResponse from a dictionary."""
         return cls.model_validate(data)
 
     @classmethod
-    def from_json(cls, json_str: Union[str, bytes]) -> "FormsListResponse":
+    def from_json(cls, json_str: str | bytes) -> "FormsListResponse":
         """Create FormsListResponse from a JSON string."""
         if isinstance(json_str, bytes):
-            json_str = json_str.decode('utf-8')
+            json_str = json_str.decode("utf-8")
         data = json.loads(json_str)
         return cls.from_dict(data)
 
@@ -47,8 +46,7 @@ class FormsListResponse(BaseModel):
 class FormResponse(BaseModel):
     """Response from GET /1.3/projects/{projectId}/forms/{formId} - Get single form."""
 
-    data: Any
-    links: Optional[List[Link]] = None
+    data: dict[str, JsonValue]
+    links: list[Link] | None = None
 
-    class Config:
-        populate_by_name = True
+    model_config = ConfigDict(populate_by_name=True)

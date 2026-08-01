@@ -1,7 +1,6 @@
 """Data models for Version Sets endpoint."""
-from typing import Optional
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 
 class VersionSet(BaseModel):
@@ -9,9 +8,8 @@ class VersionSet(BaseModel):
 
     version_set_id: str = Field(..., alias="versionSetId")
     name: str
-    description: Optional[str] = None
-    status: Optional[str] = None
+    description: str | None = None
+    status: str | None = None
     file_area_id: str = Field(..., alias="fileAreaId")
 
-    class Config:
-        populate_by_name = True
+    model_config = ConfigDict(populate_by_name=True)

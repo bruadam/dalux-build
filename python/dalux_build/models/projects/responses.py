@@ -1,31 +1,31 @@
 """API response models for Projects endpoint."""
+
 import json
-from typing import Any, Dict, List, Optional, Union
 
-from pydantic import BaseModel, field_validator
+from pydantic import BaseModel, ConfigDict, field_validator
 
-from ..common import Link, Metadata
+from ...json_types import JSONDict
+from ..common import ItemsToDataFrameMixin, Link, Metadata
 from .models import Project
 
 
-class ProjectsListResponse(BaseModel):
+class ProjectsListResponse(ItemsToDataFrameMixin, BaseModel):
     """Response from GET /5.1/projects - List all projects."""
 
-    items: List[Project] = []
-    metadata: Optional[Metadata] = None
-    links: Optional[List[Link]] = None
+    items: list[Project] = []
+    metadata: Metadata | None = None
+    links: list[Link] | None = None
 
-    class Config:
-        populate_by_name = True
+    model_config = ConfigDict(populate_by_name=True)
 
     @field_validator("items", mode="before")
     @classmethod
-    def unwrap_and_convert_items(cls, v):
+    def unwrap_and_convert_items(cls, v: object) -> list[object]:
         """Automatically unwrap items that have 'data' wrapper and convert to Project models."""
         if not isinstance(v, list):
             return []
 
-        result = []
+        result: list[object] = []
         for item in v:
             # Unwrap data wrapper if present
             data = item.get("data") if isinstance(item, dict) and "data" in item else item
@@ -39,7 +39,7 @@ class ProjectsListResponse(BaseModel):
         return result
 
     @classmethod
-    def from_dict(cls, data: Dict[str, Any]) -> "ProjectsListResponse":
+    def from_dict(cls, data: JSONDict) -> "ProjectsListResponse":
         """Create ProjectsListResponse from a dictionary.
 
         Args:
@@ -51,7 +51,7 @@ class ProjectsListResponse(BaseModel):
         return cls.model_validate(data)
 
     @classmethod
-    def from_json(cls, json_str: Union[str, bytes]) -> "ProjectsListResponse":
+    def from_json(cls, json_str: str | bytes) -> "ProjectsListResponse":
         """Create ProjectsListResponse from a JSON string.
 
         Args:
@@ -61,7 +61,7 @@ class ProjectsListResponse(BaseModel):
             ProjectsListResponse instance with all items as Project objects
         """
         if isinstance(json_str, bytes):
-            json_str = json_str.decode('utf-8')
+            json_str = json_str.decode("utf-8")
         data = json.loads(json_str)
         return cls.from_dict(data)
 
@@ -70,7 +70,6 @@ class ProjectResponse(BaseModel):
     """Response from GET /5.0/projects/{projectId} - Get single project."""
 
     data: Project
-    links: Optional[List[Link]] = None
+    links: list[Link] | None = None
 
-    class Config:
-        populate_by_name = True
+    model_config = ConfigDict(populate_by_name=True)

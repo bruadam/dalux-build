@@ -1,7 +1,6 @@
 """Data models for File Areas endpoint."""
-from typing import Optional
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 
 class FileArea(BaseModel):
@@ -11,5 +10,4 @@ class FileArea(BaseModel):
     file_area_name: str = Field(..., alias="fileAreaName")
     file_area_type: str = Field(..., alias="fileAreaType")
 
-    class Config:
-        populate_by_name = True
+    model_config = ConfigDict(populate_by_name=True)

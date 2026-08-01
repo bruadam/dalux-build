@@ -23,6 +23,26 @@ cd python && pytest --cov=dalux_build                 # Python client
 cd webhook-server && pytest                            # webhook server
 ```
 
+## Python code quality
+
+Both Python packages (`python/`, `webhook-server/`) are linted with
+[ruff](https://docs.astral.sh/ruff/) and type-checked with
+[mypy](https://mypy-lang.org/) in strict mode — no `Any` types, either as a
+literal or via an untyped `dict`/`list`. CI runs the same checks (see
+`lint-python` in `.github/workflows/tests.yml`):
+
+```bash
+cd python && pip install -e ".[dev,webhook]"
+ruff check .
+ruff format --check .
+mypy -p dalux_build
+
+cd webhook-server && pip install -e ".[dev]"
+ruff check .
+ruff format --check .
+mypy -p dalux_webhook
+```
+
 ## Adding a changeset
 
 Every PR that changes published code — `javascript/src/`,

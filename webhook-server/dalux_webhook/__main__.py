@@ -1,4 +1,5 @@
 """Run the webhook server with uvicorn: ``python -m dalux_webhook``."""
+
 from __future__ import annotations
 
 import logging

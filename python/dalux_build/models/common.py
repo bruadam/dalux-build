@@ -1,7 +1,11 @@
 """Common base models shared across all API responses."""
-from typing import Optional
 
-from pydantic import BaseModel, Field
+from typing import TYPE_CHECKING
+
+from pydantic import BaseModel, ConfigDict, Field
+
+if TYPE_CHECKING:
+    import pandas as pd
 
 
 class Link(BaseModel):
@@ -9,17 +13,26 @@ class Link(BaseModel):
 
     rel: str
     href: str
-    method: Optional[str] = None
+    method: str | None = None
 
-    class Config:
-        populate_by_name = True
+    model_config = ConfigDict(populate_by_name=True)
 
 
 class Metadata(BaseModel):
     """Response metadata with pagination info."""
 
-    total_items: Optional[int] = Field(None, alias="totalItems")
-    total_remaining_items: Optional[int] = Field(None, alias="totalRemainingItems")
+    total_items: int | None = Field(None, alias="totalItems")
+    total_remaining_items: int | None = Field(None, alias="totalRemainingItems")
 
-    class Config:
-        populate_by_name = True
+    model_config = ConfigDict(populate_by_name=True)
+
+
+class ItemsToDataFrameMixin:
+    """Mixin adding dataframe export support for responses with an ``items`` field."""
+
+    def to_dataframe(self) -> "pd.DataFrame":
+        """Convert ``items`` to a flattened pandas DataFrame using ``::`` separators."""
+        from ..response_converter import flatten_items_to_dataframe
+
+        items: object = getattr(self, "items", None)
+        return flatten_items_to_dataframe(items if isinstance(items, list) else [])

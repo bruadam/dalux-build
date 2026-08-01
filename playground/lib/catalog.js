@@ -115,9 +115,13 @@ export const catalog = {
     label: 'Inspection Plans',
     methods: {
       listInspectionPlans: { write: false, http: 'GET', desc: 'Inspection plans on a project.', params: [P.projectId, P.query] },
+      getAllInspectionPlans: { write: false, http: 'GET', desc: 'All inspection plans, following bookmark pagination.', params: [P.projectId, P.query] },
       listInspectionPlanItems: { write: false, http: 'GET', desc: 'Inspection plan items.', params: [P.projectId, P.query] },
+      getAllInspectionPlanItems: { write: false, http: 'GET', desc: 'All inspection plan items, following bookmark pagination.', params: [P.projectId, P.query] },
       listInspectionPlanItemZones: { write: false, http: 'GET', desc: 'Inspection plan item zones.', params: [P.projectId, P.query] },
+      getAllInspectionPlanItemZones: { write: false, http: 'GET', desc: 'All inspection plan item zones, following bookmark pagination.', params: [P.projectId, P.query] },
       listInspectionPlanRegistrations: { write: false, http: 'GET', desc: 'Inspection plan registrations.', params: [P.projectId, P.query] },
+      getAllInspectionPlanRegistrations: { write: false, http: 'GET', desc: 'All inspection plan registrations, following bookmark pagination.', params: [P.projectId, P.query] },
     },
   },
 
@@ -144,9 +148,13 @@ export const catalog = {
     label: 'Test Plans',
     methods: {
       listTestPlans: { write: false, http: 'GET', desc: 'Test plans on a project.', params: [P.projectId, P.query] },
+      getAllTestPlans: { write: false, http: 'GET', desc: 'All test plans, following bookmark pagination.', params: [P.projectId, P.query] },
       listTestPlanItems: { write: false, http: 'GET', desc: 'Test plan items.', params: [P.projectId, P.query] },
+      getAllTestPlanItems: { write: false, http: 'GET', desc: 'All test plan items, following bookmark pagination.', params: [P.projectId, P.query] },
       listTestPlanItemZones: { write: false, http: 'GET', desc: 'Test plan item zones.', params: [P.projectId, P.query] },
+      getAllTestPlanItemZones: { write: false, http: 'GET', desc: 'All test plan item zones, following bookmark pagination.', params: [P.projectId, P.query] },
       listTestPlanRegistrations: { write: false, http: 'GET', desc: 'Test plan registrations.', params: [P.projectId, P.query] },
+      getAllTestPlanRegistrations: { write: false, http: 'GET', desc: 'All test plan registrations, following bookmark pagination.', params: [P.projectId, P.query] },
     },
   },
 

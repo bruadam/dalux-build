@@ -6,6 +6,7 @@ downloads/
 # Docker Compose runtime state and file-based secrets
 data/
 secrets/
+.env
 
 # Environment-specific watch list (commit watchlist.example.json instead)
 watchlist.json

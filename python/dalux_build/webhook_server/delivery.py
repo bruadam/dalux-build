@@ -1,0 +1,129 @@
+"""Persistent outbound webhook delivery."""
+
+from __future__ import annotations
+
+import hashlib
+import hmac
+import json
+import sqlite3
+import uuid
+from datetime import datetime, timedelta, timezone
+from typing import Literal
+
+import httpx
+
+from .crypto import SecretBox
+from .models import CallbackConfig, TestWebhookResponse
+from .store import Store, utcnow
+
+
+def _headers(delivery_id: str, auth_type: str, secret: str, body: bytes) -> dict[str, str]:
+    headers = {"Content-Type": "application/json", "X-Delivery-ID": delivery_id}
+    if auth_type == "bearer":
+        headers["Authorization"] = "Bearer " + secret
+    elif auth_type == "hmac-sha256":
+        signature = hmac.new(secret.encode(), body, hashlib.sha256).hexdigest()
+        headers["X-Webhook-Signature"] = "sha256=" + signature
+    return headers
+
+
+def send_test_webhook(
+    callback: CallbackConfig,
+    event_type: Literal["change", "freshness"],
+    job_id: str,
+    project_id: str,
+    file_area_id: str,
+    sample_file_id: str = "test-file",
+) -> TestWebhookResponse:
+    """Send a realistic event without altering job state or the persistent outbox."""
+    delivery_id = str(uuid.uuid4())
+    now = datetime.now(timezone.utc).isoformat()
+    envelope: dict[str, object] = {
+        "deliveryId": delivery_id,
+        "jobId": job_id,
+        "projectId": project_id,
+        "fileAreaId": file_area_id,
+        "scheduledAt": now,
+        "checkedAt": now,
+        "test": True,
+    }
+    if event_type == "change":
+        payload = {
+            **envelope,
+            "type": "dalux.files.changed",
+            "files": [
+                {
+                    "changeType": "modified",
+                    "current": {
+                        "fileId": sample_file_id,
+                        "fileRevisionId": "test-revision-2",
+                        "fileName": "n8n-webhook-test.ifc",
+                        "lastModified": now[:10],
+                        "deleted": False,
+                    },
+                    "previous": {
+                        "fileId": sample_file_id,
+                        "fileRevisionId": "test-revision-1",
+                        "fileName": "n8n-webhook-test.ifc",
+                        "lastModified": now[:10],
+                        "deleted": False,
+                    },
+                }
+            ],
+        }
+    else:
+        payload = {
+            **envelope,
+            "type": "dalux.files.freshness",
+            "maxAge": "P1D",
+            "compliant": True,
+            "filesChecked": 1,
+            "violations": [],
+        }
+    body = json.dumps(payload, separators=(",", ":")).encode()
+    response = httpx.post(
+        str(callback.url),
+        content=body,
+        headers=_headers(delivery_id, callback.auth_type, callback.secret or "", body),
+        timeout=30.0,
+    )
+    response.raise_for_status()
+    return TestWebhookResponse(
+        deliveryId=delivery_id, eventType=event_type, statusCode=response.status_code
+    )
+
+
+class DeliveryWorker:
+    def __init__(self, store: Store, secrets: SecretBox, max_attempts: int = 8) -> None:
+        self.store = store
+        self.secrets = secrets
+        self.max_attempts = max_attempts
+
+    def drain(self) -> None:
+        for row in self.store.pending_deliveries(utcnow()):
+            self._deliver(row)
+
+    def _deliver(self, row: sqlite3.Row) -> None:
+        body = row["payload_json"].encode()
+        encrypted = row["callback_secret_encrypted"]
+        secret = self.secrets.decrypt(encrypted) if encrypted else ""
+        headers = _headers(row["delivery_id"], row["callback_auth_type"], secret, body)
+        attempts = int(row["attempts"]) + 1
+        try:
+            response = httpx.post(row["callback_url"], content=body, headers=headers, timeout=30.0)
+            response.raise_for_status()
+            self.store.delivery_result(
+                row["delivery_id"], success=True, attempts=attempts, next_at=utcnow()
+            )
+        except httpx.HTTPError as exc:
+            if attempts >= self.max_attempts:
+                self.store.fail_delivery(row["delivery_id"], attempts, str(exc))
+            else:
+                delay = min(900, 10 * (2 ** (attempts - 1)))
+                self.store.delivery_result(
+                    row["delivery_id"],
+                    success=False,
+                    attempts=attempts,
+                    next_at=utcnow() + timedelta(seconds=delay),
+                    error=str(exc),
+                )

@@ -43,9 +43,27 @@ const { CompaniesListResponseSchema, CompanyResponseSchema } = require('./compan
 
 const { CompanyCatalogListResponseSchema, CompanyCatalogResponseSchema } = require('./companyCatalog');
 
-const { InspectionPlanSchema, InspectionPlansListResponseSchema } = require('./inspectionPlans');
+const {
+  InspectionPlanSchema,
+  InspectionPlanItemSchema,
+  InspectionPlanItemZoneSchema,
+  InspectionPlanRegistrationSchema,
+  InspectionPlansListResponseSchema,
+  InspectionPlanItemsListResponseSchema,
+  InspectionPlanItemZonesListResponseSchema,
+  InspectionPlanRegistrationsListResponseSchema,
+} = require('./inspectionPlans');
 
-const { TestPlanSchema, TestPlansListResponseSchema } = require('./testPlans');
+const {
+  TestPlanSchema,
+  TestPlanItemSchema,
+  TestPlanItemZoneSchema,
+  TestPlanRegistrationSchema,
+  TestPlansListResponseSchema,
+  TestPlanItemsListResponseSchema,
+  TestPlanItemZonesListResponseSchema,
+  TestPlanRegistrationsListResponseSchema,
+} = require('./testPlans');
 
 const { FormSchema, FormsListResponseSchema, FormResponseSchema } = require('./forms');
 
@@ -116,10 +134,22 @@ module.exports = {
   CompanyCatalogResponseSchema,
   // Inspection Plans
   InspectionPlanSchema,
+  InspectionPlanItemSchema,
+  InspectionPlanItemZoneSchema,
+  InspectionPlanRegistrationSchema,
   InspectionPlansListResponseSchema,
+  InspectionPlanItemsListResponseSchema,
+  InspectionPlanItemZonesListResponseSchema,
+  InspectionPlanRegistrationsListResponseSchema,
   // Test Plans
   TestPlanSchema,
+  TestPlanItemSchema,
+  TestPlanItemZoneSchema,
+  TestPlanRegistrationSchema,
   TestPlansListResponseSchema,
+  TestPlanItemsListResponseSchema,
+  TestPlanItemZonesListResponseSchema,
+  TestPlanRegistrationsListResponseSchema,
   // Forms
   FormSchema,
   FormsListResponseSchema,

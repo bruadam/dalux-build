@@ -1,174 +1,193 @@
-"""Public ``DaluxClient.webhook_server`` sub-object.
-
-Two usage modes:
-
-* Embedded, in-script: ``dalux.webhook_server.start()`` launches the webhook
-  receiver in a background daemon thread and returns once it is accepting
-  connections, so ``register()``/``unregister()`` can be called right after in
-  the same script — ideal for local testing.
-* The standalone ``webhook-server/`` package builds on the same underlying
-  modules (``app.py``, ``service.py``, ...) for a long-running, containerized
-  deployment; see that package's README for the Docker-based path.
-
-``fastapi``/``uvicorn``/``httpx`` are optional dependencies (the ``webhook``
-extra) and are only imported lazily inside :meth:`start`, so a plain
-``import dalux_build`` never requires them.
-"""
+"""Embedded scheduled-monitor API exposed as ``DaluxClient.webhook_server``."""
 
 from __future__ import annotations
 
-import os
-import threading
 from typing import TYPE_CHECKING
 
-from ..api.files import FilesApi
 from ..api_client import ApiClient
-from .config import QaConfig, WebhookRuntimeConfig
-from .errors import MissingWebhookDependencies, WebhookServerAlreadyRunning
-from .service import DaluxFileService
-from .store import Store
-from .watchlist import WatchedFile, WatchList
+from ..models import FileNameFilter
+from .errors import WebhookServerAlreadyRunning, WebhookServerNotRunning
 
 if TYPE_CHECKING:
+    from .controller import Jobs
     from .runtime import ServerThread
+    from .scheduler import Scheduler
+    from .store import Store
 
 
 class WebhookServerApi:
     def __init__(self, api_client: ApiClient) -> None:
         self._api_client = api_client
-        self._files_api = FilesApi(api_client)
-        self._watchlist = WatchList()
-        self._watchlist_path: str | None = None
         self._store: Store | None = None
-        self._server_thread: ServerThread | None = None
-        self._lock = threading.Lock()
+        self._jobs: Jobs | None = None
+        self._scheduler: Scheduler | None = None
+        self._server: ServerThread | None = None
 
     def start(
         self,
         *,
+        management_token: str | None = None,
+        master_key: str | None = None,
         host: str | None = None,
         port: int | None = None,
-        secret: str | None = None,
-        signature_header: str | None = None,
-        download_dir: str | None = None,
         state_db_path: str | None = None,
-        watchlist_path: str | None = None,
-        qa_webhook_url: str | None = None,
-        qa_webhook_token: str | None = None,
-        qa_command: str | None = None,
+        default_timezone: str | None = None,
+        max_delivery_attempts: int | None = None,
         startup_timeout: float = 5.0,
     ) -> None:
-        """Start the webhook receiver in a background thread and return once ready.
+        if self.is_running:
+            raise WebhookServerAlreadyRunning("scheduled monitor is already running")
+        from .app import build_app
+        from .config import MonitorConfig
+        from .controller import Jobs
+        from .crypto import SecretBox
+        from .delivery import DeliveryWorker
+        from .monitor import Monitor
+        from .runtime import ServerThread
+        from .scheduler import Scheduler
+        from .store import Store
 
-        Settings precedence: keyword arguments here override
-        :meth:`WebhookRuntimeConfig.from_env`, which in turn overrides
-        hardcoded fallbacks. The Dalux API key/base URL are not settings
-        here — they come from the ``DaluxClient`` this sub-object was built
-        from.
-        """
-        with self._lock:
-            if self._server_thread is not None and self._server_thread.is_running:
-                raise WebhookServerAlreadyRunning(
-                    f"webhook_server is already running at {self._server_thread.bound_url}"
-                )
+        env = MonitorConfig.from_env()
+        config = MonitorConfig(
+            management_token=(
+                management_token if management_token is not None else env.management_token
+            ),
+            master_key=master_key if master_key is not None else env.master_key,
+            default_base_url=self._api_client.configuration.base_url,
+            default_timezone=default_timezone or env.default_timezone,
+            state_db_path=state_db_path or env.state_db_path,
+            host=host or env.host,
+            port=port if port is not None else env.port,
+            max_delivery_attempts=(
+                max_delivery_attempts
+                if max_delivery_attempts is not None
+                else env.max_delivery_attempts
+            ),
+        )
+        config.validate()
+        store = Store(config.state_db_path)
+        box = SecretBox(config.master_key)
+        jobs = Jobs(store, box, config.default_base_url, config.default_timezone)
+        monitor = Monitor(store, box)
+        scheduler = Scheduler(
+            store, monitor, DeliveryWorker(store, box, config.max_delivery_attempts)
+        )
+        app = build_app(
+            jobs=jobs,
+            store=store,
+            scheduler=scheduler,
+            management_token=config.management_token,
+        )
+        server = ServerThread(app, config.host, config.port)
+        server.start_and_wait_ready(startup_timeout)
+        self._store, self._jobs, self._scheduler, self._server = store, jobs, scheduler, server
 
-            try:
-                from . import app as app_module
-                from . import runtime
-            except ImportError as exc:
-                raise MissingWebhookDependencies() from exc
+    def register_change_job(
+        self,
+        *,
+        project_id: str,
+        file_area_id: str,
+        cron: str,
+        callback_url: str,
+        scope: str = "all",
+        file_ids: list[str] | None = None,
+        initial_run: str = "baseline",
+        timezone: str | None = None,
+        callback_auth_type: str = "none",
+        callback_secret: str | None = None,
+        dalux_api_key: str | None = None,
+        dalux_base_url: str | None = None,
+        name: str | None = None,
+        idempotency_key: str | None = None,
+    ) -> str:
+        from .models import ChangeJobRequest
 
-            defaults = WebhookRuntimeConfig.from_env()
-            resolved_host = defaults.host if host is None else host
-            resolved_port = defaults.port if port is None else port
-            resolved_secret = defaults.webhook_secret if secret is None else secret
-            resolved_signature_header = (
-                defaults.webhook_signature_header if signature_header is None else signature_header
-            )
-            resolved_download_dir = defaults.download_dir if download_dir is None else download_dir
-            resolved_state_db_path = (
-                defaults.state_db_path if state_db_path is None else state_db_path
-            )
-            resolved_watchlist_path = (
-                (defaults.watchlist_path or None) if watchlist_path is None else watchlist_path
-            )
-            resolved_qa_config = QaConfig(
-                qa_webhook_url=(
-                    defaults.qa_webhook_url if qa_webhook_url is None else qa_webhook_url
-                ),
-                qa_webhook_token=(
-                    defaults.qa_webhook_token if qa_webhook_token is None else qa_webhook_token
-                ),
-                qa_command=defaults.qa_command if qa_command is None else qa_command,
-            )
+        jobs = self._require_jobs()
+        request = ChangeJobRequest.model_validate(
+            {
+                "name": name,
+                "projectId": project_id,
+                "fileAreaId": file_area_id,
+                "daluxApiKey": dalux_api_key or self._api_client.configuration.api_key,
+                "daluxBaseUrl": dalux_base_url or self._api_client.configuration.base_url,
+                "cron": cron,
+                "timezone": timezone,
+                "callback": {
+                    "url": callback_url,
+                    "authType": callback_auth_type,
+                    "secret": callback_secret,
+                },
+                "scope": {"mode": scope, "fileIds": file_ids or []},
+                "initialRun": initial_run,
+            }
+        )
+        view, _ = jobs.create(request, idempotency_key)
+        return view.job_id
 
-            self._watchlist_path = resolved_watchlist_path
-            if resolved_watchlist_path and os.path.exists(resolved_watchlist_path):
-                self._watchlist.add_many(WatchList.load(resolved_watchlist_path).all())
+    def register_freshness_job(
+        self,
+        *,
+        project_id: str,
+        file_area_id: str,
+        cron: str,
+        callback_url: str,
+        file_name_filter: FileNameFilter,
+        max_age: str,
+        timezone: str | None = None,
+        callback_auth_type: str = "none",
+        callback_secret: str | None = None,
+        dalux_api_key: str | None = None,
+        dalux_base_url: str | None = None,
+        name: str | None = None,
+        idempotency_key: str | None = None,
+    ) -> str:
+        from .models import FreshnessJobRequest
 
-            self._store = Store(resolved_state_db_path)
-            service = DaluxFileService(self._files_api, resolved_download_dir, self._store)
-            app = app_module.build_app(
-                watchlist=self._watchlist,
-                store=self._store,
-                service=service,
-                webhook_secret=resolved_secret,
-                signature_header=resolved_signature_header,
-                qa_config=resolved_qa_config,
-            )
+        jobs = self._require_jobs()
+        request = FreshnessJobRequest.model_validate(
+            {
+                "name": name,
+                "projectId": project_id,
+                "fileAreaId": file_area_id,
+                "daluxApiKey": dalux_api_key or self._api_client.configuration.api_key,
+                "daluxBaseUrl": dalux_base_url or self._api_client.configuration.base_url,
+                "cron": cron,
+                "timezone": timezone,
+                "callback": {
+                    "url": callback_url,
+                    "authType": callback_auth_type,
+                    "secret": callback_secret,
+                },
+                "fileNameFilter": file_name_filter,
+                "maxAge": max_age,
+            }
+        )
+        view, _ = jobs.create(request, idempotency_key)
+        return view.job_id
 
-            server_thread = runtime.ServerThread(app, resolved_host, resolved_port)
-            server_thread.start_and_wait_ready(timeout=startup_timeout)
-            self._server_thread = server_thread
+    def unregister_job(self, job_id: str) -> None:
+        self._require_jobs().delete(job_id)
+
+    def _require_jobs(self) -> Jobs:
+        if self._jobs is None:
+            raise WebhookServerNotRunning("call webhook_server.start() before registering jobs")
+        return self._jobs
 
     def stop(self, timeout: float = 5.0) -> None:
-        with self._lock:
-            if self._server_thread is None:
-                return
-            self._server_thread.stop(timeout)
-            self._server_thread = None
-            if self._store is not None:
-                self._store.close()
-                self._store = None
-
-    def register(self, project_id: str, file_area_id: str, file_ids: list[str]) -> None:
-        """Add files sharing one project/file area to the live watchlist."""
-        if not file_ids:
-            return
-        self._watchlist.add_many(
-            [
-                WatchedFile(project_id=project_id, file_area_id=file_area_id, file_id=fid)
-                for fid in file_ids
-            ]
-        )
-        self._persist_watchlist()
-
-    def unregister(self, file_ids: list[str]) -> None:
-        if not file_ids:
-            return
-        self._watchlist.remove_many(file_ids)
-        self._persist_watchlist()
-
-    def list_watched(self) -> list[WatchedFile]:
-        return self._watchlist.all()
-
-    def _persist_watchlist(self) -> None:
-        if self._watchlist_path:
-            self._watchlist.save(self._watchlist_path)
-
-    @property
-    def watchlist(self) -> list[WatchedFile]:
-        return self._watchlist.all()
+        if self._server:
+            self._server.stop(timeout)
+        if self._scheduler:
+            self._scheduler.stop(timeout)
+        if self._store:
+            self._store.close()
+        self._server = self._scheduler = None
+        self._jobs = None
+        self._store = None
 
     @property
     def is_running(self) -> bool:
-        return self._server_thread is not None and self._server_thread.is_running
+        return self._server is not None and self._server.is_running
 
     @property
     def url(self) -> str | None:
-        return self._server_thread.bound_url if self._server_thread is not None else None
-
-    @property
-    def webhook_url(self) -> str | None:
-        base = self.url
-        return f"{base}/webhooks/dalux" if base else None
+        return self._server.bound_url if self._server else None

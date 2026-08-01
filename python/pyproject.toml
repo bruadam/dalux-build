@@ -115,3 +115,11 @@ disallow_untyped_defs = false
 # is the real "no explicit Any" gate for this package.
 module = "dalux_build.models.*"
 disallow_any_explicit = false
+
+[[tool.mypy.overrides]]
+module = "dalux_build.webhook_server.models"
+disallow_any_explicit = false
+
+[[tool.mypy.overrides]]
+module = "croniter"
+ignore_missing_imports = true

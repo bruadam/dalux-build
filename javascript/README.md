@@ -35,6 +35,53 @@ const dalux = createClient({
 
 The returned object exposes one namespace per API group (see [API Reference](#api-reference) below).
 
+## Next.js (browser-safe, no CORS)
+
+Dalux API keys must stay server-side, and CORS is controlled by the Dalux API rather than this SDK.
+For Client Components, use the package's same-origin Next.js adapter: the browser calls your own
+App Router endpoint, and that endpoint uses the regular Dalux client on the server.
+
+```js
+// app/api/dalux/route.js
+import { createClient } from "dalux-build-api";
+import { createDaluxRouteHandler } from "dalux-build-api/next";
+import { getCurrentUser } from "@/lib/auth";
+
+const dalux = createClient({
+  baseUrl: process.env.DALUX_BASE_URL,
+  apiKey: process.env.DALUX_API_KEY,
+});
+
+export const POST = createDaluxRouteHandler({
+  client: dalux,
+  // Required: expose only the methods this application needs.
+  allowedMethods: {
+    projects: ["listProjects", "getProject"],
+    tasks: ["getProjectTasks", "getAllProjectTasks"],
+  },
+  // Recommended: connect this to your application's session/authorization.
+  authorize: async (request) => Boolean(await getCurrentUser(request)),
+});
+```
+
+```js
+// app/projects/Projects.jsx
+"use client";
+
+import { createBrowserClient } from "dalux-build-api/browser";
+
+const dalux = createBrowserClient({ url: "/api/dalux" });
+
+export async function loadProjects() {
+  return dalux.projects.listProjects();
+}
+```
+
+The browser entry contains no Axios, Node.js filesystem modules, base URL, or API key. Calls use
+same-origin `fetch`, so the browser does not make a cross-origin Dalux request. Write methods are
+supported only when you explicitly add them to `allowedMethods`; protect the route with your app's
+authorization before exposing them.
+
 ### Examples
 
 **List all projects**
@@ -79,7 +126,7 @@ const allTasks = await dalux.tasks.getAllProjectTasks(
 
 **Files: browse (6.1), fetch all pages, download**
 
-`listFiles` and `getAllFiles` call **GET `/6.1/projects/{projectId}/file_areas/{fileAreaId}/files`** (Dalux `listFiles`). Supported query parameters include `folderId`, `updatedAfter`, and `includeProperties` (see the official spec). Single-file metadata still uses **GET `/5.0/.../files/{fileId}`** (`getFile`).
+`listFiles` and `getAllFiles` call **GET `/6.1/projects/{projectId}/file_areas/{fileAreaId}/files`** (Dalux `listFiles`). The documented optional query parameter is `includeProperties`; pagination uses Dalux's returned bookmark links. Single-file metadata still uses **GET `/5.0/.../files/{fileId}`** (`getFile`).
 
 ```js
 const allFiles = await dalux.files.getAllFiles(
@@ -185,6 +232,11 @@ All API namespaces are accessible on the object returned by `createClient`:
 | `testPlans`        | `TestPlansApi`        | Test plans, items, zones and registrations                     |
 | `versionSets`      | `VersionSetsApi`      | Version sets and version set files                             |
 | `workPackages`     | `WorkPackagesApi`     | Work packages on a project                                     |
+
+`InspectionPlansApi` and `TestPlansApi` mirror the Python client's list behavior: their `list*`
+methods return the typed `items` array by default and accept `fullResponse = true` as the third
+argument to retain pagination metadata and links. Each collection also has a `getAll*` method that
+follows Dalux bookmark pagination automatically.
 
 ### ProjectsApi
 

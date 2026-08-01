@@ -5,8 +5,8 @@ A lightweight Python client for the [Dalux Build REST API](https://app.swaggerhu
 See the [Node.js client](../javascript/README.md) (`dalux-build-api`) and
 the [webhook server](../webhook-server/README.md) built on this package —
 the two clients are versioned, tested, and released together; see
-[../CONTRIBUTING.md](../CONTRIBUTING.md). For running the webhook receiver
-embedded in a script via `dalux.webhook_server`, see
+[../CONTRIBUTING.md](../CONTRIBUTING.md). For running the scheduled outbound
+webhook monitor embedded in a script via `dalux.webhook_server`, see
 [docs/webhook_server.md](docs/webhook_server.md).
 
 ## Requirements

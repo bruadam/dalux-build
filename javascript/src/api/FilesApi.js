@@ -26,7 +26,7 @@ class FilesApi {
    * GET /6.1/projects/{projectId}/file_areas/{fileAreaId}/files
    * @param {string} projectId
    * @param {string} fileAreaId
-   * @param {object} [params] - Optional params (e.g. folderId, updatedAfter, includeProperties). The files endpoint does not support OData $filter.
+   * @param {object} [params] - Optional documented params such as includeProperties. The files endpoint does not support OData $filter.
    * @returns {Promise<object>}
    */
   async listFiles(projectId, fileAreaId, params = {}) {

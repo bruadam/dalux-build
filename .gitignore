@@ -60,3 +60,4 @@ notebooks/*
 *.xls
 *.csv
 *.ifc.txt
+.vercel

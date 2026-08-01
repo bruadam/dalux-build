@@ -6,6 +6,9 @@
 and ``Store``, rather than building its own client from ``Settings`` — see
 ``app.py``'s ``AppContext`` for how it's wired up in this package.
 """
-from dalux_build.webhook_server.service import CheckResult, DaluxFileService  # noqa: F401
+
+from dalux_build.webhook_server.service import CheckResult, DaluxFileService
 
 DaluxService = DaluxFileService
+
+__all__ = ["CheckResult", "DaluxFileService", "DaluxService"]

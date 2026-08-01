@@ -4,11 +4,11 @@ Only ever imported lazily (from ``WebhookServerApi.start()``), so importing
 ``uvicorn`` at module scope is safe — it is never touched by a plain
 ``import dalux_build``.
 """
+
 from __future__ import annotations
 
 import threading
 import time
-from typing import Optional
 
 import uvicorn
 from fastapi import FastAPI
@@ -44,7 +44,7 @@ class ServerThread:
         return self._thread.is_alive() and self._server.started and not self._server.should_exit
 
     @property
-    def bound_url(self) -> Optional[str]:
+    def bound_url(self) -> str | None:
         if not self.is_running:
             return None
         return f"http://{self._host}:{self._port}"

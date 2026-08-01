@@ -1,9 +1,10 @@
 """API response models for Files endpoint."""
+
 import json
-from typing import Any, Dict, List, Optional, Union
 
-from pydantic import BaseModel, field_validator
+from pydantic import BaseModel, ConfigDict, field_validator
 
+from ...json_types import JSONDict
 from ..common import ItemsToDataFrameMixin, Link, Metadata
 from .models import File
 
@@ -11,21 +12,20 @@ from .models import File
 class FilesListResponse(ItemsToDataFrameMixin, BaseModel):
     """Response from GET /6.1/projects/{projectId}/file_areas/{fileAreaId}/files - List files."""
 
-    items: List[File] = []
-    metadata: Optional[Metadata] = None
-    links: Optional[List[Link]] = None
+    items: list[File] = []
+    metadata: Metadata | None = None
+    links: list[Link] | None = None
 
-    class Config:
-        populate_by_name = True
+    model_config = ConfigDict(populate_by_name=True)
 
     @field_validator("items", mode="before")
     @classmethod
-    def unwrap_and_convert_items(cls, v):
-        """Automatically unwrap items that have 'data' wrapper and convert to File models."""
+    def unwrap_and_convert_items(cls, v: object) -> list[object]:
+        """Unwrap items that have a 'data' wrapper and convert to File models."""
         if not isinstance(v, list):
             return []
 
-        result = []
+        result: list[object] = []
         for item in v:
             data = item.get("data") if isinstance(item, dict) and "data" in item else item
 
@@ -36,26 +36,24 @@ class FilesListResponse(ItemsToDataFrameMixin, BaseModel):
 
         return result
 
-
     @classmethod
-    def from_dict(cls, data: Dict[str, Any]) -> "FilesListResponse":
+    def from_dict(cls, data: JSONDict) -> "FilesListResponse":
         """Create FilesListResponse from a dictionary."""
         return cls.model_validate(data)
 
     @classmethod
-    def from_json(cls, json_str: Union[str, bytes]) -> "FilesListResponse":
+    def from_json(cls, json_str: str | bytes) -> "FilesListResponse":
         """Create FilesListResponse from a JSON string."""
         if isinstance(json_str, bytes):
-            json_str = json_str.decode('utf-8')
+            json_str = json_str.decode("utf-8")
         data = json.loads(json_str)
         return cls.from_dict(data)
 
 
 class FileResponse(BaseModel):
-    """Response from GET /5.0/projects/{projectId}/file_areas/{fileAreaId}/files/{fileId} - Get single file."""
+    """Response from GET /5.0/projects/{projectId}/file_areas/{fileAreaId}/files/{fileId}."""
 
     data: File
-    links: Optional[List[Link]] = None
+    links: list[Link] | None = None
 
-    class Config:
-        populate_by_name = True
+    model_config = ConfigDict(populate_by_name=True)

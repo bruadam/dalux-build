@@ -2,6 +2,7 @@
 
 Requires the 'webhook' extra (fastapi/httpx) to run.
 """
+
 import hashlib
 import hmac
 import json

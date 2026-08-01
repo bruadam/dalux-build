@@ -3,15 +3,15 @@ from dalux_build.webhook_server.store import FileState
 
 
 def _state(**kwargs):
-    base = dict(
-        file_id="f1",
-        revision_id=None,
-        content_hash=None,
-        last_modified=None,
-        file_size=None,
-        downloaded_path=None,
-        updated_at=0.0,
-    )
+    base = {
+        "file_id": "f1",
+        "revision_id": None,
+        "content_hash": None,
+        "last_modified": None,
+        "file_size": None,
+        "downloaded_path": None,
+        "updated_at": 0.0,
+    }
     base.update(kwargs)
     return FileState(**base)
 

@@ -14,11 +14,11 @@ Endpoints:
 * ``GET  /files/{file_id}``   - conditional download for pull-based clients
                                 (honours ``If-None-Match`` and returns 304).
 """
+
 from __future__ import annotations
 
 import logging
 import os
-from typing import Optional
 
 from dalux_build import create_client
 from dalux_build.webhook_server.app import build_app
@@ -55,7 +55,7 @@ class AppContext:
         )
 
 
-def create_app(settings: Optional[Settings] = None) -> FastAPI:
+def create_app(settings: Settings | None = None) -> FastAPI:
     settings = settings or get_settings()
     ctx = AppContext(settings)
 

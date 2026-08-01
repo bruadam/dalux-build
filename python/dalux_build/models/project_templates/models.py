@@ -1,6 +1,6 @@
 """Data models for Project Templates endpoint."""
-from pydantic import BaseModel, Field
-from typing import Optional
+
+from pydantic import BaseModel, ConfigDict, Field
 
 
 class ProjectTemplate(BaseModel):
@@ -9,5 +9,4 @@ class ProjectTemplate(BaseModel):
     project_template_id: str = Field(..., alias="projectTemplateId")
     name: str
 
-    class Config:
-        populate_by_name = True
+    model_config = ConfigDict(populate_by_name=True)

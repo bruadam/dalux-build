@@ -1,26 +1,30 @@
 """API response models for Test Plans endpoint."""
+
 import json
-from typing import Any, Dict, List, Optional, Union
+from typing import TYPE_CHECKING
 
-from pydantic import BaseModel, field_validator
+from pydantic import BaseModel, ConfigDict, field_validator
 
+from ...json_types import JSONDict
 from ..common import ItemsToDataFrameMixin, Link, Metadata
+
+if TYPE_CHECKING:
+    import pandas as pd
 from .models import TestPlan, TestPlanItem, TestPlanItemZone, TestPlanRegistration
 
 
 class TestPlansListResponse(ItemsToDataFrameMixin, BaseModel):
     """Response from GET /1.2/projects/{projectId}/testPlans - List test plans."""
 
-    items: List[TestPlan] = []
-    metadata: Optional[Metadata] = None
-    links: Optional[List[Link]] = None
+    items: list[TestPlan] = []
+    metadata: Metadata | None = None
+    links: list[Link] | None = None
 
-    class Config:
-        populate_by_name = True
+    model_config = ConfigDict(populate_by_name=True)
 
     @field_validator("items", mode="before")
     @classmethod
-    def unwrap_items(cls, v):
+    def unwrap_items(cls, v: object) -> list[object]:
         """Automatically unwrap items that have 'data' wrapper."""
         if not isinstance(v, list):
             return []
@@ -32,19 +36,19 @@ class TestPlansListResponse(ItemsToDataFrameMixin, BaseModel):
         return unwrapped
 
     @classmethod
-    def from_dict(cls, data: Dict[str, Any]) -> "TestPlansListResponse":
+    def from_dict(cls, data: JSONDict) -> "TestPlansListResponse":
         """Create TestPlansListResponse from a dictionary."""
         return cls.model_validate(data)
 
     @classmethod
-    def from_json(cls, json_str: Union[str, bytes]) -> "TestPlansListResponse":
+    def from_json(cls, json_str: str | bytes) -> "TestPlansListResponse":
         """Create TestPlansListResponse from a JSON string."""
         if isinstance(json_str, bytes):
-            json_str = json_str.decode('utf-8')
+            json_str = json_str.decode("utf-8")
         data = json.loads(json_str)
         return cls.from_dict(data)
 
-    def to_dataframe(self) -> Any:
+    def to_dataframe(self) -> "pd.DataFrame":
         """Convert test plan items to a flattened pandas DataFrame."""
         try:
             import pandas as pd
@@ -63,16 +67,15 @@ class TestPlansListResponse(ItemsToDataFrameMixin, BaseModel):
 class TestPlanItemsListResponse(ItemsToDataFrameMixin, BaseModel):
     """Response from GET /1.1/projects/{projectId}/testPlanItems."""
 
-    items: List[TestPlanItem] = []
-    metadata: Optional[Metadata] = None
-    links: Optional[List[Link]] = None
+    items: list[TestPlanItem] = []
+    metadata: Metadata | None = None
+    links: list[Link] | None = None
 
-    class Config:
-        populate_by_name = True
+    model_config = ConfigDict(populate_by_name=True)
 
     @field_validator("items", mode="before")
     @classmethod
-    def unwrap_items(cls, v):
+    def unwrap_items(cls, v: object) -> list[object]:
         """Automatically unwrap items that have 'data' wrapper."""
         if not isinstance(v, list):
             return []
@@ -87,16 +90,15 @@ class TestPlanItemsListResponse(ItemsToDataFrameMixin, BaseModel):
 class TestPlanItemZonesListResponse(ItemsToDataFrameMixin, BaseModel):
     """Response from GET /1.1/projects/{projectId}/testPlanItemZones."""
 
-    items: List[TestPlanItemZone] = []
-    metadata: Optional[Metadata] = None
-    links: Optional[List[Link]] = None
+    items: list[TestPlanItemZone] = []
+    metadata: Metadata | None = None
+    links: list[Link] | None = None
 
-    class Config:
-        populate_by_name = True
+    model_config = ConfigDict(populate_by_name=True)
 
     @field_validator("items", mode="before")
     @classmethod
-    def unwrap_items(cls, v):
+    def unwrap_items(cls, v: object) -> list[object]:
         """Automatically unwrap items that have 'data' wrapper."""
         if not isinstance(v, list):
             return []
@@ -111,16 +113,15 @@ class TestPlanItemZonesListResponse(ItemsToDataFrameMixin, BaseModel):
 class TestPlanRegistrationsListResponse(ItemsToDataFrameMixin, BaseModel):
     """Response from GET /1.1/projects/{projectId}/testPlanRegistrations."""
 
-    items: List[TestPlanRegistration] = []
-    metadata: Optional[Metadata] = None
-    links: Optional[List[Link]] = None
+    items: list[TestPlanRegistration] = []
+    metadata: Metadata | None = None
+    links: list[Link] | None = None
 
-    class Config:
-        populate_by_name = True
+    model_config = ConfigDict(populate_by_name=True)
 
     @field_validator("items", mode="before")
     @classmethod
-    def unwrap_items(cls, v):
+    def unwrap_items(cls, v: object) -> list[object]:
         """Automatically unwrap items that have 'data' wrapper."""
         if not isinstance(v, list):
             return []

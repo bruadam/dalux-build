@@ -1,11 +1,13 @@
 """File Areas API."""
-from typing import Any, Dict, Optional
+
+from typing import Literal, overload
 
 from ..api_client import ApiClient
+from ..json_types import QueryParams
 from ..models import FileArea, FileAreasListResponse
-from ..response_converter import convert_to_model
+from ..response_converter import convert_to_list_response, convert_to_model
 from ..utils.search import find_by_field
-from ..utils.validation import validate_project_id
+from ..utils.validation import resolve_file_area_id, resolve_project_id
 
 
 class FileAreasApi:
@@ -14,44 +16,83 @@ class FileAreasApi:
     def __init__(self, api_client: ApiClient) -> None:
         self._client = api_client
 
+    @overload
     def get_file_areas(
-        self, project_id: str, params: Optional[Dict[str, Any]] = None
-    ) -> Optional[FileAreasListResponse]:
+        self,
+        params: QueryParams | None = None,
+        full_response: Literal[False] = False,
+        *,
+        project_id: str | None = None,
+    ) -> list[FileArea]: ...
+    @overload
+    def get_file_areas(
+        self,
+        params: QueryParams | None = None,
+        *,
+        full_response: Literal[True],
+        project_id: str | None = None,
+    ) -> FileAreasListResponse | None: ...
+    def get_file_areas(
+        self,
+        params: QueryParams | None = None,
+        full_response: bool = False,
+        *,
+        project_id: str | None = None,
+    ) -> FileAreasListResponse | list[FileArea] | None:
         """GET /5.1/projects/{projectId}/file_areas.
 
-        Returns:
-            FileAreasListResponse with type-safe access to file areas.
-        """
-        response = self._client.get(
-            f"/5.1/projects/{project_id}/file_areas", params=params
-        )
-        return convert_to_model(response, FileAreasListResponse)
+        Args:
+            params: Optional query parameters.
+            full_response: If True, return the full FileAreasListResponse
+                (including metadata and links). If False (default), return
+                just the list of FileArea items.
+            project_id: Project ID. Falls back to the client's configured
+                default project ID (``Configuration.project_id`` /
+                ``DALUX_PROJECT_ID``) when omitted.
 
-    def get_file_area(self, project_id: str, file_area_id: str) -> Optional[FileArea]:
-        """GET /1.0/projects/{projectId}/file_areas/{fileAreaId}."""
-        response = self._client.get(
-            f"/1.0/projects/{project_id}/file_areas/{file_area_id}"
-        )
+        Returns:
+            List of FileArea items, or the full FileAreasListResponse when
+            full_response=True.
+        """
+        project_id = resolve_project_id(project_id, self._client.configuration.project_id)
+        response = self._client.get(f"/5.1/projects/{project_id}/file_areas", params=params)
+        result = convert_to_list_response(response, FileAreasListResponse)
+        if full_response:
+            return result
+        return result.items if result is not None else []
+
+    def get_file_area(
+        self, *, project_id: str | None = None, file_area_id: str | None = None
+    ) -> FileArea | None:
+        """GET /1.0/projects/{projectId}/file_areas/{fileAreaId}.
+
+        Args:
+            project_id: Project ID. Falls back to the client's configured default.
+            file_area_id: File area ID. Falls back to the client's configured default.
+        """
+        project_id = resolve_project_id(project_id, self._client.configuration.project_id)
+        file_area_id = resolve_file_area_id(file_area_id, self._client.configuration.file_area_id)
+        response = self._client.get(f"/1.0/projects/{project_id}/file_areas/{file_area_id}")
         return convert_to_model(response, FileArea)
 
     def get_file_area_by_name(
-        self, project_id: str, file_area_name: str
-    ) -> Optional[str]:
+        self, file_area_name: str, *, project_id: str | None = None
+    ) -> str | None:
         """Get file area ID by name.
 
         Args:
-            project_id: Project ID.
             file_area_name: Name of the file area to search for.
+            project_id: Project ID. Falls back to the client's configured default.
 
         Returns:
             The file area if found, None otherwise.
         """
-        validate_project_id(project_id)
-        
-        response = self.get_file_areas(project_id)
-        if not response or not response.items:
+        project_id = resolve_project_id(project_id, self._client.configuration.project_id)
+
+        items = self.get_file_areas(project_id=project_id)
+        if not items:
             return None
 
         # Use generic search utility - search by the Pydantic field name "file_area_name"
-        file_area = find_by_field(response.items, "file_area_name", file_area_name)
+        file_area = find_by_field(items, "file_area_name", file_area_name)
         return file_area.file_area_id if file_area else None

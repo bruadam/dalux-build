@@ -4,23 +4,23 @@ Uses SQLite so a single-process deployment keeps working across restarts
 without an external database. Swap this class for a Postgres/Redis-backed
 implementation if you need multi-instance deployments.
 """
+
 from __future__ import annotations
 
 import sqlite3
 import threading
 import time
 from dataclasses import dataclass
-from typing import Optional
 
 
 @dataclass
 class FileState:
     file_id: str
-    revision_id: Optional[str]
-    content_hash: Optional[str]
-    last_modified: Optional[str]
-    file_size: Optional[int]
-    downloaded_path: Optional[str]
+    revision_id: str | None
+    content_hash: str | None
+    last_modified: str | None
+    file_size: int | None
+    downloaded_path: str | None
     updated_at: float
 
 
@@ -50,7 +50,7 @@ class Store:
         with self._conn:
             self._conn.executescript(_SCHEMA)
 
-    def get_state(self, file_id: str) -> Optional[FileState]:
+    def get_state(self, file_id: str) -> FileState | None:
         with self._lock:
             row = self._conn.execute(
                 "SELECT * FROM file_state WHERE file_id = ?", (file_id,)

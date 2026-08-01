@@ -10,6 +10,7 @@ long-lived process with ``--interval 300``. The built-in interval uses a
 fixed-rate monotonic schedule, so the poll's own run time is not added to the
 gap between wake-ups.
 """
+
 from __future__ import annotations
 
 import argparse
@@ -27,7 +28,9 @@ logger = logging.getLogger("dalux_webhook.poller")
 def main() -> None:
     logging.basicConfig(level=logging.INFO)
     parser = argparse.ArgumentParser(description="Poll Dalux for watched file changes")
-    parser.add_argument("--interval", type=int, default=0, help="Seconds between polls (0 = run once)")
+    parser.add_argument(
+        "--interval", type=int, default=0, help="Seconds between polls (0 = run once)"
+    )
     parser.add_argument("--updated-after", default=None, help="Only used in --mode list")
     parser.add_argument("--mode", choices=["per-file", "list"], default="per-file")
     args = parser.parse_args()
@@ -52,9 +55,7 @@ def main() -> None:
         if next_run <= now:
             skipped = int((now - next_run) // args.interval) + 1
             next_run += skipped * args.interval
-            logger.warning(
-                "Poll overran its interval; skipping %d missed tick(s)", skipped
-            )
+            logger.warning("Poll overran its interval; skipping %d missed tick(s)", skipped)
         time.sleep(max(0.0, next_run - time.monotonic()))
 
 

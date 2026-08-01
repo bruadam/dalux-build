@@ -9,15 +9,17 @@ shape and signing scheme are not guaranteed. This module therefore:
 
 Adjust :func:`extract_file_refs` once you have a real example payload from Dalux.
 """
+
 from __future__ import annotations
 
 import hashlib
 import hmac
 from dataclasses import dataclass
-from typing import Any, Dict, List, Optional
+
+from ..json_types import JSONDict
 
 
-def verify_signature(secret: str, header_value: Optional[str], body: bytes) -> bool:
+def verify_signature(secret: str, header_value: str | None, body: bytes) -> bool:
     """Constant-time HMAC-SHA256 check of the raw request body.
 
     If *secret* is empty, verification is disabled and this returns True
@@ -35,11 +37,11 @@ def verify_signature(secret: str, header_value: Optional[str], body: bytes) -> b
 @dataclass(frozen=True)
 class FileRef:
     file_id: str
-    project_id: Optional[str] = None
-    file_area_id: Optional[str] = None
+    project_id: str | None = None
+    file_area_id: str | None = None
 
 
-def _first(d: Dict[str, Any], *keys: str) -> Optional[str]:
+def _first(d: JSONDict, *keys: str) -> str | None:
     for key in keys:
         value = d.get(key)
         if value:
@@ -47,12 +49,12 @@ def _first(d: Dict[str, Any], *keys: str) -> Optional[str]:
     return None
 
 
-def event_id(payload: Dict[str, Any]) -> Optional[str]:
+def event_id(payload: JSONDict) -> str | None:
     """Best-effort extraction of a unique event id for idempotency."""
     return _first(payload, "eventId", "event_id", "id", "deliveryId", "delivery_id")
 
 
-def _ref_from_obj(obj: Dict[str, Any]) -> Optional[FileRef]:
+def _ref_from_obj(obj: JSONDict) -> FileRef | None:
     file_id = _first(obj, "fileId", "file_id")
     if not file_id:
         return None
@@ -63,23 +65,24 @@ def _ref_from_obj(obj: Dict[str, Any]) -> Optional[FileRef]:
     )
 
 
-def extract_file_refs(payload: Dict[str, Any]) -> List[FileRef]:
+def extract_file_refs(payload: JSONDict) -> list[FileRef]:
     """Pull file references out of a webhook payload, tolerating shape variations.
 
     Handles a top-level file object, a ``data`` wrapper, and an ``events`` /
     ``items`` list of file objects. Deduplicates by ``file_id``.
     """
-    candidates: List[Dict[str, Any]] = []
+    candidates: list[JSONDict] = []
     if isinstance(payload, dict):
         candidates.append(payload)
-        if isinstance(payload.get("data"), dict):
-            candidates.append(payload["data"])
+        data = payload.get("data")
+        if isinstance(data, dict):
+            candidates.append(data)
         for key in ("events", "items", "files"):
             seq = payload.get(key)
             if isinstance(seq, list):
                 candidates.extend(item for item in seq if isinstance(item, dict))
 
-    refs: Dict[str, FileRef] = {}
+    refs: dict[str, FileRef] = {}
     for obj in candidates:
         ref = _ref_from_obj(obj)
         if ref and ref.file_id not in refs:

@@ -1,9 +1,9 @@
 """Environment-driven configuration for the webhook server."""
+
 from __future__ import annotations
 
 import os
 from dataclasses import dataclass
-from typing import Optional
 
 from dalux_build.configuration import resolve_secret
 
@@ -44,7 +44,7 @@ class Settings:
     port: int
 
     @classmethod
-    def from_env(cls) -> "Settings":
+    def from_env(cls) -> Settings:
         return cls(
             dalux_base_url=_get("DALUX_BASE_URL"),
             dalux_api_key=_get_secret("DALUX_API_KEY"),
@@ -71,12 +71,10 @@ class Settings:
             if not value
         ]
         if missing:
-            raise RuntimeError(
-                "Missing required environment variables: " + ", ".join(missing)
-            )
+            raise RuntimeError("Missing required environment variables: " + ", ".join(missing))
 
 
-_settings: Optional[Settings] = None
+_settings: Settings | None = None
 
 
 def get_settings() -> Settings:

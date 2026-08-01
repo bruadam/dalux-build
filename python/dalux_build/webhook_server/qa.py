@@ -12,21 +12,23 @@ Both are optional; if neither is configured the event is only logged.
 This module is only ever imported lazily (from ``WebhookServerApi.start()`` or
 the standalone CLI), so importing ``httpx`` at module scope is safe.
 """
+
 from __future__ import annotations
 
 import json
 import logging
 import subprocess
-from typing import Any, Dict
 
 import httpx
 
+from ..json_types import JSONDict
 from .config import QaConfig
+from .service import CheckResult
 
 logger = logging.getLogger("dalux_build.webhook_server.qa")
 
 
-def build_event(result: Any, project_id: str, file_area_id: str) -> Dict[str, Any]:
+def build_event(result: CheckResult, project_id: str, file_area_id: str) -> JSONDict:
     data = result.data or {}
     return {
         "type": "dalux.file.changed",
@@ -41,7 +43,7 @@ def build_event(result: Any, project_id: str, file_area_id: str) -> Dict[str, An
     }
 
 
-def trigger(qa_config: QaConfig, event: Dict[str, Any]) -> None:
+def trigger(qa_config: QaConfig, event: JSONDict) -> None:
     """Dispatch *event* to the configured QA mechanism."""
     if qa_config.qa_webhook_url:
         headers = {"Content-Type": "application/json"}

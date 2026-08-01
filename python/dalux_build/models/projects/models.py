@@ -1,15 +1,14 @@
 """Data models for Projects endpoint."""
-from datetime import datetime
-from typing import List, Optional
 
-from pydantic import BaseModel, Field
+from datetime import datetime
+
+from pydantic import BaseModel, ConfigDict, Field
 
 
 class ProjectModule(BaseModel):
     """Project module model."""
 
-    class Config:
-        populate_by_name = True
+    model_config = ConfigDict(populate_by_name=True)
 
 
 class Project(BaseModel):
@@ -17,26 +16,24 @@ class Project(BaseModel):
 
     project_id: str = Field(..., alias="projectId")
     project_name: str = Field(..., alias="projectName")
-    project_type: Optional[str] = Field(None, alias="type")
-    project_template_id: Optional[str] = Field(None, alias="projectTemplateId")
-    address: Optional[str] = None
-    number: Optional[str] = None
-    created: Optional[datetime] = None
-    closing: Optional[datetime] = None
-    modules: Optional[List[ProjectModule]] = None
+    project_type: str | None = Field(None, alias="type")
+    project_template_id: str | None = Field(None, alias="projectTemplateId")
+    address: str | None = None
+    number: str | None = None
+    created: datetime | None = None
+    closing: datetime | None = None
+    modules: list[ProjectModule] | None = None
 
-    class Config:
-        populate_by_name = True
+    model_config = ConfigDict(populate_by_name=True)
 
 
 class ProjectMetadata(BaseModel):
     """Project metadata model."""
 
     key: str
-    value: Optional[str] = None
+    value: str | None = None
 
-    class Config:
-        populate_by_name = True
+    model_config = ConfigDict(populate_by_name=True)
 
 
 class ProjectTemplate(BaseModel):
@@ -45,21 +42,19 @@ class ProjectTemplate(BaseModel):
     project_template_id: str = Field(..., alias="projectTemplateId")
     name: str
 
-    class Config:
-        populate_by_name = True
+    model_config = ConfigDict(populate_by_name=True)
 
 
 class ProjectCompany(BaseModel):
     """Project company model."""
 
-    company_id: Optional[str] = Field(None, alias="companyId")
-    name: Optional[str] = None
-    vat_number: Optional[str] = Field(None, alias="vatNumber")
-    address: Optional[str] = None
-    city: Optional[str] = None
-    postal_code: Optional[str] = Field(None, alias="postalCode")
-    country: Optional[str] = None
-    catalog_company_id: Optional[str] = Field(None, alias="catalogCompanyId")
+    company_id: str | None = Field(None, alias="companyId")
+    name: str | None = None
+    vat_number: str | None = Field(None, alias="vatNumber")
+    address: str | None = None
+    city: str | None = None
+    postal_code: str | None = Field(None, alias="postalCode")
+    country: str | None = None
+    catalog_company_id: str | None = Field(None, alias="catalogCompanyId")
 
-    class Config:
-        populate_by_name = True
+    model_config = ConfigDict(populate_by_name=True)

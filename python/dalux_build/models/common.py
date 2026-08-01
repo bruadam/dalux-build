@@ -1,7 +1,11 @@
 """Common base models shared across all API responses."""
-from typing import Any, Optional
 
-from pydantic import BaseModel, Field
+from typing import TYPE_CHECKING
+
+from pydantic import BaseModel, ConfigDict, Field
+
+if TYPE_CHECKING:
+    import pandas as pd
 
 
 class Link(BaseModel):
@@ -9,26 +13,24 @@ class Link(BaseModel):
 
     rel: str
     href: str
-    method: Optional[str] = None
+    method: str | None = None
 
-    class Config:
-        populate_by_name = True
+    model_config = ConfigDict(populate_by_name=True)
 
 
 class Metadata(BaseModel):
     """Response metadata with pagination info."""
 
-    total_items: Optional[int] = Field(None, alias="totalItems")
-    total_remaining_items: Optional[int] = Field(None, alias="totalRemainingItems")
+    total_items: int | None = Field(None, alias="totalItems")
+    total_remaining_items: int | None = Field(None, alias="totalRemainingItems")
 
-    class Config:
-        populate_by_name = True
+    model_config = ConfigDict(populate_by_name=True)
 
 
 class ItemsToDataFrameMixin:
     """Mixin adding dataframe export support for responses with an ``items`` field."""
 
-    def to_dataframe(self) -> Any:
+    def to_dataframe(self) -> "pd.DataFrame":
         """Convert ``items`` to a flattened pandas DataFrame using ``::`` separators."""
         try:
             import pandas as pd
@@ -37,11 +39,11 @@ class ItemsToDataFrameMixin:
                 "pandas is required for to_dataframe(). Install it with `pip install pandas`."
             ) from exc
 
-        items = getattr(self, "items", None)
-        if not items:
+        items: object = getattr(self, "items", None)
+        if not items or not isinstance(items, list):
             return pd.DataFrame()
 
-        rows = []
+        rows: list[dict[str, object]] = []
         for item in items:
             if hasattr(item, "model_dump"):
                 rows.append(item.model_dump(by_alias=True, mode="json"))

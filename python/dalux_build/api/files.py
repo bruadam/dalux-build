@@ -1,24 +1,53 @@
 """Files API."""
+
 import json
 import os
-from typing import TYPE_CHECKING, Any, Dict, List, Optional
-
-if TYPE_CHECKING:
-    from .folders import FoldersApi
+from typing import TYPE_CHECKING, Literal, Protocol, overload
 
 import requests
+
+from ..api_client import ApiClient
+from ..json_types import JSONDict, JSONValue, QueryParams
+from ..models import File, FileArea, FileNameFilter, FileResponse, FilesListResponse
+from ..response_converter import convert_to_list_response, convert_to_model
+from ..utils.pagination import paginate
+from ..utils.path_resolver import resolve_folder_id_from_named_path
+from ..utils.search import find_all_by_field, find_by_field
+from ..utils.validation import resolve_file_area_id, resolve_project_id, validate_folder_id
+
+if TYPE_CHECKING:
+    from .folders import FolderLike, FoldersApi, TreeNode
+
+
+class _ProgressBar(Protocol):
+    """The subset of tqdm's interface used for download progress."""
+
+    def update(self, n: float) -> bool | None: ...
+    def close(self) -> None: ...
+
+
 try:
     from tqdm import tqdm
 except ImportError:
-    tqdm = None
+    # tqdm's own constructor signature is too large/generic to model with a
+    # Protocol; the `progress: _ProgressBar | None` annotation at the call
+    # site (below) is what keeps this optional dependency out of our own
+    # type surface.
+    tqdm = None  # type: ignore[assignment, misc]
 
-from ..api_client import ApiClient
-from ..models import File, FileNameFilter, FilesListResponse, FileResponse
-from ..response_converter import convert_to_model
-from ..utils.pagination import paginate
-from ..utils.path_resolver import resolve_folder_id_from_named_path
-from ..utils.search import find_by_field, find_all_by_field
-from ..utils.validation import validate_project_id, validate_file_area_id, validate_folder_id
+# get_all_files() falls back to the raw payload (dict) when a page's item
+# can't be validated as a File, so callers must handle both shapes.
+FileLike = File | JSONDict
+
+
+def _file_payload(item: FileLike) -> JSONDict:
+    """Normalize a File object or raw API item into a plain field dict."""
+    if isinstance(item, File):
+        return item.model_dump(by_alias=True)
+    if "data" in item:
+        data = item.get("data")
+        return data if isinstance(data, dict) else {}
+    return item
 
 
 class FilesApi:
@@ -31,7 +60,7 @@ class FilesApi:
         self,
         method: str,
         path: str,
-        params: Optional[Dict[str, Any]] = None,
+        params: QueryParams | None = None,
         verbose: bool = False,
     ) -> None:
         """Print endpoint details when verbose mode is enabled."""
@@ -42,25 +71,25 @@ class FilesApi:
         else:
             print(f"{method} {path}")
 
-    def _get_local_file_path(self, file_name: str, save_path: Optional[str] = None) -> str:
+    def _get_local_file_path(self, file_name: str, save_path: str | None = None) -> str:
         """Build the destination file path."""
         return os.path.join(save_path, file_name) if save_path else file_name
 
-    def _get_local_metadata_path(self, file_name: str, save_path: Optional[str] = None) -> str:
+    def _get_local_metadata_path(self, file_name: str, save_path: str | None = None) -> str:
         """Build the destination metadata path."""
         return f"{self._get_local_file_path(file_name, save_path)}.txt"
 
     def _load_saved_metadata(
         self,
         file_name: str,
-        save_path: Optional[str] = None,
-    ) -> Optional[Dict[str, Any]]:
+        save_path: str | None = None,
+    ) -> JSONDict | None:
         """Load previously saved metadata for a local file if present."""
         metadata_path = self._get_local_metadata_path(file_name, save_path)
         if not os.path.exists(metadata_path):
             return None
         try:
-            with open(metadata_path, "r", encoding="utf-8") as metadata_file:
+            with open(metadata_path, encoding="utf-8") as metadata_file:
                 data = json.load(metadata_file)
             return data if isinstance(data, dict) else None
         except (OSError, json.JSONDecodeError):
@@ -87,7 +116,7 @@ class FilesApi:
         self,
         file_obj: File,
         *,
-        save_path: Optional[str],
+        save_path: str | None,
         save_metadata: bool,
         save_historically: bool,
         progress_label: str,
@@ -125,6 +154,7 @@ class FilesApi:
 
         if verbose:
             print(f"  {progress_label} Downloading {local_name!r}...")
+        assert file_obj.download_link is not None, "caller must check download_link first"
         downloaded_path = self._download_file_from_link(
             file_obj.download_link,
             local_name,
@@ -146,170 +176,222 @@ class FilesApi:
             }
         )
 
+    @overload
     def list_files(
         self,
-        project_id: str,
-        file_area_id: str,
-        params: Optional[Dict[str, Any]] = None,
-    ) -> Optional[FilesListResponse]:
+        params: QueryParams | None = None,
+        full_response: Literal[False] = False,
+        *,
+        project_id: str | None = None,
+        file_area_id: str | None = None,
+    ) -> list[File]: ...
+    @overload
+    def list_files(
+        self,
+        params: QueryParams | None = None,
+        *,
+        full_response: Literal[True],
+        project_id: str | None = None,
+        file_area_id: str | None = None,
+    ) -> FilesListResponse | None: ...
+    def list_files(
+        self,
+        params: QueryParams | None = None,
+        full_response: bool = False,
+        *,
+        project_id: str | None = None,
+        file_area_id: str | None = None,
+    ) -> FilesListResponse | list[File] | None:
         """GET /6.1/projects/{projectId}/file_areas/{fileAreaId}/files.
 
         See ``docs/official-api-docs/Dalux Build API.yaml`` (operationId: listFiles).
         Pass ``includeProperties=True`` in *params* to return each file's
         properties array. The files endpoint does not support OData ``$filter``.
 
+        Args:
+            params: Optional query parameters.
+            full_response: If True, return the full FilesListResponse
+                (including metadata and links). If False (default), return
+                just the list of File items.
+            project_id: Project ID. Falls back to the client's configured default.
+            file_area_id: File area ID. Falls back to the client's configured default.
+
         Returns:
-            FilesListResponse with type-safe access to files.
+            List of File items, or the full FilesListResponse when
+            full_response=True.
         """
+        project_id = resolve_project_id(project_id, self._client.configuration.project_id)
+        file_area_id = resolve_file_area_id(file_area_id, self._client.configuration.file_area_id)
         response = self._client.get(
             f"/6.1/projects/{project_id}/file_areas/{file_area_id}/files",
             params=params,
         )
-        return convert_to_model(response, FilesListResponse)
+        result = convert_to_list_response(response, FilesListResponse)
+        if full_response:
+            return result
+        return result.items if result is not None else []
 
     def get_all_files(
         self,
-        project_id: str,
-        file_area_id: str,
-        params: Optional[Dict[str, Any]] = None,
+        params: QueryParams | None = None,
         verbose: bool = False,
-    ) -> List[File]:
+        *,
+        project_id: str | None = None,
+        file_area_id: str | None = None,
+    ) -> list[FileLike]:
         """Retrieve all files by following bookmark pagination automatically.
 
         Args:
-            project_id: Project ID.
-            file_area_id: File area ID.
             params: Optional additional query parameters.
             verbose: If True, print progress information.
+            project_id: Project ID. Falls back to the client's configured default.
+            file_area_id: File area ID. Falls back to the client's configured default.
 
         Returns:
-            List of all file items as File objects.
+            List of all file items, as File objects where the payload
+            validated cleanly and raw dicts otherwise.
         """
-        validate_project_id(project_id)
-        validate_file_area_id(file_area_id)
-        
+        project_id = resolve_project_id(project_id, self._client.configuration.project_id)
+        file_area_id = resolve_file_area_id(file_area_id, self._client.configuration.file_area_id)
+
         endpoint = f"/6.1/projects/{project_id}/file_areas/{file_area_id}/files"
         self._print_endpoint("GET", endpoint, params=params, verbose=verbose)
         raw_items = paginate(endpoint, self._client, params, verbose)
-        
+
         # Convert raw items to File objects
-        files = []
+        files: list[FileLike] = []
         for item in raw_items:
             if isinstance(item, dict) and "data" in item:
                 file_data = item["data"]
                 try:
                     file_obj = File.model_validate(file_data)
                     files.append(file_obj)
-                except Exception as e:
+                except Exception:
                     # If conversion fails, fall back to raw data for compatibility
-                    files.append(file_data)
-            elif isinstance(item, File):
+                    if isinstance(file_data, dict):
+                        files.append(file_data)
+            elif isinstance(item, dict):
                 files.append(item)
-            else:
-                files.append(item)
-        
+
         return files
 
     def get_all_files_in_folder(
         self,
-        project_id: str,
-        file_area_id_or_path: str,
-        folder_id: Optional[str] = None,
-        params: Optional[Dict[str, Any]] = None,
+        folder_id: str | None = None,
+        params: QueryParams | None = None,
         verbose: bool = False,
-    ) -> list:
-        """Retrieve all files for a folder using either folder ID or full path.
+        *,
+        path: str | None = None,
+        project_id: str | None = None,
+        file_area_id: str | None = None,
+    ) -> list[FileLike]:
+        """Retrieve all files for a folder using either a folder ID or a full path.
+
+        Supports either:
+        - ``get_all_files_in_folder(folder_id, file_area_id=...)`` — file_area_id
+          falls back to the client's configured default when omitted.
+        - ``get_all_files_in_folder(path="Files/4_Design/C07_Geometry/C07.05_BIM")``
 
         Args:
-            project_id: Project ID.
-            file_area_id_or_path: Either a file area ID or a full path starting
-                with the file area name, such as
-                ``Files/4_Design/C07_Geometry/C07.05_BIM``.
-            folder_id: The folder ID to filter files by when ``file_area_id_or_path``
-                is a file area ID.
+            folder_id: The folder ID to filter files by. Required unless *path* is given.
             params: Optional additional query parameters passed to the API.
             verbose: If True, print progress information.
+            path: A full path starting with the file area name, such as
+                ``"Files/4_Design/C07_Geometry/C07.05_BIM"``. Alternative to
+                *folder_id* + *file_area_id*.
+            project_id: Project ID. Falls back to the client's configured default.
+            file_area_id: File area ID. Falls back to the client's configured
+                default. Not used, and not backfilled from the client default,
+                when *path* is given.
 
         Returns:
             A list of file items belonging to the specified folder.
-        """
-        validate_project_id(project_id)
 
-        if folder_id is None:
-            file_area_id, resolved_folder_id = resolve_folder_id_from_named_path(
-                self._client, project_id, file_area_id_or_path, verbose=verbose
+        Raises:
+            ValueError: If neither *folder_id* nor *path* is provided.
+        """
+        project_id = resolve_project_id(project_id, self._client.configuration.project_id)
+
+        resolved_file_area_id: str
+        resolved_folder_id: str
+        if path is not None:
+            maybe_file_area_id, maybe_folder_id = resolve_folder_id_from_named_path(
+                self._client, project_id, path, verbose=verbose
             )
-            if resolved_folder_id is None:
+            if maybe_file_area_id is None or maybe_folder_id is None:
                 if verbose:
-                    print(f"Could not resolve folder path: {file_area_id_or_path}")
+                    print(f"Could not resolve folder path: {path}")
                 return []
+            resolved_file_area_id = maybe_file_area_id
+            resolved_folder_id = maybe_folder_id
         else:
-            file_area_id = file_area_id_or_path
+            if folder_id is None:
+                raise ValueError("either 'folder_id' or 'path' must be provided")
+            resolved_file_area_id = resolve_file_area_id(
+                file_area_id, self._client.configuration.file_area_id
+            )
             resolved_folder_id = folder_id
-            validate_file_area_id(file_area_id)
             validate_folder_id(resolved_folder_id)
-        
-        all_files = self.get_all_files(project_id, file_area_id, params=params, verbose=verbose)
+
+        all_files = self.get_all_files(
+            params=params,
+            verbose=verbose,
+            project_id=project_id,
+            file_area_id=resolved_file_area_id,
+        )
         filtered = find_all_by_field(
-            all_files,
-            "folderId",
-            resolved_folder_id,
-            accessor=lambda x: x
+            all_files, "folderId", resolved_folder_id, accessor=lambda x: x
         )
         if verbose:
             print(f"Files matching folder {resolved_folder_id!r}: {len(filtered)}")
         return filtered
 
-    def _extract_file_name(self, file_item: Any) -> str:
+    def _extract_file_name(self, file_item: FileLike) -> str:
         """Extract a file name from either a File model or raw API item."""
-        if hasattr(file_item, "file_name"):
+        if isinstance(file_item, File):
             return file_item.file_name or ""
-        if isinstance(file_item, dict):
-            if "data" in file_item and isinstance(file_item["data"], dict):
-                return file_item["data"].get("fileName", "") or ""
-            return file_item.get("fileName", "") or ""
-        return ""
+        data = file_item.get("data")
+        if isinstance(data, dict):
+            name = data.get("fileName", "")
+            return name if isinstance(name, str) else ""
+        name = file_item.get("fileName", "")
+        return name if isinstance(name, str) else ""
 
-    def _coerce_file(self, file_item: Any) -> Optional[File]:
+    def _coerce_file(self, file_item: FileLike) -> File | None:
         """Convert a raw file item to a File model when possible."""
         if isinstance(file_item, File):
             return file_item
-        if isinstance(file_item, dict):
-            file_data = file_item.get("data", file_item)
-            if isinstance(file_data, dict):
-                try:
-                    return File.model_validate(file_data)
-                except Exception:
-                    return None
+        file_data = file_item.get("data", file_item)
+        if isinstance(file_data, dict):
+            try:
+                return File.model_validate(file_data)
+            except Exception:
+                return None
         return None
 
-    def _normalize_extensions(self, extensions: List[str]) -> List[str]:
+    def _normalize_extensions(self, extensions: list[str]) -> list[str]:
         """Normalize file extensions to lower-case values prefixed with a dot."""
-        return [
-            (ext if ext.startswith(".") else f".{ext}").lower()
-            for ext in extensions
-            if ext
-        ]
+        return [(ext if ext.startswith(".") else f".{ext}").lower() for ext in extensions if ext]
 
     def _apply_file_name_filters(
         self,
-        files: List[Any],
+        files: list[FileLike],
         *,
-        contains: Optional[List[str]] = None,
+        contains: list[str] | None = None,
         contains_match: str = "any",
-        not_contains: Optional[List[str]] = None,
-        startswith: Optional[List[str]] = None,
-        not_startswith: Optional[List[str]] = None,
-        endswith: Optional[List[str]] = None,
-        not_endswith: Optional[List[str]] = None,
-        extensions: Optional[List[str]] = None,
-        not_extensions: Optional[List[str]] = None,
+        not_contains: list[str] | None = None,
+        startswith: list[str] | None = None,
+        not_startswith: list[str] | None = None,
+        endswith: list[str] | None = None,
+        not_endswith: list[str] | None = None,
+        extensions: list[str] | None = None,
+        not_extensions: list[str] | None = None,
         verbose: bool = False,
-    ) -> List[Any]:
+    ) -> list[FileLike]:
         """Filter files by file name using case-insensitive include/exclude rules."""
         filtered = files
 
-        def lowered_values(values: Optional[List[str]]) -> List[str]:
+        def lowered_values(values: list[str] | None) -> list[str]:
             return [value.lower() for value in values or [] if value]
 
         contains_values = lowered_values(contains)
@@ -321,19 +403,21 @@ class FilesApi:
         extension_values = self._normalize_extensions(extensions or [])
         not_extension_values = self._normalize_extensions(not_extensions or [])
 
-        def file_name(file_item: Any) -> str:
+        def file_name(file_item: FileLike) -> str:
             return self._extract_file_name(file_item).lower()
 
         if contains_values:
             before = len(filtered)
             if contains_match == "all":
                 filtered = [
-                    file_item for file_item in filtered
+                    file_item
+                    for file_item in filtered
                     if all(value in file_name(file_item) for value in contains_values)
                 ]
             else:
                 filtered = [
-                    file_item for file_item in filtered
+                    file_item
+                    for file_item in filtered
                     if any(value in file_name(file_item) for value in contains_values)
                 ]
             if verbose:
@@ -345,7 +429,8 @@ class FilesApi:
         if not_contains_values:
             before = len(filtered)
             filtered = [
-                file_item for file_item in filtered
+                file_item
+                for file_item in filtered
                 if not any(value in file_name(file_item) for value in not_contains_values)
             ]
             if verbose:
@@ -357,7 +442,8 @@ class FilesApi:
         if startswith_values:
             before = len(filtered)
             filtered = [
-                file_item for file_item in filtered
+                file_item
+                for file_item in filtered
                 if any(file_name(file_item).startswith(value) for value in startswith_values)
             ]
             if verbose:
@@ -369,8 +455,11 @@ class FilesApi:
         if not_startswith_values:
             before = len(filtered)
             filtered = [
-                file_item for file_item in filtered
-                if not any(file_name(file_item).startswith(value) for value in not_startswith_values)
+                file_item
+                for file_item in filtered
+                if not any(
+                    file_name(file_item).startswith(value) for value in not_startswith_values
+                )
             ]
             if verbose:
                 print(
@@ -381,7 +470,8 @@ class FilesApi:
         if endswith_values:
             before = len(filtered)
             filtered = [
-                file_item for file_item in filtered
+                file_item
+                for file_item in filtered
                 if any(file_name(file_item).endswith(value) for value in endswith_values)
             ]
             if verbose:
@@ -393,7 +483,8 @@ class FilesApi:
         if not_endswith_values:
             before = len(filtered)
             filtered = [
-                file_item for file_item in filtered
+                file_item
+                for file_item in filtered
                 if not any(file_name(file_item).endswith(value) for value in not_endswith_values)
             ]
             if verbose:
@@ -405,7 +496,8 @@ class FilesApi:
         if extension_values:
             before = len(filtered)
             filtered = [
-                file_item for file_item in filtered
+                file_item
+                for file_item in filtered
                 if any(file_name(file_item).endswith(ext) for ext in extension_values)
             ]
             if verbose:
@@ -417,7 +509,8 @@ class FilesApi:
         if not_extension_values:
             before = len(filtered)
             filtered = [
-                file_item for file_item in filtered
+                file_item
+                for file_item in filtered
                 if not any(file_name(file_item).endswith(ext) for ext in not_extension_values)
             ]
             if verbose:
@@ -430,25 +523,27 @@ class FilesApi:
 
     def bulk_download_folder(
         self,
-        project_id: str,
-        file_area_id_or_path: str,
-        folder_id: Optional[str] = None,
-        save_path: Optional[str] = None,
+        folder_id: str | None = None,
+        save_path: str | None = None,
         save_metadata: bool = False,
         save_historically: bool = False,
-        filters: Optional[FileNameFilter] = None,
-        params: Optional[Dict[str, Any]] = None,
+        filters: FileNameFilter | None = None,
+        params: QueryParams | None = None,
         verbose: bool = False,
-    ) -> List[File]:
+        *,
+        path: str | None = None,
+        project_id: str | None = None,
+        file_area_id: str | None = None,
+    ) -> list[File]:
         """Download all files in a folder with optional case-insensitive name filters.
 
+        Supports either:
+        - ``bulk_download_folder(folder_id, file_area_id=...)`` — file_area_id
+          falls back to the client's configured default when omitted.
+        - ``bulk_download_folder(path="Files/4_Design/C07_Geometry/C07.05_BIM")``
+
         Args:
-            project_id: Project ID.
-            file_area_id_or_path: Either a file area ID or a full folder path
-                starting with the file area name, such as
-                ``Files/4_Design/C07_Geometry/C07.05_BIM``.
-            folder_id: The folder ID to download files from when
-                ``file_area_id_or_path`` is a file area ID.
+            folder_id: The folder ID to download files from. Required unless *path* is given.
             save_path: Optional directory to save downloaded files. Defaults to current directory.
             save_metadata: If True, write ``model_dump()`` metadata for each downloaded
                 file to a sibling ``.txt`` file.
@@ -460,13 +555,25 @@ class FilesApi:
                 fileName matching.
             params: Optional additional query parameters passed to the API.
             verbose: If True, print progress information.
+            path: A full folder path starting with the file area name, such as
+                ``"Files/4_Design/C07_Geometry/C07.05_BIM"``. Alternative to
+                *folder_id* + *file_area_id*.
+            project_id: Project ID. Falls back to the client's configured default.
+            file_area_id: File area ID. Falls back to the client's configured
+                default. Not used, and not backfilled from the client default,
+                when *path* is given.
 
         Returns:
             List of downloaded :class:`File` objects with ``saved_file_path`` and
             optionally ``saved_metadata_path`` populated.
         """
         files = self.get_all_files_in_folder(
-            project_id, file_area_id_or_path, folder_id, params=params, verbose=verbose
+            folder_id,
+            params=params,
+            verbose=verbose,
+            path=path,
+            project_id=project_id,
+            file_area_id=file_area_id,
         )
 
         resolved_filters = filters.model_copy(deep=True) if filters else FileNameFilter()
@@ -485,10 +592,12 @@ class FilesApi:
             verbose=verbose,
         )
 
-        results: List[File] = []
+        results: list[File] = []
         for i, f in enumerate(filtered, 1):
             file_obj = self._coerce_file(f)
-            file_name = file_obj.file_name if file_obj else self._extract_file_name(f) or f"file_{i}"
+            file_name = (
+                file_obj.file_name if file_obj else self._extract_file_name(f) or f"file_{i}"
+            )
 
             if not file_obj or not file_obj.download_link:
                 if verbose:
@@ -512,23 +621,25 @@ class FilesApi:
 
     def bulk_download_files(
         self,
-        project_id: str,
-        files: List[str],
-        file_area_id: Optional[str] = None,
-        save_path: Optional[str] = None,
+        files: list[str],
+        file_area_id: str | None = None,
+        save_path: str | None = None,
         save_metadata: bool = False,
         save_historically: bool = False,
-        params: Optional[Dict[str, Any]] = None,
+        params: QueryParams | None = None,
         verbose: bool = False,
-    ) -> List[File]:
+        *,
+        project_id: str | None = None,
+    ) -> list[File]:
         """Download a list of files by IDs or full paths.
 
         Args:
-            project_id: Project ID.
             files: List of file IDs or full file paths.
             file_area_id: File area ID when *files* contains file IDs. Leave unset
                 when *files* contains full paths like
-                ``Files/folder/.../file.ext``.
+                ``Files/folder/.../file.ext`` — ``None`` here specifically selects
+                path-based resolution and is *not* backfilled from the client's
+                configured default file area.
             save_path: Optional directory to save files. Defaults to current directory.
             save_metadata: If True, write ``model_dump()`` metadata for each downloaded
                 file to a sibling ``.txt`` file.
@@ -538,16 +649,18 @@ class FilesApi:
                 Re-running only downloads revisions not already present locally.
             params: Optional additional query parameters used for path-based resolution.
             verbose: If True, print progress per file.
+            project_id: Project ID. Falls back to the client's configured default.
 
         Returns:
             List of downloaded :class:`File` objects with ``saved_file_path`` and
             optionally ``saved_metadata_path`` populated.
         """
-        results: List[File] = []
-        file_areas_cache: Dict[str, Any] = {}
-        folders_cache: Dict[str, list] = {}
-        resolved_paths_cache: Dict[str, tuple[Optional[str], Optional[str]]] = {}
-        all_files_cache: Dict[str, List[File]] = {}
+        project_id = resolve_project_id(project_id, self._client.configuration.project_id)
+        results: list[File] = []
+        file_areas_cache: dict[str, FileArea] = {}
+        folders_cache: dict[str, list[FolderLike]] = {}
+        resolved_paths_cache: dict[str, tuple[str | None, str | None]] = {}
+        all_files_cache: dict[str, list[FileLike]] = {}
         total = len(files)
         for i, item in enumerate(files, 1):
             if file_area_id is None:
@@ -572,10 +685,10 @@ class FilesApi:
                     continue
                 if resolved_file_area_id not in all_files_cache:
                     all_files_cache[resolved_file_area_id] = self.get_all_files(
-                        project_id,
-                        resolved_file_area_id,
                         params=params,
                         verbose=verbose,
+                        project_id=project_id,
+                        file_area_id=resolved_file_area_id,
                     )
                 folder_files = find_all_by_field(
                     all_files_cache[resolved_file_area_id],
@@ -585,23 +698,24 @@ class FilesApi:
                 )
                 if verbose:
                     print(f"Files matching folder {folder_id!r}: {len(folder_files)}")
-                file_obj = find_by_field(folder_files, "file_name", path_parts[-1])
-                if not file_obj:
+                file_match = find_by_field(folder_files, "file_name", path_parts[-1])
+                if not file_match:
                     if verbose:
                         print(f"  [{i}/{total}] Skipping {item!r} (File does not exist: {item})")
                     continue
+                file_obj = self._coerce_file(file_match)
             else:
                 file_info = self.get_file(
-                    project_id,
-                    file_area_id,
                     item,
                     verbose=verbose,
+                    project_id=project_id,
+                    file_area_id=file_area_id,
                 )
                 if isinstance(file_info, str):
                     if verbose:
                         print(f"  [{i}/{total}] Skipping {item!r} ({file_info})")
                     continue
-                if hasattr(file_info, "data"):
+                if isinstance(file_info, FileResponse):
                     file_obj = file_info.data
                 elif isinstance(file_info, File):
                     file_obj = file_info
@@ -630,77 +744,91 @@ class FilesApi:
 
     def get_file(
         self,
-        project_id: str,
-        file_area_id_or_path: str,
-        file_id: Optional[str] = None,
+        file_id: str | None = None,
         download: bool = False,
-        save_path: Optional[str] = None,
-        params: Optional[Dict[str, Any]] = None,
+        save_path: str | None = None,
+        params: QueryParams | None = None,
         verbose: bool = False,
-    ) -> Any:
-        """Get a file either by IDs or by full path.
+        *,
+        path: str | None = None,
+        project_id: str | None = None,
+        file_area_id: str | None = None,
+    ) -> FileResponse | FileLike | str | None:
+        """Get a file either by ID or by full path.
 
         Supports either:
-        - ``get_file(project_id, file_area_id, file_id)``
-        - ``get_file(project_id, "Files/folder/.../file.ext")``
+        - ``get_file(file_id, file_area_id=...)`` — file_area_id falls back to
+          the client's configured default when omitted.
+        - ``get_file(path="Files/folder/.../file.ext")``
 
         If ``download=True``, also downloads the file using the file's download link.
 
         Args:
-            project_id: Project ID.
-            file_area_id_or_path: Either a file area ID or a full path starting
-                with the file area name.
-            file_id: File ID when ``file_area_id_or_path`` is a file area ID.
+            file_id: File ID to look up. Required unless *path* is given.
             download: If True, download the file content using the download link.
             save_path: Optional directory to save the file (default: current directory).
             params: Optional additional query parameters used for path-based resolution.
             verbose: If True, print progress information for path-based resolution.
+            path: A full path starting with the file area name, e.g.
+                ``"Files/folder/.../file.ext"``. Alternative to *file_id* +
+                *file_area_id*.
+            project_id: Project ID. Falls back to the client's configured default.
+            file_area_id: File area ID. Falls back to the client's configured
+                default. Not used, and not backfilled from the client default,
+                when *path* is given.
 
         Returns:
             FileResponse for ID lookups, File for path lookups, or a not-found message.
             If ``download=True``, returns a dict with ``downloaded_file_path`` added.
-        """
-        validate_project_id(project_id)
 
-        if file_id is None:
-            path = file_area_id_or_path
+        Raises:
+            ValueError: If neither *file_id* nor *path* is provided.
+        """
+        project_id = resolve_project_id(project_id, self._client.configuration.project_id)
+
+        if path is not None:
             not_found_message = f"File does not exist: {path}"
             path_parts = [part.strip() for part in path.strip("/").split("/") if part.strip()]
             if len(path_parts) < 3:
                 raise ValueError("path must include file area name, folder path, and file name")
 
-            file_area_id, folder_id = resolve_folder_id_from_named_path(
+            resolved_file_area_id, folder_id = resolve_folder_id_from_named_path(
                 self._client, project_id, "/".join(path_parts[:-1]), verbose=verbose
             )
-            if not file_area_id or not folder_id:
+            if not resolved_file_area_id or not folder_id:
                 return not_found_message
 
             candidate_file_name = path_parts[-1]
             files = self.get_all_files_in_folder(
-                project_id, file_area_id, folder_id, params=params, verbose=verbose
+                folder_id,
+                params=params,
+                verbose=verbose,
+                project_id=project_id,
+                file_area_id=resolved_file_area_id,
             )
             file_match = find_by_field(files, "file_name", candidate_file_name)
             if not file_match:
                 return not_found_message
 
-            if download:
-                download_link = file_match.download_link if hasattr(file_match, "download_link") else None
-                file_name = file_match.file_name if hasattr(file_match, "file_name") else candidate_file_name
-                if download_link:
-                    result = file_match.model_dump() if hasattr(file_match, "model_dump") else file_match
-                    result["downloaded_file_path"] = self._download_file_from_link(
-                        download_link, file_name, save_path, verbose=verbose
-                    )
-                    return result
+            if download and isinstance(file_match, File) and file_match.download_link:
+                result: JSONDict = file_match.model_dump()
+                result["downloaded_file_path"] = self._download_file_from_link(
+                    file_match.download_link, file_match.file_name, save_path, verbose=verbose
+                )
+                return result
             return file_match
 
+        if file_id is None:
+            raise ValueError("either 'file_id' or 'path' must be provided")
+
+        file_area_id = resolve_file_area_id(file_area_id, self._client.configuration.file_area_id)
         self._print_endpoint(
             "GET",
-            f"/5.0/projects/{project_id}/file_areas/{file_area_id_or_path}/files/{file_id}",
+            f"/5.0/projects/{project_id}/file_areas/{file_area_id}/files/{file_id}",
             verbose=verbose,
         )
         response = self._client.get(
-            f"/5.0/projects/{project_id}/file_areas/{file_area_id_or_path}/files/{file_id}"
+            f"/5.0/projects/{project_id}/file_areas/{file_area_id}/files/{file_id}"
         )
         file_info = convert_to_model(response, FileResponse)
 
@@ -712,9 +840,9 @@ class FilesApi:
                 downloaded_path = self._download_file_from_link(
                     download_link, file_name, save_path, verbose=verbose
                 )
-                result = file_info.model_dump()
-                result["downloaded_file_path"] = downloaded_path
-                return result
+                id_result: JSONDict = file_info.model_dump()
+                id_result["downloaded_file_path"] = downloaded_path
+                return id_result
 
         return file_info
 
@@ -722,22 +850,20 @@ class FilesApi:
         self,
         download_link: str,
         file_name: str,
-        save_path: Optional[str] = None,
+        save_path: str | None = None,
         verbose: bool = False,
     ) -> str:
         """Public entry point for downloading a file from its direct download link.
 
         See :meth:`_download_file_from_link` for details.
         """
-        return self._download_file_from_link(
-            download_link, file_name, save_path, verbose=verbose
-        )
+        return self._download_file_from_link(download_link, file_name, save_path, verbose=verbose)
 
     def _download_file_from_link(
         self,
         download_link: str,
         file_name: str,
-        save_path: Optional[str] = None,
+        save_path: str | None = None,
         verbose: bool = False,
     ) -> str:
         """Download a file from a direct download link using the API key.
@@ -768,8 +894,12 @@ class FilesApi:
             print(f"GET {download_link}")
         if response.status_code == 200:
             total_bytes_header = response.headers.get("Content-Length")
-            total_bytes = int(total_bytes_header) if total_bytes_header and total_bytes_header.isdigit() else None
-            progress = None
+            total_bytes = (
+                int(total_bytes_header)
+                if total_bytes_header and total_bytes_header.isdigit()
+                else None
+            )
+            progress: _ProgressBar | None = None
             if verbose and tqdm is not None:
                 progress = tqdm(
                     total=total_bytes,
@@ -796,11 +926,12 @@ class FilesApi:
 
     def select_files_interactive(
         self,
-        project_id: str,
-        file_area_id: str,
-        tree: Optional[Dict[str, Any]] = None,
-        folders_api: Optional["FoldersApi"] = None,
-    ) -> List[str]:
+        tree: "TreeNode | None" = None,
+        folders_api: "FoldersApi | None" = None,
+        *,
+        project_id: str | None = None,
+        file_area_id: str | None = None,
+    ) -> list[str]:
         """Interactively browse the folder tree level-by-level and select files.
 
         Navigation works like a simple file browser:
@@ -811,13 +942,13 @@ class FilesApi:
         - Empty folders are hidden; folders and files are sorted alphabetically.
 
         Args:
-            project_id: Project ID.
-            file_area_id: File area ID.
             tree: Pre-built tree from :meth:`FoldersApi.get_file_area_tree`.
                 If not provided, *folders_api* must be supplied so the tree
                 can be built automatically (files are fetched in parallel).
             folders_api: :class:`FoldersApi` instance used to build the tree
                 when *tree* is ``None``.
+            project_id: Project ID. Falls back to the client's configured default.
+            file_area_id: File area ID. Falls back to the client's configured default.
 
         Returns:
             Ordered list of selected file IDs (in order they were selected).
@@ -828,26 +959,35 @@ class FilesApi:
         if tree is None:
             if folders_api is None:
                 raise ValueError("Either 'tree' or 'folders_api' must be provided.")
-            tree = folders_api.get_file_area_tree(project_id, file_area_id, files_api=self)
+            project_id = resolve_project_id(project_id, self._client.configuration.project_id)
+            file_area_id = resolve_file_area_id(
+                file_area_id, self._client.configuration.file_area_id
+            )
+            tree = folders_api.get_file_area_tree(
+                files_api=self, project_id=project_id, file_area_id=file_area_id
+            )
 
         # ------------------------------------------------------------------ helpers
-        def _fid(f: Any) -> Optional[str]:
-            d = f.get("data") or {}
-            return d.get("id") or d.get("fileId")
+        def _fid(f: object) -> str | None:
+            data = f.get("data") if isinstance(f, dict) else None
+            fid = (data or {}).get("id") or (data or {}).get("fileId") if data else None
+            return fid if isinstance(fid, str) else None
 
-        def _fname(f: Any) -> str:
-            return (f.get("data") or {}).get("fileName", "<unknown>")
+        def _fname(f: object) -> str:
+            data = f.get("data") if isinstance(f, dict) else None
+            name = (data or {}).get("fileName", "<unknown>") if data else "<unknown>"
+            return name if isinstance(name, str) else "<unknown>"
 
-        def _has_content(node: Dict[str, Any]) -> bool:
+        def _has_content(node: "TreeNode") -> bool:
             if node["files"]:
                 return True
             return any(_has_content(c) for c in node["children"])
 
-        def _count_files(node: Dict[str, Any]) -> int:
+        def _count_files(node: "TreeNode") -> int:
             return len(node["files"]) + sum(_count_files(c) for c in node["children"])
 
-        def _parse_tokens(raw: str, max_idx: int) -> set:
-            chosen: set = set()
+        def _parse_tokens(raw: str, max_idx: int) -> set[int]:
+            chosen: set[int] = set()
             for token in raw.split():
                 if "-" in token:
                     parts = token.split("-", 1)
@@ -864,9 +1004,9 @@ class FilesApi:
             return {i for i in chosen if 1 <= i <= max_idx}
 
         # ------------------------------------------------------------------ state
-        selected_ids: List[str] = []
-        selected_set: set = set()
-        stack: List[Dict[str, Any]] = [tree]
+        selected_ids: list[str] = []
+        selected_set: set[str] = set()
+        stack: list[TreeNode] = [tree]
 
         while True:
             node = stack[-1]
@@ -961,18 +1101,30 @@ class FilesApi:
         return selected_ids
 
     def get_file_properties_mapping(
-        self, project_id: str, file_area_id: str, file_id: str
-    ) -> Any:
+        self,
+        file_id: str,
+        *,
+        project_id: str | None = None,
+        file_area_id: str | None = None,
+    ) -> JSONValue | None:
         """GET .../files/{fileId}/properties/1.0/mappings."""
+        project_id = resolve_project_id(project_id, self._client.configuration.project_id)
+        file_area_id = resolve_file_area_id(file_area_id, self._client.configuration.file_area_id)
         return self._client.get(
             f"/1.0/projects/{project_id}/file_areas/{file_area_id}"
             f"/files/{file_id}/properties/1.0/mappings"
         )
 
     def get_file_property_mapping_values(
-        self, project_id: str, file_area_id: str, file_property_id: str
-    ) -> Any:
+        self,
+        file_property_id: str,
+        *,
+        project_id: str | None = None,
+        file_area_id: str | None = None,
+    ) -> JSONValue | None:
         """GET .../files/properties/1.0/mappings/{filePropertyId}/values."""
+        project_id = resolve_project_id(project_id, self._client.configuration.project_id)
+        file_area_id = resolve_file_area_id(file_area_id, self._client.configuration.file_area_id)
         return self._client.get(
             f"/1.0/projects/{project_id}/file_areas/{file_area_id}"
             f"/files/properties/1.0/mappings/{file_property_id}/values"

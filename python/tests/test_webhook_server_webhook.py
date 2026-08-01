@@ -27,9 +27,7 @@ def test_verify_signature_disabled_when_no_secret():
 
 def test_extract_file_refs_handles_shapes():
     flat = {"fileId": "f1", "projectId": "p1", "fileAreaId": "fa1"}
-    assert webhook.extract_file_refs(flat) == [
-        webhook.FileRef("f1", "p1", "fa1")
-    ]
+    assert webhook.extract_file_refs(flat) == [webhook.FileRef("f1", "p1", "fa1")]
 
     wrapped = {"data": {"file_id": "f2", "project_id": "p2", "file_area_id": "fa2"}}
     assert webhook.extract_file_refs(wrapped)[0].file_id == "f2"

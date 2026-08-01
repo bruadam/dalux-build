@@ -5,18 +5,20 @@ Keeps the ``trigger(settings, event)`` calling convention (this module's
 still be monkeypatched by name in this package's own tests, while delegating
 the actual HTTP/subprocess dispatch logic to the shared implementation.
 """
+
 from __future__ import annotations
 
-from typing import Any, Dict
-
+from dalux_build.json_types import JSONDict
 from dalux_build.webhook_server.config import QaConfig
-from dalux_build.webhook_server.qa import build_event  # noqa: F401
+from dalux_build.webhook_server.qa import build_event
 from dalux_build.webhook_server.qa import trigger as _shared_trigger
 
 from .config import Settings
 
+__all__ = ["build_event", "trigger"]
 
-def trigger(settings: Settings, event: Dict[str, Any]) -> None:
+
+def trigger(settings: Settings, event: JSONDict) -> None:
     """Dispatch *event* to the configured QA mechanism."""
     _shared_trigger(
         QaConfig(

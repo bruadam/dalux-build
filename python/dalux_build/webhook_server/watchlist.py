@@ -9,12 +9,12 @@ The list is mutated concurrently from two directions: the caller's own thread
 request-handling thread (reads on every inbound webhook). All mutation and
 read methods therefore go through a single re-entrant lock.
 """
+
 from __future__ import annotations
 
 import json
 import threading
 from dataclasses import dataclass
-from typing import Dict, List, Optional
 
 
 @dataclass(frozen=True)
@@ -27,14 +27,14 @@ class WatchedFile:
 class WatchList:
     """Thread-safe, in-memory index of watched files, keyed by ``file_id``."""
 
-    def __init__(self, files: Optional[List[WatchedFile]] = None) -> None:
+    def __init__(self, files: list[WatchedFile] | None = None) -> None:
         self._lock = threading.RLock()
-        self._by_id: Dict[str, WatchedFile] = {f.file_id: f for f in (files or [])}
+        self._by_id: dict[str, WatchedFile] = {f.file_id: f for f in (files or [])}
 
     @classmethod
-    def load(cls, path: str) -> "WatchList":
+    def load(cls, path: str) -> WatchList:
         """Load a watch list from a JSON file (see ``watchlist.example.json``)."""
-        with open(path, "r", encoding="utf-8") as handle:
+        with open(path, encoding="utf-8") as handle:
             raw = json.load(handle)
         entries = raw.get("watch", []) if isinstance(raw, dict) else raw
         files = [
@@ -65,7 +65,7 @@ class WatchList:
         with self._lock:
             self._by_id[watched_file.file_id] = watched_file
 
-    def add_many(self, files: List[WatchedFile]) -> None:
+    def add_many(self, files: list[WatchedFile]) -> None:
         with self._lock:
             for f in files:
                 self.add(f)
@@ -74,12 +74,12 @@ class WatchList:
         with self._lock:
             self._by_id.pop(file_id, None)
 
-    def remove_many(self, file_ids: List[str]) -> None:
+    def remove_many(self, file_ids: list[str]) -> None:
         with self._lock:
             for file_id in file_ids:
                 self.remove(file_id)
 
-    def get(self, file_id: str) -> Optional[WatchedFile]:
+    def get(self, file_id: str) -> WatchedFile | None:
         with self._lock:
             return self._by_id.get(file_id)
 
@@ -87,7 +87,7 @@ class WatchList:
         with self._lock:
             return file_id in self._by_id
 
-    def all(self) -> List[WatchedFile]:
+    def all(self) -> list[WatchedFile]:
         with self._lock:
             return list(self._by_id.values())
 

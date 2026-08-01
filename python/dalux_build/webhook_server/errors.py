@@ -1,4 +1,5 @@
 """Errors raised by the embedded webhook server."""
+
 from __future__ import annotations
 
 
@@ -24,6 +25,5 @@ class MissingWebhookDependencies(WebhookServerError, ImportError):
     def __init__(self, message: str = "") -> None:
         super().__init__(
             message
-            or "webhook_server requires the 'webhook' extra: "
-            "pip install 'dalux-build[webhook]'"
+            or "webhook_server requires the 'webhook' extra: pip install 'dalux-build[webhook]'"
         )

@@ -20,6 +20,8 @@ dependencies = [
 [project.optional-dependencies]
 dev = [
     "pytest>=7.4",
+    "ruff>=0.14",
+    "mypy>=1.15",
 ]
 
 [project.scripts]
@@ -33,3 +35,51 @@ include = ["dalux_webhook*"]
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 pythonpath = ["."]
+
+[tool.ruff]
+target-version = "py310"
+line-length = 100
+
+[tool.ruff.lint]
+select = [
+    "E",    # pycodestyle errors
+    "W",    # pycodestyle warnings
+    "F",    # pyflakes
+    "I",    # isort
+    "UP",   # pyupgrade
+    "B",    # flake8-bugbear
+    "C4",   # flake8-comprehensions
+    "ANN",  # flake8-annotations
+]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/**" = ["ANN"]
+
+[tool.mypy]
+# Pinned above this package's actual 3.10 floor (see [project] requires-python)
+# because numpy's bundled stubs (pulled in transitively through dalux-build's
+# optional pandas/to_dataframe() support) use PEP 695 `type` statements that
+# mypy can only parse when targeting 3.12+. This setting only controls what
+# mypy assumes is available while type-checking, not the supported runtime.
+# setuptools' PEP 660 editable install for dalux-build uses an import-hook
+# finder (not a plain path in a .pth file), which mypy's static import
+# resolution can't follow — point it at the real source instead.
+mypy_path = "../python"
+python_version = "3.12"
+strict = true
+disallow_any_explicit = true
+disallow_any_decorated = true
+warn_unreachable = true
+exclude = ["build/", "dist/"]
+
+[[tool.mypy.overrides]]
+module = "tests.*"
+disallow_any_explicit = false
+disallow_untyped_defs = false
+
+[[tool.mypy.overrides]]
+# dalux-build is reached here via mypy_path (see above), so its own
+# per-module override for the pydantic BaseModel/dataclass_transform false
+# positive (see python/pyproject.toml) needs to be duplicated here too.
+module = "dalux_build.models.*"
+disallow_any_explicit = false

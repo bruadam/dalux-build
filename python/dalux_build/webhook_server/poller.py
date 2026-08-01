@@ -14,37 +14,64 @@ and ``.dalux`` (a :class:`~dalux_build.webhook_server.service.DaluxFileService`)
 so both the embedded ``WebhookServerApi`` and the standalone CLI's
 ``AppContext`` can reuse it unchanged.
 """
+
 from __future__ import annotations
 
 import logging
-import time
-from typing import Any, Dict, List
+from typing import Protocol
 
+from ..api.files import FileLike
+from ..json_types import QueryParams
+from ..models import File
 from . import qa
-from .watchlist import WatchedFile
+from .config import QaConfig
+from .service import DaluxFileService
+from .store import Store
+from .watchlist import WatchedFile, WatchList
 
 logger = logging.getLogger("dalux_build.webhook_server.poller")
 
 
-def _by_area(files: List[WatchedFile]) -> Dict[tuple, List[WatchedFile]]:
-    grouped: Dict[tuple, List[WatchedFile]] = {}
+class PollerContext(Protocol):
+    """Duck-typed context :func:`poll_once` needs.
+
+    Both the embedded ``WebhookServerApi`` and the standalone CLI's
+    ``AppContext`` satisfy this without inheriting from it.
+    """
+
+    watchlist: WatchList
+    store: Store
+    dalux: DaluxFileService
+    qa_config: QaConfig
+
+
+def _by_area(files: list[WatchedFile]) -> dict[tuple[str, str], list[WatchedFile]]:
+    grouped: dict[tuple[str, str], list[WatchedFile]] = {}
     for f in files:
         grouped.setdefault((f.project_id, f.file_area_id), []).append(f)
     return grouped
 
 
-def poll_once(ctx: Any, updated_after: str = None, mode: str = "per-file") -> int:
+def _candidate_file_id(item: FileLike) -> str | None:
+    if isinstance(item, File):
+        return item.file_id
+    data = item.get("data")
+    fid = data.get("fileId") if isinstance(data, dict) else item.get("fileId")
+    return fid if isinstance(fid, str) else None
+
+
+def poll_once(ctx: PollerContext, updated_after: str | None = None, mode: str = "per-file") -> int:
     """Check every watched file once; return the number of changed files."""
     changed = 0
     for (project_id, file_area_id), watched in _by_area(ctx.watchlist.all()).items():
         watched_ids = {w.file_id for w in watched}
 
+        candidate_ids: set[str]
         if mode == "list":
-            params = {"updatedAfter": updated_after} if updated_after else None
+            params: QueryParams | None = {"updatedAfter": updated_after} if updated_after else None
             candidates = ctx.dalux.list_all_files(project_id, file_area_id, params=params)
-            candidate_ids = {
-                getattr(c, "file_id", None) for c in candidates
-            } & watched_ids
+            found_ids = {_candidate_file_id(c) for c in candidates}
+            candidate_ids = {fid for fid in found_ids if fid is not None} & watched_ids
         else:
             candidate_ids = watched_ids
 

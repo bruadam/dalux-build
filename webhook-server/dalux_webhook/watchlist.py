@@ -5,4 +5,7 @@ The logic lives in the ``dalux-build`` client package so the embedded
 share one implementation. See ``dalux_build.webhook_server.watchlist`` for
 the actual code.
 """
-from dalux_build.webhook_server.watchlist import WatchedFile, WatchList  # noqa: F401
+
+from dalux_build.webhook_server.watchlist import WatchedFile, WatchList
+
+__all__ = ["WatchedFile", "WatchList"]

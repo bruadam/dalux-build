@@ -1,9 +1,10 @@
 """API response models for Work Packages endpoint."""
+
 import json
-from typing import Any, Dict, List, Optional, Union
 
-from pydantic import BaseModel, field_validator
+from pydantic import BaseModel, ConfigDict, field_validator
 
+from ...json_types import JSONDict
 from ..common import ItemsToDataFrameMixin, Link, Metadata
 from .models import WorkPackage
 
@@ -11,21 +12,20 @@ from .models import WorkPackage
 class WorkPackagesListResponse(ItemsToDataFrameMixin, BaseModel):
     """Response from GET /1.0/projects/{projectId}/workpackages."""
 
-    items: List[WorkPackage] = []
-    metadata: Optional[Metadata] = None
-    links: Optional[List[Link]] = None
+    items: list[WorkPackage] = []
+    metadata: Metadata | None = None
+    links: list[Link] | None = None
 
-    class Config:
-        populate_by_name = True
+    model_config = ConfigDict(populate_by_name=True)
 
     @field_validator("items", mode="before")
     @classmethod
-    def unwrap_and_convert_items(cls, value):
+    def unwrap_and_convert_items(cls, value: object) -> list[object]:
         """Normalize both wrapped and unwrapped work package list items."""
         if not isinstance(value, list):
             return []
 
-        result = []
+        result: list[object] = []
         for item in value:
             data = item.get("data") if isinstance(item, dict) and "data" in item else item
             if isinstance(data, dict):
@@ -35,12 +35,12 @@ class WorkPackagesListResponse(ItemsToDataFrameMixin, BaseModel):
         return result
 
     @classmethod
-    def from_dict(cls, data: Dict[str, Any]) -> "WorkPackagesListResponse":
+    def from_dict(cls, data: JSONDict) -> "WorkPackagesListResponse":
         """Create WorkPackagesListResponse from a dictionary."""
         return cls.model_validate(data)
 
     @classmethod
-    def from_json(cls, json_str: Union[str, bytes]) -> "WorkPackagesListResponse":
+    def from_json(cls, json_str: str | bytes) -> "WorkPackagesListResponse":
         """Create WorkPackagesListResponse from a JSON string."""
         if isinstance(json_str, bytes):
             json_str = json_str.decode("utf-8")

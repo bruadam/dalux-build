@@ -9,12 +9,14 @@ If you later need the metadata embedded inside the IFC model graph, add an
 IfcOpenShell-based writer here that creates an ``IfcPropertySet`` on
 ``IfcProject``; the comparison helpers below stay the same.
 """
+
 from __future__ import annotations
 
 import json
 import os
 from datetime import datetime, timezone
-from typing import Any, Dict, Optional
+
+from ..json_types import JSONDict
 
 SIDECAR_SUFFIX = ".dalux.json"
 
@@ -33,14 +35,14 @@ def sidecar_path(file_path: str) -> str:
     return file_path + SIDECAR_SUFFIX
 
 
-def build_provenance(data: Dict[str, Any]) -> Dict[str, Any]:
+def build_provenance(data: JSONDict) -> JSONDict:
     """Pick the comparison-relevant fields from a Dalux ``File`` object."""
     provenance = {key: data.get(key) for key in _FIELDS if data.get(key) is not None}
     provenance["downloadedAt"] = datetime.now(timezone.utc).isoformat()
     return provenance
 
 
-def write_sidecar(file_path: str, data: Dict[str, Any]) -> str:
+def write_sidecar(file_path: str, data: JSONDict) -> str:
     """Write ``<file_path>.dalux.json`` and return its path."""
     path = sidecar_path(file_path)
     with open(path, "w", encoding="utf-8") as handle:
@@ -48,15 +50,16 @@ def write_sidecar(file_path: str, data: Dict[str, Any]) -> str:
     return path
 
 
-def read_sidecar(file_path: str) -> Optional[Dict[str, Any]]:
+def read_sidecar(file_path: str) -> JSONDict | None:
     path = sidecar_path(file_path)
     if not os.path.exists(path):
         return None
-    with open(path, "r", encoding="utf-8") as handle:
-        return json.load(handle)
+    with open(path, encoding="utf-8") as handle:
+        loaded: JSONDict = json.load(handle)
+    return loaded
 
 
-def matches_sidecar(file_path: str, data: Dict[str, Any]) -> bool:
+def matches_sidecar(file_path: str, data: JSONDict) -> bool:
     """True if the on-disk sidecar already describes this file version.
 
     Lets a QA job (or the poller) skip re-downloading when the local artifact

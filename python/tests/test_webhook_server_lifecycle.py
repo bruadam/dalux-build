@@ -2,6 +2,7 @@
 
 Requires the 'webhook' extra (fastapi/uvicorn) to run.
 """
+
 import socket
 
 import pytest

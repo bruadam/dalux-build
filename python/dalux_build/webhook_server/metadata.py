@@ -13,53 +13,62 @@ Callers pass in plain camelCase dicts (see ``service.py``, which normalizes
 the client's pydantic ``FileResponse``/``File`` models via
 ``model_dump(by_alias=True)`` before handing data to this module).
 """
+
 from __future__ import annotations
 
-from typing import Any, Dict, Optional
-
+from ..json_types import JSONDict
 from .store import FileState
 
 
-def file_data(payload: Optional[Dict[str, Any]]) -> Dict[str, Any]:
+def _as_str(value: object) -> str | None:
+    return value if isinstance(value, str) else None
+
+
+def _as_int(value: object) -> int | None:
+    return value if isinstance(value, int) else None
+
+
+def file_data(payload: JSONDict | None) -> JSONDict:
     """Unwrap the ``data`` object from a get_file response (or pass through)."""
     if not payload:
         return {}
-    if isinstance(payload.get("data"), dict):
-        return payload["data"]
+    data = payload.get("data")
+    if isinstance(data, dict):
+        return data
     return payload
 
 
-def etag_for(data: Dict[str, Any]) -> Optional[str]:
+def etag_for(data: JSONDict) -> str | None:
     """A stable identifier for the current file content, for HTTP ETag / If-None-Match."""
-    return data.get("contentHash") or data.get("fileRevisionId")
+    return _as_str(data.get("contentHash")) or _as_str(data.get("fileRevisionId"))
 
 
-def has_changed(state: Optional[FileState], data: Dict[str, Any]) -> bool:
+def has_changed(state: FileState | None, data: JSONDict) -> bool:
     """True when *data* represents a different file version than *state*."""
     if state is None:
         return True
 
-    content_hash = data.get("contentHash")
+    content_hash = _as_str(data.get("contentHash"))
     if content_hash and state.content_hash:
         return content_hash != state.content_hash
 
-    revision_id = data.get("fileRevisionId")
+    revision_id = _as_str(data.get("fileRevisionId"))
     if revision_id and state.revision_id:
         return revision_id != state.revision_id
 
     return (
-        data.get("lastModified") != state.last_modified
-        or data.get("fileSize") != state.file_size
+        _as_str(data.get("lastModified")) != state.last_modified
+        or _as_int(data.get("fileSize")) != state.file_size
     )
 
 
-def to_state(file_id: str, data: Dict[str, Any], downloaded_path: Optional[str], now: float) -> FileState:
+def to_state(file_id: str, data: JSONDict, downloaded_path: str | None, now: float) -> FileState:
     return FileState(
         file_id=file_id,
-        revision_id=data.get("fileRevisionId"),
-        content_hash=data.get("contentHash"),
-        last_modified=data.get("lastModified"),
-        file_size=data.get("fileSize"),
+        revision_id=_as_str(data.get("fileRevisionId")),
+        content_hash=_as_str(data.get("contentHash")),
+        last_modified=_as_str(data.get("lastModified")),
+        file_size=_as_int(data.get("fileSize")),
         downloaded_path=downloaded_path,
         updated_at=now,
     )

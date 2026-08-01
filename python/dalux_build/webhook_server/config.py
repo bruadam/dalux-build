@@ -8,6 +8,7 @@ holds only webhook-specific runtime settings — no ``dalux_base_url`` /
 Values here are defaults only: ``WebhookServerApi.start(**kwargs)`` overrides
 whatever this returns.
 """
+
 from __future__ import annotations
 
 import os
@@ -45,7 +46,7 @@ class WebhookRuntimeConfig:
     qa_command: str
 
     @classmethod
-    def from_env(cls) -> "WebhookRuntimeConfig":
+    def from_env(cls) -> WebhookRuntimeConfig:
         return cls(
             webhook_secret=resolve_secret("DALUX_WEBHOOK_SECRET", "") or "",
             webhook_signature_header=_get("DALUX_WEBHOOK_SIGNATURE_HEADER", "X-Dalux-Signature"),

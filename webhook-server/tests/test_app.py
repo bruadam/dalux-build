@@ -136,7 +136,9 @@ def test_webhook_retry_after_processing_failure_is_not_deduped(tmp_path, monkeyp
 
 def test_healthz(tmp_path):
     watch = tmp_path / "watchlist.json"
-    watch.write_text(json.dumps({"watch": [{"project_id": "p", "file_area_id": "fa", "file_id": "f"}]}))
+    watch.write_text(
+        json.dumps({"watch": [{"project_id": "p", "file_area_id": "fa", "file_id": "f"}]})
+    )
     app = create_app(_settings(tmp_path, watch))
     client = TestClient(app)
     resp = client.get("/healthz")

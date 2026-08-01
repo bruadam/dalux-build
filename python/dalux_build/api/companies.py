@@ -1,12 +1,12 @@
 """Companies API (project companies)."""
-from typing import Any, Dict, Optional
+
+from typing import Literal, overload
 
 from ..api_client import ApiClient
-from ..models import CompaniesListResponse, CompanyResponse
-from ..response_converter import convert_to_model
-from ..utils.search import find_by_field, find_all_by_field
-from ..utils.validation import validate_project_id, validate_file_area_id
-from ..utils.pagination import paginate
+from ..json_types import JSONDict, QueryParams
+from ..models import CompaniesListResponse, CompanyResponse, ProjectCompany
+from ..response_converter import convert_to_list_response, convert_to_model
+from ..utils.validation import resolve_project_id
 
 
 class CompaniesApi:
@@ -15,53 +15,82 @@ class CompaniesApi:
     def __init__(self, api_client: ApiClient) -> None:
         self._client = api_client
 
+    @overload
     def list_project_companies(
-        self, project_id: str, params: Optional[Dict[str, Any]] = None
-    ) -> Optional[CompaniesListResponse]:
+        self,
+        params: QueryParams | None = None,
+        full_response: Literal[False] = False,
+        *,
+        project_id: str | None = None,
+    ) -> list[ProjectCompany]: ...
+    @overload
+    def list_project_companies(
+        self,
+        params: QueryParams | None = None,
+        *,
+        full_response: Literal[True],
+        project_id: str | None = None,
+    ) -> CompaniesListResponse | None: ...
+    def list_project_companies(
+        self,
+        params: QueryParams | None = None,
+        full_response: bool = False,
+        *,
+        project_id: str | None = None,
+    ) -> CompaniesListResponse | list[ProjectCompany] | None:
         """GET /3.1/projects/{projectId}/companies.
 
-        Returns:
-            CompaniesListResponse with type-safe access to companies.
-        """
-        validate_project_id(project_id)
-        response = self._client.get(f"/3.1/projects/{project_id}/companies", params=params)
-        return convert_to_model(response, CompaniesListResponse)
+        Args:
+            params: Optional query parameters.
+            full_response: If True, return the full CompaniesListResponse
+                (including metadata and links). If False (default), return
+                just the list of ProjectCompany items.
+            project_id: Project ID. Falls back to the client's configured default.
 
-    def get_project_company(self, project_id: str, company_id: str) -> Optional[CompanyResponse]:
+        Returns:
+            List of ProjectCompany items, or the full CompaniesListResponse
+            when full_response=True.
+        """
+        project_id = resolve_project_id(project_id, self._client.configuration.project_id)
+        response = self._client.get(f"/3.1/projects/{project_id}/companies", params=params)
+        result = convert_to_list_response(response, CompaniesListResponse)
+        if full_response:
+            return result
+        return result.items if result is not None else []
+
+    def get_project_company(
+        self, company_id: str, *, project_id: str | None = None
+    ) -> CompanyResponse | None:
         """GET /3.0/projects/{projectId}/companies/{companyId}.
 
         Returns:
             CompanyResponse with company details.
         """
-        validate_project_id(project_id)
-        response = self._client.get(
-            f"/3.0/projects/{project_id}/companies/{company_id}"
-        )
+        project_id = resolve_project_id(project_id, self._client.configuration.project_id)
+        response = self._client.get(f"/3.0/projects/{project_id}/companies/{company_id}")
         return convert_to_model(response, CompanyResponse)
 
     def create_project_company(
-        self, project_id: str, body: Dict[str, Any]
-    ) -> Optional[CompanyResponse]:
+        self, body: JSONDict, *, project_id: str | None = None
+    ) -> CompanyResponse | None:
         """POST /3.1/projects/{projectId}/companies.
 
         Returns:
             CompanyResponse with the created company.
         """
-        validate_project_id(project_id)
-        response = self._client.post(
-            f"/3.1/projects/{project_id}/companies", json=body
-        )
+        project_id = resolve_project_id(project_id, self._client.configuration.project_id)
+        response = self._client.post(f"/3.1/projects/{project_id}/companies", json=body)
         return convert_to_model(response, CompanyResponse)
 
     def update_project_company(
-        self, project_id: str, company_id: str, body: Dict[str, Any]
-    ) -> Optional[CompanyResponse]:
+        self, company_id: str, body: JSONDict, *, project_id: str | None = None
+    ) -> CompanyResponse | None:
         """PATCH /3.0/projects/{projectId}/companies/{companyId}.
 
         Returns:
             CompanyResponse with the updated company.
         """
-        validate_project_id(project_id)
+        project_id = resolve_project_id(project_id, self._client.configuration.project_id)
         response = self._client.patch(
             f"/3.0/projects/{project_id}/companies/{company_id}", json=body
         )

@@ -1,7 +1,6 @@
 """Data models for Folders endpoint."""
-from typing import Optional
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 
 class Folder(BaseModel):
@@ -9,7 +8,6 @@ class Folder(BaseModel):
 
     folder_id: str = Field(..., alias="folderId")
     folder_name: str = Field(..., alias="folderName")
-    parent_folder_id: Optional[str] = Field(None, alias="parentFolderId")
+    parent_folder_id: str | None = Field(None, alias="parentFolderId")
 
-    class Config:
-        populate_by_name = True
+    model_config = ConfigDict(populate_by_name=True)

@@ -13,6 +13,12 @@ The maintainer has never contacted Dalux about this project. No approval,
 permission, confirmation, endorsement, or interpretation of Dalux's terms has
 been requested from or provided by Dalux.
 
+However, the maintainer has the rights to use Dalux's publicly documented API
+endpoints. He has full authorization to use the API for his own account and has
+confirmed that the API is available for use by any authorized Dalux user. The
+maintainer has not received any special access or rights from Dalux, and this
+project does not provide any such access or rights to its users.
+
 ## Two separate sets of rights
 
 The [MIT license](https://github.com/bruadam/dalux-build/blob/main/LICENSE)

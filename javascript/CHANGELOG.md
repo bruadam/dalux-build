@@ -1,5 +1,12 @@
 # dalux-build-api
 
+## 2.1.0
+
+### Minor Changes
+
+- [#21](https://github.com/bruadam/dalux-build/pull/21) [`b1dc423`](https://github.com/bruadam/dalux-build/commit/b1dc4236b952496012b89f0c4d1a40ddb2723555) Thanks [@bruadam](https://github.com/bruadam)! - Add a resource-wide Python dashboard engine and the Streamlit task timeline
+  template.
+
 ## 2.0.4
 
 ### Patch Changes

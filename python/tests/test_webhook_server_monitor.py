@@ -6,7 +6,10 @@ from datetime import datetime, timezone
 from cryptography.fernet import Fernet
 from fastapi.testclient import TestClient
 
+from dalux_build.api_client import ApiClient
 from dalux_build.models import FileNameFilter
+from dalux_build.configuration import Configuration
+from dalux_build.webhook_server.api import WebhookServerApi
 from dalux_build.webhook_server.app import build_app
 from dalux_build.webhook_server.controller import Jobs
 from dalux_build.webhook_server.crypto import SecretBox
@@ -110,6 +113,37 @@ def test_job_test_endpoint_sends_sample_without_changing_state(tmp_path, monkeyp
     assert payload["files"][0]["current"]["fileId"] == "file-1"
     assert payload["files"][0]["changeType"] == "modified"
     assert store.states(job_id) == {}
+
+
+def test_embedded_api_can_test_a_job(tmp_path, monkeypatch):
+    store, _box, jobs, _monitor, _scheduler = core(tmp_path)
+    request = change_request().model_dump(by_alias=True, mode="json")
+    request["scope"] = {"mode": "fileIds", "fileIds": ["file-2"]}
+    view, _ = jobs.create(ChangeJobRequest.model_validate(request))
+
+    received = {}
+
+    class Response:
+        status_code = 200
+
+        def raise_for_status(self):
+            return None
+
+    def fake_post(url, content, headers, timeout):
+        received.update(url=url, content=content, headers=headers, timeout=timeout)
+        return Response()
+
+    monkeypatch.setattr("dalux_build.webhook_server.delivery.httpx.post", fake_post)
+    api = WebhookServerApi(
+        ApiClient(Configuration(base_url="https://default.example/api", api_key="api-key"))
+    )
+    api._jobs = jobs
+
+    response = api.test_job(view.job_id)
+
+    assert response.event_type == "change"
+    assert json.loads(received["content"])["jobId"] == view.job_id
+    assert store.states(view.job_id) == {}
 
 
 def test_change_baseline_then_added_modified_deleted(tmp_path, monkeypatch):
@@ -248,6 +282,8 @@ def test_hmac_delivery_signs_exact_body(tmp_path, monkeypatch):
     received = {}
 
     class Response:
+        status_code = 200
+
         def raise_for_status(self):
             return None
 
@@ -261,6 +297,40 @@ def test_hmac_delivery_signs_exact_body(tmp_path, monkeypatch):
     assert received["headers"]["X-Webhook-Signature"] == "sha256=" + expected
     assert received["headers"]["X-Delivery-ID"] == "delivery-1"
     assert received["timeout"] == 30.0
+
+
+def test_scheduler_logs_registered_jobs(tmp_path, caplog):
+    store, _box, jobs, _monitor, scheduler = core(tmp_path)
+    jobs.create(change_request())
+
+    caplog.set_level("INFO", logger="dalux_build.webhook_server.scheduler")
+    scheduler._log_jobs_snapshot()
+
+    assert any("Scheduled jobs (1)" in record.message for record in caplog.records)
+
+
+def test_delivery_worker_logs_send_and_success(tmp_path, caplog, monkeypatch):
+    store, box, jobs, _monitor, _scheduler = core(tmp_path)
+    view, _ = jobs.create(change_request("emitCurrent"))
+    store.commit_poll(view.job_id, [], {}, ("delivery-1", {"deliveryId": "delivery-1"}))
+
+    class Response:
+        status_code = 200
+
+        def raise_for_status(self):
+            return None
+
+    def fake_post(*args, **kwargs):
+        return Response()
+
+    monkeypatch.setattr("dalux_build.webhook_server.delivery.httpx.post", fake_post)
+    caplog.set_level("INFO", logger="dalux_build.webhook_server.delivery")
+
+    DeliveryWorker(store, box).drain()
+
+    messages = [record.message for record in caplog.records]
+    assert any("Sending webhook delivery delivery-1" in message for message in messages)
+    assert any("succeeded with status 200" in message for message in messages)
 
 
 def test_delivery_exhaustion_is_visible_in_health_state(tmp_path, monkeypatch):

@@ -170,6 +170,12 @@ class WebhookServerApi:
     def unregister_job(self, job_id: str) -> None:
         self._require_jobs().delete(job_id)
 
+    def test_job(self, job_id: str):
+        return self._require_jobs().test_webhook(job_id)
+
+    def test_webhook(self, job_id: str):
+        return self.test_job(job_id)
+
     def _require_jobs(self) -> Jobs:
         if self._jobs is None:
             raise WebhookServerNotRunning("call webhook_server.start() before registering jobs")

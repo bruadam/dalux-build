@@ -1,8 +1,8 @@
 # Embedded Scheduled Monitor
 
 `DaluxClient.webhook_server` runs the same polling scheduler and authenticated
-management API as the standalone VPS package. It does not receive callbacks
-from Dalux and does not download files.
+management API as the standalone VPS package. It does not receive callbacks from
+Dalux and does not download files.
 
 ```python
 from cryptography.fernet import Fernet
@@ -38,6 +38,7 @@ freshness_id = dalux.webhook_server.register_freshness_job(
     callback_url="https://n8n.example/webhook/freshness",
 )
 
+dalux.webhook_server.test_job(job_id)
 dalux.webhook_server.unregister_job(job_id)
 dalux.webhook_server.stop()
 ```
@@ -46,3 +47,7 @@ Omitted Dalux credentials inherit from the parent client. Runtime defaults may
 also be supplied through `MONITOR_API_TOKEN[_FILE]`,
 `MONITOR_MASTER_KEY[_FILE]`, `MONITOR_TIMEZONE`, `STATE_DB_PATH`, `HOST`, and
 `PORT`.
+
+While the scheduler is running it logs a periodic snapshot of registered jobs,
+and each webhook attempt logs when the payload is queued, sent, and accepted by
+the callback.

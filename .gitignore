@@ -55,6 +55,7 @@ Thumbs.db
 *.pdf
 *.jpg
 *.png
+!docs/assets/dalux-build-banner.png
 !webhook-server/ui/public/
 !webhook-server/ui/public/*.png
 *.docx

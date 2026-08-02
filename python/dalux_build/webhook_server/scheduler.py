@@ -3,8 +3,8 @@
 from __future__ import annotations
 
 import logging
-import time
 import threading
+import time
 from datetime import datetime, timezone
 
 from .cron import next_run

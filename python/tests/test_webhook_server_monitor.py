@@ -7,8 +7,8 @@ from cryptography.fernet import Fernet
 from fastapi.testclient import TestClient
 
 from dalux_build.api_client import ApiClient
-from dalux_build.models import FileNameFilter
 from dalux_build.configuration import Configuration
+from dalux_build.models import FileNameFilter
 from dalux_build.webhook_server.api import WebhookServerApi
 from dalux_build.webhook_server.app import build_app
 from dalux_build.webhook_server.controller import Jobs

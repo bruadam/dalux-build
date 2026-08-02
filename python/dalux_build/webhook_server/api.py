@@ -10,6 +10,7 @@ from .errors import WebhookServerAlreadyRunning, WebhookServerNotRunning
 
 if TYPE_CHECKING:
     from .controller import Jobs
+    from .models import TestWebhookResponse
     from .runtime import ServerThread
     from .scheduler import Scheduler
     from .store import Store
@@ -170,10 +171,10 @@ class WebhookServerApi:
     def unregister_job(self, job_id: str) -> None:
         self._require_jobs().delete(job_id)
 
-    def test_job(self, job_id: str):
+    def test_job(self, job_id: str) -> TestWebhookResponse:
         return self._require_jobs().test_webhook(job_id)
 
-    def test_webhook(self, job_id: str):
+    def test_webhook(self, job_id: str) -> TestWebhookResponse:
         return self.test_job(job_id)
 
     def _require_jobs(self) -> Jobs:

@@ -1,5 +1,11 @@
 # dalux-build-api
 
+## 2.0.3
+
+### Patch Changes
+
+- [#17](https://github.com/bruadam/dalux-build/pull/17) [`1b5a175`](https://github.com/bruadam/dalux-build/commit/1b5a175456974f0d22d3ba8de2b81c95fe0fbc3b) Thanks [@bruadam](https://github.com/bruadam)! - Fix `VersionSetsApi.download_files` and `get_files_missing_from_version_sets` raising `TypeError: unhashable type: 'FileNameFilter'` when a `FileNameFilter` was passed as an identifier. `FileNameFilter` name-matching logic (contains/startswith/endswith/extensions/regex/wildcard rules) is now shared between `FilesApi` and `VersionSetsApi` via a single `dalux_build.utils.file_filter` utility instead of being duplicated across both.
+
 ## 2.0.2
 
 ### Patch Changes

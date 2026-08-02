@@ -16,6 +16,13 @@ These clients are experimental. Pin to a specific version — see the
 [repo README](https://github.com/bruadam/dalux-build#readme) for the full
 disclaimer.
 
+{: .warning }
+This is an unofficial project and provides no Dalux access or credentials.
+Using the MIT-licensed code commercially does not authorize commercial use of
+Dalux's API or Services. Each user must have their own valid Dalux access and
+comply with their own agreement. Read the [Legal and Usage Notice](legal-and-usage.html)
+before use, especially for hosted or multi-customer deployments.
+
 ## Choose your setup
 
 | Piece | Best for | Source |
@@ -37,4 +44,5 @@ Not sure where to start? Read [Getting Started](getting-started.html).
 - [Webhook Server](webhook-server.html) · [Webhook UI](webhook-ui.html) · [n8n Node](n8n-node.html)
 - [API Reference](api-reference.html) — the 16 shared endpoint groups
 - [Tutorials](tutorials.html) — 5-hour notebook series for the Python client
+- [Legal and Usage Notice](legal-and-usage.html) — affiliation, licensing, credentials, and commercial or hosted use
 - [Contributing](contributing.html) — tests, changesets, releases

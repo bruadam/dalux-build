@@ -3,6 +3,13 @@
 This app is an App Router Next.js frontend for registering Dalux webhook monitor
 jobs.
 
+> [!IMPORTANT]
+> This is an unofficial interface and provides no Dalux access. Every user must
+> supply credentials they are authorized to use within their own Dalux agreement.
+> Do not deploy it to provide third parties access through shared credentials.
+> Hosted or multi-customer operation may require written authorization from
+> Dalux. See the [Legal and Usage Notice](../docs/legal-and-usage.md).
+
 ## 1) Local `.env.local`
 
 Use and update the local env file in this folder (`.env.local`).

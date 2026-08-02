@@ -9,6 +9,15 @@ It stores metadata only, never file contents. API keys and callback secrets are
 encrypted with a Fernet master key. Each poll follows Dalux bookmark pagination
 and replaces the job's previous raw-page snapshot.
 
+> [!IMPORTANT]
+> This unofficial service provides no Dalux access. Each job must use a key whose
+> owner is independently authorized for the requested company, project, and
+> purpose. Do not use shared credentials to provide Dalux access to third parties.
+> Commercial, multi-customer, or hosted operation must be permitted by the
+> operator's and users' Dalux agreements. Operators remain responsible for
+> access control, credential isolation, and data protection. See the
+> [Legal and Usage Notice](../docs/legal-and-usage.md).
+
 ## Configuration
 
 The Docker setup command creates `.env`, generates the management token and

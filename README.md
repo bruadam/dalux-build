@@ -24,8 +24,22 @@ top of them — because Dalux itself doesn't push webhooks.
 > the near future — pin to a specific version. Report issues on
 > [GitHub](https://github.com/bruadam/dalux-build/issues).
 
-> Not affiliated with Dalux. Maintained by
-> [Bruno Adam](https://github.com/bruadam).
+> [!IMPORTANT]
+> This is an independent, unofficial project. It is not affiliated with,
+> endorsed by, sponsored by, or supported by Dalux ApS. It provides no Dalux
+> subscription, API access, or credentials. Every user must supply their own
+> valid Dalux access and use it only within their agreement with Dalux. The
+> maintainer has never contacted Dalux about this project; no approval,
+> permission, confirmation, or endorsement has been requested or received.
+>
+> The MIT license permits use of this repository's original code, including
+> commercial use, but grants no rights to Dalux's services, API, documentation,
+> trademarks, accounts, or data. Commercial, multi-customer, or hosted use of
+> the code does not authorize the corresponding use of Dalux. Confirm that use
+> with Dalux under your own agreement. See the
+> [Legal and Usage Notice](https://bruadam.github.io/dalux-build/legal-and-usage.html).
+
+Maintained by [Bruno Adam](https://github.com/bruadam).
 
 ## Get Started
 
@@ -103,4 +117,7 @@ questions.
 
 ## License
 
-MIT
+The original code in this repository is licensed under the
+[MIT License](LICENSE). That license covers this project only and does not grant
+rights to Dalux's services or other intellectual property. See the
+[Legal and Usage Notice](https://bruadam.github.io/dalux-build/legal-and-usage.html).

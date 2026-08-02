@@ -2,6 +2,14 @@
 
 A lightweight Node.js client for the [Dalux Build REST API](https://app.swaggerhub.com/apis-docs/Dalux/DaluxBuild-api/4.14).
 
+> [!IMPORTANT]
+> This is an unofficial client, not affiliated with or endorsed by Dalux ApS.
+> It provides no API access or credentials. You must use your own authorized
+> Dalux subscription and API key within your agreement with Dalux. The MIT
+> license covers this client code only; it does not grant rights to Dalux's API
+> or Services. Commercial or hosted use requires authorization under your own
+> Dalux agreement. See the [Legal and Usage Notice](../docs/legal-and-usage.md).
+
 See the [repo root README](../README.md) for the Python client
 (`dalux-build`) and the [webhook server](../webhook-server/README.md) built
 on it — the two clients are versioned, tested, and released together; see

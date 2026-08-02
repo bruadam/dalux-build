@@ -20,7 +20,7 @@ nav_sort: case_insensitive
 back_to_top: true
 back_to_top_text: "Back to top"
 
-footer_content: "Not affiliated with Dalux. Maintained by <a href=\"https://github.com/brunoadam\">Bruno Adam</a>. Distributed under the MIT license."
+footer_content: "Unofficial project; not affiliated with Dalux. <a href=\"/dalux-build/legal-and-usage.html\">Legal and usage notice</a>. Maintained by <a href=\"https://github.com/brunoadam\">Bruno Adam</a>."
 
 callouts:
   warning:

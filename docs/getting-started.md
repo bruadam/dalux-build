@@ -5,6 +5,10 @@ nav_order: 2
 
 # Getting Started
 
+Before continuing, read the [Legal and Usage Notice](legal-and-usage.html).
+This project does not provide Dalux access. You need your own authorized account
+and must keep every use within the scope of your agreement with Dalux.
+
 Both clients need two things from your Dalux Build account:
 
 1. `DALUX_API_KEY` — your company's API key (Dalux Build UI → **Company Profile

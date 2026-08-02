@@ -18,6 +18,7 @@ from .models import (
     JobView,
     TestWebhookResponse,
 )
+from .monitor import build_test_event_payload
 from .store import Store
 
 
@@ -75,6 +76,17 @@ class Jobs:
                 if request.callback.auth_type != "none"
                 else None
             ),
+            "test_callback_url": (
+                str(request.test_callback.url) if request.test_callback else None
+            ),
+            "test_callback_auth_type": (
+                request.test_callback.auth_type if request.test_callback else None
+            ),
+            "test_callback_secret_encrypted": (
+                self.secrets.encrypt(request.test_callback.secret or "")
+                if request.test_callback and request.test_callback.auth_type != "none"
+                else None
+            ),
             "config_json": json.dumps(config, separators=(",", ":")),
             "next_run_at": following.isoformat(),
             "idempotency_key": idempotency_key,
@@ -93,29 +105,48 @@ class Jobs:
     def delete(self, job_id: str) -> None:
         self.store.delete_job(job_id)
 
+    def set_enabled(self, job_id: str, enabled: bool) -> JobView:
+        row = self.store.get_job(job_id)
+        if row is None:
+            raise KeyError(job_id)
+        # Re-arm from "now" on resume so a job paused across several cron
+        # cycles doesn't immediately fire a backlog of missed runs.
+        following = next_run(row["cron"], row["timezone"]) if enabled else None
+        if not self.store.set_enabled(job_id, enabled, following):
+            raise KeyError(job_id)
+        row = self.store.get_job(job_id)
+        assert row is not None
+        return self.view(row)
+
     def test_webhook(self, job_id: str) -> TestWebhookResponse:
         row = self.store.get_job(job_id)
         if row is None:
             raise KeyError(job_id)
+        callback = self._test_callback(row)
+        event_type = cast(Literal["change", "freshness"], row["kind"])
+        payload = build_test_event_payload(self.store, self.secrets, row)
+        return send_test_webhook(callback, event_type, payload)
+
+    def _test_callback(self, row: sqlite3.Row) -> CallbackConfig:
+        """Resolve the callback for the 'send test webhook' action — the job's
+        dedicated test callback (e.g. an n8n /webhook-test/ URL) if one was
+        registered, otherwise the production callback."""
+        if row["test_callback_url"]:
+            encrypted = row["test_callback_secret_encrypted"]
+            return CallbackConfig.model_validate(
+                {
+                    "url": row["test_callback_url"],
+                    "authType": row["test_callback_auth_type"] or "none",
+                    "secret": self.secrets.decrypt(encrypted) if encrypted else None,
+                }
+            )
         encrypted = row["callback_secret_encrypted"]
-        callback = CallbackConfig.model_validate(
+        return CallbackConfig.model_validate(
             {
                 "url": row["callback_url"],
                 "authType": row["callback_auth_type"],
                 "secret": self.secrets.decrypt(encrypted) if encrypted else None,
             }
-        )
-        event_type = cast(Literal["change", "freshness"], row["kind"])
-        config = json.loads(row["config_json"])
-        file_ids = config.get("scope", {}).get("fileIds", []) if event_type == "change" else []
-        sample_file_id = file_ids[0] if file_ids else "test-file"
-        return send_test_webhook(
-            callback,
-            event_type,
-            job_id,
-            row["project_id"],
-            row["file_area_id"],
-            sample_file_id,
         )
 
     @staticmethod
@@ -131,5 +162,8 @@ class Jobs:
             timezone=row["timezone"],
             callbackUrl=row["callback_url"],
             callbackAuthType=row["callback_auth_type"],
+            testCallbackUrl=row["test_callback_url"],
+            testCallbackAuthType=row["test_callback_auth_type"],
             nextRunAt=datetime.fromisoformat(row["next_run_at"]),
+            enabled=bool(row["enabled"]),
         )

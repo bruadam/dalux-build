@@ -1,7 +1,14 @@
-# Dalux Build API
+<p align="center">
+  <img src="./docs/assets/dalux-build-banner.png"
+       alt="Dalux Build API — Node.js and Python clients, webhooks, and n8n"
+       width="100%">
+</p>
+
+# Dalux Build (Client Libraries Py/JS & Webhooks) by [bruadam](https://github.com/bruadam)
 
 <p>
   <a href="https://github.com/bruadam/dalux-build/actions/workflows/ci.yml"><img src="https://img.shields.io/github/actions/workflow/status/bruadam/dalux-build/ci.yml?branch=main&style=flat-square&logo=github&label=CI" alt="CI Status"></a>
+  [![Release](https://github.com/bruadam/dalux-build/actions/workflows/release.yml/badge.svg?branch=main)](https://github.com/bruadam/dalux-build/actions/workflows/release.yml)
   <a href="https://www.npmjs.com/package/dalux-build-api"><img src="https://img.shields.io/npm/v/dalux-build-api?style=flat-square&logo=npm&label=dalux-build-api" alt="npm version"></a>
   <a href="https://pypi.org/project/dalux-build/"><img src="https://img.shields.io/pypi/v/dalux-build?style=flat-square&logo=pypi&logoColor=white&label=dalux-build" alt="PyPI version"></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-blue?style=flat-square" alt="License"></a>
@@ -17,8 +24,22 @@ top of them — because Dalux itself doesn't push webhooks.
 > the near future — pin to a specific version. Report issues on
 > [GitHub](https://github.com/bruadam/dalux-build/issues).
 
-> Not affiliated with Dalux. Maintained by
-> [Bruno Adam](https://github.com/bruadam).
+> [!IMPORTANT]
+> This is an independent, unofficial project. It is not affiliated with,
+> endorsed by, sponsored by, or supported by Dalux ApS. It provides no Dalux
+> subscription, API access, or credentials. Every user must supply their own
+> valid Dalux access and use it only within their agreement with Dalux. The
+> maintainer has never contacted Dalux about this project; no approval,
+> permission, confirmation, or endorsement has been requested or received.
+>
+> The MIT license permits use of this repository's original code, including
+> commercial use, but grants no rights to Dalux's services, API, documentation,
+> trademarks, accounts, or data. Commercial, multi-customer, or hosted use of
+> the code does not authorize the corresponding use of Dalux. Confirm that use
+> with Dalux under your own agreement. See the
+> [Legal and Usage Notice](https://bruadam.github.io/dalux-build/legal-and-usage.html).
+
+Maintained by [Bruno Adam](https://github.com/bruadam).
 
 ## Get Started
 
@@ -30,8 +51,8 @@ npm install dalux-build-api
 const { createClient } = require("dalux-build-api");
 
 const dalux = createClient({
-    baseUrl: "https://<company>.dalux.com/api",
-    apiKey: "YOUR_API_KEY",
+  baseUrl: "https://<company>.dalux.com/api",
+  apiKey: "YOUR_API_KEY",
 });
 const projects = await dalux.projects.listProjects();
 ```
@@ -96,4 +117,7 @@ questions.
 
 ## License
 
-MIT
+The original code in this repository is licensed under the
+[MIT License](LICENSE). That license covers this project only and does not grant
+rights to Dalux's services or other intellectual property. See the
+[Legal and Usage Notice](https://bruadam.github.io/dalux-build/legal-and-usage.html).

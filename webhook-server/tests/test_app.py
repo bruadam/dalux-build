@@ -35,3 +35,12 @@ def test_standalone_health_and_registration(tmp_path):
         assert response.status_code == 201
         assert response.json()["daluxBaseUrl"] == "https://default.example/api"
         assert "secret" not in response.text
+
+        job_id = response.json()["jobId"]
+        paused = client.patch(
+            f"/jobs/{job_id}",
+            headers={"Authorization": "Bearer admin"},
+            json={"enabled": False},
+        )
+        assert paused.status_code == 200
+        assert paused.json()["enabled"] is False

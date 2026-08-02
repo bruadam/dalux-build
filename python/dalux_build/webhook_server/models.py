@@ -48,6 +48,15 @@ class JobBaseRequest(BaseModel):
     cron: str
     timezone: str | None = None
     callback: CallbackConfig
+    test_callback: CallbackConfig | None = Field(
+        None,
+        alias="testCallback",
+        description=(
+            "Optional separate callback for the 'send test webhook' action "
+            "(for example an n8n /webhook-test/ URL, vs. the production "
+            "/webhook/ URL in `callback`). Falls back to `callback` when omitted."
+        ),
+    )
 
     model_config = ConfigDict(populate_by_name=True)
 
@@ -70,6 +79,10 @@ class FreshnessJobRequest(JobBaseRequest):
         return self
 
 
+class JobUpdateRequest(BaseModel):
+    enabled: bool
+
+
 class TestWebhookResponse(BaseModel):
     delivery_id: str = Field(alias="deliveryId")
     event_type: Literal["change", "freshness"] = Field(alias="eventType")
@@ -89,6 +102,9 @@ class JobView(BaseModel):
     timezone: str
     callback_url: str = Field(alias="callbackUrl")
     callback_auth_type: str = Field(alias="callbackAuthType")
+    test_callback_url: str | None = Field(None, alias="testCallbackUrl")
+    test_callback_auth_type: str | None = Field(None, alias="testCallbackAuthType")
     next_run_at: datetime = Field(alias="nextRunAt")
+    enabled: bool = True
 
     model_config = ConfigDict(populate_by_name=True)

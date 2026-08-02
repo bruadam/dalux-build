@@ -39,6 +39,8 @@ export function ScheduleStep({
   setTimezone,
   callbackUrl,
   setCallbackUrl,
+  testCallbackUrl,
+  setTestCallbackUrl,
   authType,
   setAuthType,
   callbackSecret,
@@ -177,7 +179,7 @@ export function ScheduleStep({
             <Input id="timezone" value={timezone} onChange={(e) => setTimezone(e.target.value)} required placeholder="Europe/Copenhagen" />
           </div>
           <div className="flex flex-col gap-1.5">
-            <Label htmlFor="callbackUrl">n8n POST URL</Label>
+            <Label htmlFor="callbackUrl">Production n8n POST URL</Label>
             <Input
               id="callbackUrl"
               type="url"
@@ -187,6 +189,19 @@ export function ScheduleStep({
               placeholder="https://n8n.example/webhook/dalux"
             />
             <p className="text-xs text-muted-foreground">Use the production URL of an active n8n Webhook node.</p>
+          </div>
+          <div className="flex flex-col gap-1.5">
+            <Label htmlFor="testCallbackUrl">Test n8n POST URL (optional)</Label>
+            <Input
+              id="testCallbackUrl"
+              type="url"
+              value={testCallbackUrl}
+              onChange={(e) => setTestCallbackUrl(e.target.value)}
+              placeholder="https://n8n.example/webhook-test/dalux"
+            />
+            <p className="text-xs text-muted-foreground">
+              Used only by &ldquo;Send test webhook&rdquo;; falls back to the production URL above when empty.
+            </p>
           </div>
           <div className="flex flex-col gap-1.5">
             <Label>Callback authentication</Label>
@@ -228,8 +243,12 @@ export function ScheduleStep({
                 <li>
                   Set the HTTP Method to <code className="rounded bg-primary/10 px-1 py-0.5 text-[11px] font-bold text-primary">POST</code>.
                 </li>
-                <li>Open the Production URL tab and copy the displayed URL.</li>
-                <li>Paste it into the n8n POST URL field above and activate the workflow.</li>
+                <li>Open the Production URL tab and copy the displayed URL into the field above.</li>
+                <li>
+                  Optionally copy the Test URL tab too, into the Test n8n POST URL field, so
+                  &ldquo;Send test webhook&rdquo; delivers to your in-editor workflow instead of production.
+                </li>
+                <li>Activate the workflow so the production URL stays live between test runs.</li>
               </ol>
             </div>
             <Image

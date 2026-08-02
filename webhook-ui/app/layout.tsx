@@ -1,9 +1,9 @@
-import { ClerkProvider } from "@clerk/nextjs";
 import { Analytics } from "@vercel/analytics/next";
 import "./globals.css";
 import { Geist, JetBrains_Mono, IBM_Plex_Sans } from "next/font/google";
 import { cn } from "@/lib/utils";
 import { TooltipProvider } from "@/components/ui/tooltip";
+import { AuthProvider } from "@/components/auth/auth-provider";
 
 const ibmPlexSansHeading = IBM_Plex_Sans({subsets:['latin'],variable:'--font-heading'});
 
@@ -20,10 +20,10 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
   return (
     <html lang="en" className={cn( geist.variable, "font-mono", jetbrainsMono.variable, ibmPlexSansHeading.variable)}>
       <body>
-        <ClerkProvider>
+        <AuthProvider>
           <TooltipProvider>{children}</TooltipProvider>
-        </ClerkProvider>
-        <Analytics />
+          <Analytics />
+        </AuthProvider>
       </body>
     </html>
   );

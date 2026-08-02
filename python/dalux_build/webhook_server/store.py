@@ -19,8 +19,10 @@ CREATE TABLE IF NOT EXISTS jobs (
  file_area_id TEXT NOT NULL, base_url TEXT NOT NULL, api_key_encrypted TEXT NOT NULL,
  cron TEXT NOT NULL, timezone TEXT NOT NULL, callback_url TEXT NOT NULL,
  callback_auth_type TEXT NOT NULL, callback_secret_encrypted TEXT,
+ test_callback_url TEXT, test_callback_auth_type TEXT, test_callback_secret_encrypted TEXT,
  config_json TEXT NOT NULL, next_run_at TEXT NOT NULL, running INTEGER NOT NULL DEFAULT 0,
- initialized INTEGER NOT NULL DEFAULT 0, idempotency_key TEXT UNIQUE, created_at TEXT NOT NULL
+ initialized INTEGER NOT NULL DEFAULT 0, enabled INTEGER NOT NULL DEFAULT 1,
+ idempotency_key TEXT UNIQUE, created_at TEXT NOT NULL
 );
 CREATE TABLE IF NOT EXISTS file_state (
  job_id TEXT NOT NULL, file_id TEXT NOT NULL, data_json TEXT NOT NULL,
@@ -62,6 +64,17 @@ class Store:
                     "DROP TABLE IF EXISTS file_state; DROP TABLE IF EXISTS processed_events;"
                 )
             self._conn.executescript(SCHEMA)
+            job_columns = {
+                row[1] for row in self._conn.execute("PRAGMA table_info(jobs)").fetchall()
+            }
+            if "enabled" not in job_columns:
+                self._conn.execute("ALTER TABLE jobs ADD COLUMN enabled INTEGER NOT NULL DEFAULT 1")
+            if "test_callback_url" not in job_columns:
+                self._conn.executescript(
+                    "ALTER TABLE jobs ADD COLUMN test_callback_url TEXT;"
+                    "ALTER TABLE jobs ADD COLUMN test_callback_auth_type TEXT;"
+                    "ALTER TABLE jobs ADD COLUMN test_callback_secret_encrypted TEXT;"
+                )
             self._conn.execute("UPDATE jobs SET running=0")
 
     def create_job(self, values: dict[str, object]) -> bool:
@@ -98,9 +111,23 @@ class Store:
         with self._lock:
             return list(
                 self._conn.execute(
-                    "SELECT * FROM jobs WHERE next_run_at<=? AND running=0", (now.isoformat(),)
+                    "SELECT * FROM jobs WHERE next_run_at<=? AND running=0 AND enabled=1",
+                    (now.isoformat(),),
                 )
             )
+
+    def set_enabled(self, job_id: str, enabled: bool, next_run_at: datetime | None = None) -> bool:
+        with self._lock, self._conn:
+            if next_run_at is not None:
+                cur = self._conn.execute(
+                    "UPDATE jobs SET enabled=?, next_run_at=? WHERE job_id=?",
+                    (1 if enabled else 0, next_run_at.isoformat(), job_id),
+                )
+            else:
+                cur = self._conn.execute(
+                    "UPDATE jobs SET enabled=? WHERE job_id=?", (1 if enabled else 0, job_id)
+                )
+            return cur.rowcount == 1
 
     def claim(self, job_id: str, following: datetime) -> bool:
         with self._lock, self._conn:

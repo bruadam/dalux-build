@@ -100,6 +100,9 @@ class WebhookServerApi(DashboardApiMixin):
         timezone: str | None = None,
         callback_auth_type: str = "none",
         callback_secret: str | None = None,
+        test_callback_url: str | None = None,
+        test_callback_auth_type: str = "none",
+        test_callback_secret: str | None = None,
         dalux_api_key: str | None = None,
         dalux_base_url: str | None = None,
         name: str | None = None,
@@ -122,6 +125,15 @@ class WebhookServerApi(DashboardApiMixin):
                     "authType": callback_auth_type,
                     "secret": callback_secret,
                 },
+                "testCallback": (
+                    {
+                        "url": test_callback_url,
+                        "authType": test_callback_auth_type,
+                        "secret": test_callback_secret,
+                    }
+                    if test_callback_url
+                    else None
+                ),
                 "scope": {"mode": scope, "fileIds": file_ids or []},
                 "initialRun": initial_run,
             }
@@ -142,6 +154,9 @@ class WebhookServerApi(DashboardApiMixin):
         timezone: str | None = None,
         callback_auth_type: str = "none",
         callback_secret: str | None = None,
+        test_callback_url: str | None = None,
+        test_callback_auth_type: str = "none",
+        test_callback_secret: str | None = None,
         dalux_api_key: str | None = None,
         dalux_base_url: str | None = None,
         name: str | None = None,
@@ -164,6 +179,15 @@ class WebhookServerApi(DashboardApiMixin):
                     "authType": callback_auth_type,
                     "secret": callback_secret,
                 },
+                "testCallback": (
+                    {
+                        "url": test_callback_url,
+                        "authType": test_callback_auth_type,
+                        "secret": test_callback_secret,
+                    }
+                    if test_callback_url
+                    else None
+                ),
                 "folderIds": folder_ids or [],
                 "fileNameFilter": file_name_filter,
                 "maxAge": max_age,
@@ -174,6 +198,9 @@ class WebhookServerApi(DashboardApiMixin):
 
     def unregister_job(self, job_id: str) -> None:
         self._require_jobs().delete(job_id)
+
+    def set_job_enabled(self, job_id: str, enabled: bool) -> None:
+        self._require_jobs().set_enabled(job_id, enabled)
 
     def test_job(self, job_id: str) -> TestWebhookResponse:
         return self._require_jobs().test_webhook(job_id)

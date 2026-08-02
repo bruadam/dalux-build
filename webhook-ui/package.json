@@ -8,8 +8,9 @@
     "start": "next start -p 3000"
   },
   "dependencies": {
-    "@clerk/nextjs": "^7.6.4",
     "@phosphor-icons/react": "^2.1.10",
+    "@supabase/ssr": "^0.12.4",
+    "@supabase/supabase-js": "^2.49.1",
     "@vercel/analytics": "^2.0.1",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",

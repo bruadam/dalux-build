@@ -1,12 +1,11 @@
 # Contributing
 
-This repo ships two clients for the same API — a Node.js package
-(`javascript/`, published as `dalux-build-api`) and a Python package
-(`python/dalux_build/`, published as `dalux-build`) — plus a standalone
-webhook server (`webhook-server/`). They're versioned together: one release
-number for both `javascript/package.json` and `python/pyproject.toml`. The
-repo root is an npm workspace root (`"workspaces": ["javascript"]`), not a
-package itself.
+This repo ships two clients for the same API — a Node.js package (`javascript/`,
+published as `dalux-build-api`) and a Python package (`python/dalux_build/`,
+published as `dalux-build`) — plus a standalone webhook server
+(`webhook-server/`). They're versioned together: one release number for both
+`javascript/package.json` and `python/pyproject.toml`. The repo root is an npm
+workspace root (`"workspaces": ["javascript"]`), not a package itself.
 
 ## Setup
 
@@ -62,9 +61,9 @@ mypy -p dalux_webhook
 ## Adding a changeset
 
 Every PR that changes published code — `javascript/src/`,
-`javascript/package.json`, `python/dalux_build/`, or `python/pyproject.toml`
-— needs a changeset. CI (`changeset-check` in `.github/workflows/ci.yml`)
-fails the PR if one is missing. This check is a plain git diff, not
+`javascript/package.json`, `python/dalux_build/`, or `python/pyproject.toml` —
+needs a changeset. CI (`changeset-check` in `.github/workflows/ci.yml`) fails
+the PR if one is missing. This check is a plain git diff, not
 `changeset status`, because Changesets itself only sees the `javascript`
 workspace and would silently miss Python-only changes.
 
@@ -73,9 +72,9 @@ npx changeset
 ```
 
 Pick a bump type (patch for fixes, minor for backwards-compatible features,
-major for breaking changes) and write a short summary — it becomes the
-changelog entry. This bumps both packages' version together, so pick the
-highest bump type needed by either side.
+major for breaking changes) and write a short summary — it becomes the changelog
+entry. This bumps both packages' version together, so pick the highest bump type
+needed by either side.
 
 For changes that don't need a release (docs, CI, tests only), add an empty
 changeset instead of skipping this step:
@@ -86,17 +85,17 @@ npx changeset add --empty
 
 ## How releases work
 
-Releases are fully automated by [Changesets](https://github.com/changesets/changesets)
-via `.github/workflows/release.yml` — there's no manual version bump:
+Releases are fully automated by
+[Changesets](https://github.com/changesets/changesets) via
+`.github/workflows/release.yml` — there's no manual version bump:
 
-1. Merging a PR with a changeset to `main` makes the `Release` workflow open
-   or update a **"chore: version packages"** PR. That PR's diff is the
-   changelog: it runs `changeset version` (bumps `javascript/package.json`,
-   writes `javascript/CHANGELOG.md`) and then
-   `scripts/sync-python-version.mjs`, which copies the same version into
-   `python/pyproject.toml` and mirrors the newest changelog entry into
-   `python/CHANGELOG.md` — one changeset summary powers both packages'
-   release notes.
+1. Merging a PR with a changeset to `main` makes the `Release` workflow open or
+   update a **"chore: version packages"** PR. That PR's diff is the changelog:
+   it runs `changeset version` (bumps `javascript/package.json`, writes
+   `javascript/CHANGELOG.md`) and then `scripts/sync-python-version.mjs`, which
+   copies the same version into `python/pyproject.toml` and mirrors the newest
+   changelog entry into `python/CHANGELOG.md` — one changeset summary powers
+   both packages' release notes.
 2. Merging the version PR triggers the workflow again. This time there are no
    pending changesets, so it publishes `dalux-build-api` to npm
    (`changeset publish`), tags the release, and creates a GitHub Release.

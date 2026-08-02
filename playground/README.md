@@ -6,6 +6,13 @@ sidebar, fill in the parameters, and hit **Send** — the call runs **server-sid
 through the actual client (`createClient(...)`), so your API key never reaches the
 browser and there are no CORS issues.
 
+> [!IMPORTANT]
+> This unofficial tool provides no Dalux access or credentials. Use only your own
+> authorized Dalux key and only for purposes allowed by your agreement with
+> Dalux. Do not expose the playground or a server-side default key to users who
+> are not independently authorized. See the
+> [Legal and Usage Notice](../docs/legal-and-usage.md).
+
 ## How it works
 
 ```

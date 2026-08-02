@@ -1,3 +1,6 @@
 [submodule "n8n-nodes-dalux-build"]
 	path = n8n-nodes-dalux-build
 	url = https://github.com/bruadam/n8n-nodes-dalux-build.git
+[submodule "dalux-build-tuto"]
+	path = dalux-build-tuto
+	url = https://github.com/bruadam/dalux-build-tuto.git

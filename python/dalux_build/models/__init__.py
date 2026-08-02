@@ -20,6 +20,7 @@ from .file_upload import FileUpload
 
 # Endpoint models - files
 from .files import (
+    DownloadResult,
     File,
     FileDateProperty,
     FileIntegerProperty,
@@ -29,6 +30,7 @@ from .files import (
     FileResponse,
     FilesListResponse,
     FileTextProperty,
+    MissingFileReport,
     Reference,
 )
 
@@ -129,6 +131,8 @@ __all__ = [
     "FilePropertyField",
     "FilesListResponse",
     "FileResponse",
+    "DownloadResult",
+    "MissingFileReport",
     # Version Sets
     "VersionSet",
     "VersionSetsListResponse",

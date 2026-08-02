@@ -64,7 +64,7 @@ class FilePropertyField(BaseModel):
 
 
 class FileNameFilter(BaseModel):
-    """Case-insensitive file name filter rules."""
+    """Case-insensitive file name filter rules with regex and wildcard support."""
 
     contains: list[str] | None = None
     contains_match: Literal["any", "all"] = "any"
@@ -75,6 +75,35 @@ class FileNameFilter(BaseModel):
     not_endswith: list[str] | None = None
     extensions: list[str] | None = None
     not_extensions: list[str] | None = None
+
+    # Regex pattern support
+    pattern: str | None = None
+    patterns: list[str] | None = None
+
+    # Wildcard (glob) pattern support
+    wildcard: str | None = None
+    wildcards: list[str] | None = None
+
+    model_config = ConfigDict(populate_by_name=True)
+
+
+class MissingFileReport(BaseModel):
+    """Report of missing files for a version set."""
+
+    version_set_id: str
+    missing_files: list[str] = Field(default_factory=list)
+    missing_download_links: list[str] = Field(default_factory=list)
+
+    model_config = ConfigDict(populate_by_name=True)
+
+
+class DownloadResult(BaseModel):
+    """Result of a download operation across version sets."""
+
+    downloaded_files: list["File"] = Field(default_factory=list)
+    skipped_files: list["File"] = Field(default_factory=list)
+    failed_files: list[tuple["File", str]] = Field(default_factory=list)
+    missing_report: dict[str, MissingFileReport] = Field(default_factory=dict)
 
     model_config = ConfigDict(populate_by_name=True)
 

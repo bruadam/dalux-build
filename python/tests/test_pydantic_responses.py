@@ -345,6 +345,7 @@ class TestFilesPydantic:
         assert isinstance(response, FileResponse)
         assert response.data.file_id == "f1"
 
+    @rsps_lib.activate
     def test_bulk_download_folder_supports_filters_and_metadata(self, monkeypatch, tmp_path):
         """bulk_download_folder should filter and write metadata for downloaded files."""
         api = FilesApi(_make_client())
@@ -372,13 +373,8 @@ class TestFilesPydantic:
             assert folder_id is None
             return [file_obj]
 
-        def fake_download(download_link, file_name, save_path=None, verbose=False):
-            target = tmp_path / file_name
-            target.write_text("content", encoding="utf-8")
-            return str(target)
-
         monkeypatch.setattr(api, "get_all_files_in_folder", fake_get_all_files_in_folder)
-        monkeypatch.setattr(api, "_download_file_from_link", fake_download)
+        rsps_lib.add(rsps_lib.GET, "https://download.example.com/f1", body="content", status=200)
 
         results = api.bulk_download_folder(
             save_path=str(tmp_path),
@@ -446,6 +442,7 @@ class TestFilesPydantic:
         assert results[0].saved_file_path == str(local_file)
         assert results[0].saved_metadata_path == str(metadata_path)
 
+    @rsps_lib.activate
     def test_bulk_download_folder_save_historically_appends_timestamp(self, monkeypatch, tmp_path):
         """save_historically should version file and metadata names by upload timestamp."""
         api = FilesApi(_make_client())
@@ -461,17 +458,12 @@ class TestFilesPydantic:
             }
         )
 
-        def fake_download(download_link, file_name, save_path=None, verbose=False):
-            target = tmp_path / file_name
-            target.write_text("content", encoding="utf-8")
-            return str(target)
-
         monkeypatch.setattr(
             api,
             "get_all_files_in_folder",
             lambda *args, **kwargs: [file_obj],
         )
-        monkeypatch.setattr(api, "_download_file_from_link", fake_download)
+        rsps_lib.add(rsps_lib.GET, "https://download.example.com/f1", body="content", status=200)
 
         results = api.bulk_download_folder(
             folder_id="fo1",
@@ -488,6 +480,7 @@ class TestFilesPydantic:
         assert results[0].saved_metadata_path == str(tmp_path / f"{versioned}.txt")
         assert (tmp_path / versioned).exists()
 
+    @rsps_lib.activate
     def test_bulk_download_folder_save_historically_keeps_previous_versions(
         self, monkeypatch, tmp_path
     ):
@@ -515,17 +508,12 @@ class TestFilesPydantic:
             }
         )
 
-        def fake_download(download_link, file_name, save_path=None, verbose=False):
-            target = tmp_path / file_name
-            target.write_text("new", encoding="utf-8")
-            return str(target)
-
         monkeypatch.setattr(
             api,
             "get_all_files_in_folder",
             lambda *args, **kwargs: [file_obj],
         )
-        monkeypatch.setattr(api, "_download_file_from_link", fake_download)
+        rsps_lib.add(rsps_lib.GET, "https://download.example.com/f1", body="new", status=200)
 
         results = api.bulk_download_folder(
             folder_id="fo1",

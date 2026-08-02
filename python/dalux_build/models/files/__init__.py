@@ -1,6 +1,7 @@
 """Files endpoint models."""
 
 from .models import (
+    DownloadResult,
     File,
     FileDateProperty,
     FileIntegerProperty,
@@ -8,6 +9,7 @@ from .models import (
     FilePropertyField,
     FileReferenceProperty,
     FileTextProperty,
+    MissingFileReport,
     Reference,
 )
 from .responses import FileResponse, FilesListResponse
@@ -23,4 +25,6 @@ __all__ = [
     "FilePropertyField",
     "FilesListResponse",
     "FileResponse",
+    "DownloadResult",
+    "MissingFileReport",
 ]

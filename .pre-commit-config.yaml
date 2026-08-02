@@ -1,0 +1,32 @@
+repos:
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.16.1
+    hooks:
+      - id: ruff-check
+        args: [--fix]
+        files: ^(python|webhook-server)/.*\.py$
+      - id: ruff-format
+        files: ^(python|webhook-server)/.*\.py$
+
+  - repo: local
+    hooks:
+      - id: mypy-dalux-build
+        name: mypy (dalux-build)
+        entry: >-
+          uv run --frozen --directory python --extra dev --extra webhook
+          mypy -p dalux_build
+        language: system
+        always_run: true
+        pass_filenames: false
+        stages: [pre-push]
+
+      - id: mypy-webhook-server
+        name: mypy (webhook-server)
+        entry: >-
+          uv run --frozen --directory webhook-server --extra dev
+          --with-editable ../python[dev,webhook]
+          mypy -p dalux_webhook
+        language: system
+        always_run: true
+        pass_filenames: false
+        stages: [pre-push]

@@ -23,6 +23,22 @@ cd python && pytest --cov=dalux_build                 # Python client
 cd webhook-server && pytest                            # webhook server
 ```
 
+## Git hooks
+
+Install the repository hooks after setting up the Python development
+environment:
+
+```bash
+uv run --project python --extra dev pre-commit install \
+   --hook-type pre-commit --hook-type pre-push
+```
+
+Commits automatically run Ruff with fixes and formatting on staged Python files.
+Pushes use `uv` to run mypy against both Python packages. Hooks can be run
+manually with `pre-commit run --all-files` and
+`pre-commit run --all-files --hook-stage pre-push`. CI remains the required
+check because local hooks can be skipped with `--no-verify`.
+
 ## Python code quality
 
 Both Python packages (`python/`, `webhook-server/`) are linted with

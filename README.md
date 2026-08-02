@@ -8,7 +8,7 @@
 
 <p>
   <a href="https://github.com/bruadam/dalux-build/actions/workflows/ci.yml"><img src="https://img.shields.io/github/actions/workflow/status/bruadam/dalux-build/ci.yml?branch=main&style=flat-square&logo=github&label=CI" alt="CI Status"></a>
-  [![Release](https://github.com/bruadam/dalux-build/actions/workflows/release.yml/badge.svg?branch=main)](https://github.com/bruadam/dalux-build/actions/workflows/release.yml)
+  <a href="https://github.com/bruadam/dalux-build/actions/workflows/release.yml"><img src="https://github.com/bruadam/dalux-build/actions/workflows/release.yml/badge.svg?branch=main" alt="Release"></a>
   <a href="https://www.npmjs.com/package/dalux-build-api"><img src="https://img.shields.io/npm/v/dalux-build-api?style=flat-square&logo=npm&label=dalux-build-api" alt="npm version"></a>
   <a href="https://pypi.org/project/dalux-build/"><img src="https://img.shields.io/pypi/v/dalux-build?style=flat-square&logo=pypi&logoColor=white&label=dalux-build" alt="PyPI version"></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-blue?style=flat-square" alt="License"></a>
@@ -19,9 +19,10 @@ Node.js and Python clients for the
 plus a webhook server, registration UI, dev playground, and n8n node built on
 top of them — because Dalux itself doesn't push webhooks.
 
-> ! Disclaimer: These API clients are experimental and not yet fully tested. Use
-> at your own risk. Suspect ground-breaking, backwards-incompatible changes in
-> the near future — pin to a specific version. Report issues on
+> [!WARNING]
+> These API clients are experimental and not yet fully tested. Use at your own
+> risk. Suspect ground-breaking, backwards-incompatible changes in the near
+> future — pin to a specific version. Report issues on
 > [GitHub](https://github.com/bruadam/dalux-build/issues).
 
 > [!IMPORTANT]

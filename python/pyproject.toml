@@ -49,6 +49,12 @@ dev = [
     "pandas>=2.0",
     "pandas-stubs>=2.0",
     "types-tqdm>=4.66",
+    "streamlit>=1.40",
+    "plotly>=5.24",
+]
+dashboard = [
+    "streamlit>=1.40",
+    "plotly>=5.24",
 ]
 webhook = [
     "fastapi>=0.110",

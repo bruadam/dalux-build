@@ -5,6 +5,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 from ..api_client import ApiClient
+from ..dashboards.api import DashboardApiMixin
 from ..models import FileNameFilter
 from .errors import WebhookServerAlreadyRunning, WebhookServerNotRunning
 
@@ -16,8 +17,11 @@ if TYPE_CHECKING:
     from .store import Store
 
 
-class WebhookServerApi:
+class WebhookServerApi(DashboardApiMixin):
+    dashboard_resource = "webhook_server"
+
     def __init__(self, api_client: ApiClient) -> None:
+        self._client = api_client
         self._api_client = api_client
         self._store: Store | None = None
         self._jobs: Jobs | None = None

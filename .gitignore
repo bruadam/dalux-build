@@ -24,7 +24,6 @@ __pycache__/
 htmlcov/
 python/dist/
 python/build/
-*.ipynb
 
 # ── Environment / secrets ────────────────────────────────
 .env

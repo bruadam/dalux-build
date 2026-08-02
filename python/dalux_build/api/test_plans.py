@@ -3,6 +3,7 @@
 from typing import TYPE_CHECKING, Literal, overload
 
 from ..api_client import ApiClient
+from ..dashboards.api import DashboardApiMixin
 from ..json_types import QueryParams
 from ..models import (
     TestPlan,
@@ -22,8 +23,10 @@ if TYPE_CHECKING:
     import pandas as pd
 
 
-class TestPlansApi:
+class TestPlansApi(DashboardApiMixin):
     """Methods for test plans."""
+
+    dashboard_resource = "test_plans"
 
     def __init__(self, api_client: ApiClient) -> None:
         self._client = api_client

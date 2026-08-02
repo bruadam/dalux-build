@@ -1,12 +1,15 @@
 """File Upload API (chunked upload)."""
 
 from ..api_client import ApiClient
+from ..dashboards.api import DashboardApiMixin
 from ..json_types import JSONDict, JSONValue
 from ..utils.validation import resolve_file_area_id, resolve_project_id
 
 
-class FileUploadApi:
+class FileUploadApi(DashboardApiMixin):
     """Methods for chunked file uploads."""
+
+    dashboard_resource = "file_upload"
 
     def __init__(self, api_client: ApiClient) -> None:
         self._client = api_client

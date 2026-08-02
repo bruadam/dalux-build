@@ -1,11 +1,14 @@
 """Project Templates API."""
 
 from ..api_client import ApiClient
+from ..dashboards.api import DashboardApiMixin
 from ..json_types import JSONValue, QueryParams
 
 
-class ProjectTemplatesApi:
+class ProjectTemplatesApi(DashboardApiMixin):
     """Methods for project templates."""
+
+    dashboard_resource = "project_templates"
 
     def __init__(self, api_client: ApiClient) -> None:
         self._client = api_client

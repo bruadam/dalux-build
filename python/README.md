@@ -57,7 +57,44 @@ tasks = dalux.tasks.get_project_tasks(
 print(tasks)
 ```
 
+### Local dashboards
+
+Install the optional Streamlit and Plotly dependencies:
+
+```bash
+pip install "dalux-build[dashboard]"
+```
+
+Every API namespace exposes the same resource-scoped `dashboard()` method. The
+first built-in template is the task lifecycle timeline:
+
+```python
+dashboard = dalux.tasks.dashboard(
+    template="task-timeline",
+    template_options={
+        "timezone": "Europe/Copenhagen",
+        "task_params": {"typeId": "my-task-type-id"},
+    },
+)
+
+print(dashboard.url)
+dashboard.stop()
+```
+
+The call starts a local Streamlit process, opens it in the default browser, and
+returns a `DashboardHandle`. Pass `open_browser=False` to start without opening
+a tab, or `port=8501` to select a port. The process uses the client's configured
+project by default; pass `template_options={"project_id": "another-project"}` to
+override it.
+
+Templates are scoped to their owning API. For example,
+`dalux.files.dashboard(...)` and `dalux.folders.dashboard(...)` are available
+for future file and folder templates, but reject `task-timeline`. Inspect
+`dalux.files.available_dashboards` to discover templates registered for that
+namespace.
+
 **Upload a file (chunked)**
+
 ```python
 # 1. Create an upload slot
 upload = dalux.file_upload.create_upload(

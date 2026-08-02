@@ -31,6 +31,13 @@ from .api import (
 )
 from .api_client import ApiClient
 from .configuration import Configuration
+from .dashboards import (
+    DashboardError,
+    DashboardHandle,
+    DashboardStartupError,
+    DashboardTemplateNotFoundError,
+    MissingDashboardDependencies,
+)
 from .utils import (
     ApiError,
     DaluxError,
@@ -163,6 +170,11 @@ __all__ = [
     "VersionSetsApi",
     "WorkPackagesApi",
     "WebhookServerApi",
+    "DashboardError",
+    "DashboardHandle",
+    "DashboardStartupError",
+    "DashboardTemplateNotFoundError",
+    "MissingDashboardDependencies",
     # Utilities
     "DaluxError",
     "NotFoundError",

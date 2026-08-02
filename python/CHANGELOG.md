@@ -1,5 +1,11 @@
 # dalux-build
 
+## 2.0.4
+
+### Patch Changes
+
+- [#19](https://github.com/bruadam/dalux-build/pull/19) [`8b3e0eb`](https://github.com/bruadam/dalux-build/commit/8b3e0eb0d5f5a1fd0c5cfcc72f8eeef3f8d92282) Thanks [@bruadam](https://github.com/bruadam)! - Improve Python webhook monitor observability and testing ergonomics by adding `WebhookServerApi.test_job()` (plus `test_webhook()` alias), periodic scheduler job snapshot logging, and explicit queue/send/success/failure logs for callback delivery attempts. Also update webhook docs and tests to cover the new behavior.
+
 ## 2.0.3
 
 ### Patch Changes

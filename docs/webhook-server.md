@@ -78,11 +78,34 @@ curl -X POST http://localhost:8000/jobs/freshness \
 Freshness jobs always emit `compliant` plus violations; `maxAge` is
 whole-days only (Dalux reports `lastModified` at date precision).
 
-Delete a job with `DELETE /jobs/{jobId}`. Test a saved callback without
-waiting for Dalux: `POST /jobs/{jobId}/test`. Callback auth can be `none`,
-`bearer`, or `hmac-sha256` (`X-Webhook-Signature: sha256=<hex>`); every
-attempt carries a stable `X-Delivery-ID` for dedup, since retries are
-at-least-once.
+Delete a job with `DELETE /jobs/{jobId}`. Pause or resume one without losing
+its saved state with `PATCH /jobs/{jobId}` (`{"enabled": false}`) — resuming
+re-arms the schedule from the current time so a long-paused job doesn't fire
+a backlog of missed runs. Callback auth can be `none`, `bearer`, or
+`hmac-sha256` (`X-Webhook-Signature: sha256=<hex>`); every attempt carries a
+stable `X-Delivery-ID` for dedup, since retries are at-least-once.
+
+### Test vs. production callback
+
+Registration accepts an optional `testCallback` alongside `callback` — for
+example n8n's editor-only `/webhook-test/<id>` URL as `testCallback`, and its
+always-on `/webhook/<id>` URL as `callback`:
+
+```json
+{
+  "callback": {"url": "https://n8n.example/webhook/dalux"},
+  "testCallback": {"url": "https://n8n.example/webhook-test/dalux"}
+}
+```
+
+`POST /jobs/{jobId}/test` sends to `testCallback` when one is registered,
+otherwise falls back to `callback`. Instead of a placeholder file, the event
+is built from the job's real, currently-selected Dalux files: change jobs
+report every selected file against its last known snapshot (added or
+modified); freshness jobs report every selected file with the first half
+compliant and the second half in `violations`, so a downstream pipeline can
+be built against both branches from one test call. Nothing is written to
+stored snapshots or the retry outbox.
 
 ## Embedded mode
 

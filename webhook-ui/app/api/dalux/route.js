@@ -1,10 +1,13 @@
 import { createClient } from "dalux-build-api";
 import {
   errorResponse,
+  getDaluxCredentialById,
   requireAuth,
   requireString,
   resolveBaseUrl,
+  UnauthorizedError,
 } from "../../../lib/server";
+import { getOrCreateAuthUser } from "../../../lib/supabase/auth";
 
 export const runtime = "nodejs";
 
@@ -39,8 +42,18 @@ export async function POST(request) {
       error.status = 400;
       throw error;
     }
-    const apiKey = requireString(payload.apiKey, "DALUX_API_KEY");
-    const baseUrl = resolveBaseUrl(payload.baseUrl);
+    let apiKey;
+    let baseUrl;
+    if (payload.credentialId) {
+      const { appUserId } = await getOrCreateAuthUser();
+      if (!appUserId) throw new UnauthorizedError();
+      const credential = await getDaluxCredentialById(payload.credentialId, appUserId);
+      apiKey = credential.api_key;
+      baseUrl = resolveBaseUrl(credential.base_url);
+    } else {
+      apiKey = requireString(payload.apiKey, "DALUX_API_KEY");
+      baseUrl = resolveBaseUrl(payload.baseUrl);
+    }
     const client = createClient({ apiKey, baseUrl });
     return Response.json({ ok: true, data: await action(client, payload) });
   } catch (error) {

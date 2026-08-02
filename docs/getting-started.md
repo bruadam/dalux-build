@@ -7,10 +7,17 @@ nav_order: 2
 
 Both clients need two things from your Dalux Build account:
 
-1. A company-specific **base URL** (obtain from Dalux support at
-   <support@dalux.com>).
-2. An **API key** — managed under _Settings › Integrations › API Identities_
-   inside the Dalux Build UI.
+1. `DALUX_API_KEY` — your company's API key (Dalux Build UI → **Company Profile
+   → Settings → Company overview → API Identities**; ask Dalux support to
+   activate API access for your company profile if you don't see this menu)
+
+> Refer to
+> [Dalux Build API documentation](https://support.dalux.com/hc/en-us/articles/20892369915292-API-identities-in-Dalux-Build-API)
+> for more information on how to generate an API key.
+
+2. `DALUX_BASE_URL` — the API base URL for your Dalux node for most Dalux Build
+   customers, this is `https://node1.field.dalux.com/service/api/` but some
+   customers are on a different node.
 
 Every request from either client sends the key as the `X-API-KEY` header
 automatically; no other auth configuration is needed.
@@ -32,8 +39,8 @@ const dalux = createClient({
 const projects = await dalux.projects.listProjects();
 ```
 
-Requires Node.js 14+. For calling the API from a browser (Client Components,
-no CORS, key never reaches the browser), see the Next.js adapter in
+Requires Node.js 14+. For calling the API from a browser (Client Components, no
+CORS, key never reaches the browser), see the Next.js adapter in
 [JavaScript Client](javascript-client.html#nextjs-browser-safe).
 
 Full guide, every namespace, and the 16 API-group reference table:
@@ -56,8 +63,8 @@ dalux = create_client(
 projects = dalux.projects.list_projects()
 ```
 
-Requires Python 3.10+. Set a default `project_id` / `file_area_id` on the
-client if you mostly work against one project — see
+Requires Python 3.10+. Set a default `project_id` / `file_area_id` on the client
+if you mostly work against one project — see
 [Python Client](python-client.html#client-level-defaults).
 
 Full guide, every namespace, `full_response`/`to_dataframe`, and the 16
@@ -68,6 +75,6 @@ API-group reference table:
 
 - Read [Architecture](architecture.html) to see how the webhook server, UI,
   playground, and n8n node build on these two clients.
-- Browse the [API Reference](api-reference.html) for what each endpoint
-  group covers.
+- Browse the [API Reference](api-reference.html) for what each endpoint group
+  covers.
 - Run the [Tutorials](tutorials.html) notebooks for a guided walkthrough.

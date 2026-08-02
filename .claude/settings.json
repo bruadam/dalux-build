@@ -1,7 +1,9 @@
 {
   "permissions": {
     "allow": [
-      "Bash(npx shadcn@latest init --help)"
+      "Bash(npx shadcn@latest init --help)",
+      "Bash(git commit -m ' *)",
+      "Bash(npm view *)"
     ]
   }
 }

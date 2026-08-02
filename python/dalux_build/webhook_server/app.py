@@ -11,7 +11,13 @@ from fastapi import Depends, FastAPI, Header, HTTPException, Response, Security,
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 
 from .controller import Jobs
-from .models import ChangeJobRequest, FreshnessJobRequest, JobView, TestWebhookResponse
+from .models import (
+    ChangeJobRequest,
+    FreshnessJobRequest,
+    JobUpdateRequest,
+    JobView,
+    TestWebhookResponse,
+)
 from .scheduler import Scheduler
 from .store import Store
 
@@ -82,6 +88,15 @@ def build_app(*, jobs: Jobs, store: Store, scheduler: Scheduler, management_toke
     def delete_job(job_id: str, _auth: None = Depends(authorize)) -> Response:
         jobs.delete(job_id)
         return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+    @app.patch("/jobs/{job_id}", response_model=JobView)
+    def update_job(
+        job_id: str, request: JobUpdateRequest, _auth: None = Depends(authorize)
+    ) -> JobView:
+        try:
+            return jobs.set_enabled(job_id, request.enabled)
+        except KeyError as exc:
+            raise HTTPException(status_code=404, detail="job not found") from exc
 
     @app.post("/jobs/{job_id}/test", response_model=TestWebhookResponse)
     def test_job_webhook(job_id: str, _auth: None = Depends(authorize)) -> TestWebhookResponse:

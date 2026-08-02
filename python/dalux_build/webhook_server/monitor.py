@@ -111,6 +111,27 @@ def _fingerprint(data: JSONDict) -> tuple[object, ...]:
     )
 
 
+def select_change_scope(files: dict[str, JSONDict], config: JSONDict) -> dict[str, JSONDict]:
+    """Filter a normalized file map down to a change job's configured scope."""
+    scope = cast(JSONDict, config["scope"])
+    if scope["mode"] != "fileIds":
+        return files
+    ids = {str(value) for value in cast(list[object], scope["fileIds"])}
+    return {fid: data for fid, data in files.items() if fid in ids}
+
+
+def select_freshness_scope(files: dict[str, JSONDict], config: JSONDict) -> dict[str, JSONDict]:
+    """Filter a normalized file map down to a freshness job's folder/filename rules."""
+    rules = cast(JSONDict, config["fileNameFilter"])
+    folder_ids = {str(value) for value in cast(list[object], config.get("folderIds", []))}
+    return {
+        fid: data
+        for fid, data in files.items()
+        if (not folder_ids or str(data.get("folderId", "")) in folder_ids)
+        and _matches(str(data.get("fileName", "")), rules)
+    }
+
+
 class Monitor:
     def __init__(self, store: Store, secrets: SecretBox) -> None:
         self.store = store
@@ -130,13 +151,8 @@ class Monitor:
         delivery_id = str(uuid.uuid4())
 
         if row["kind"] == "change":
-            scope = cast(JSONDict, config["scope"])
-            if scope["mode"] == "fileIds":
-                ids = {str(value) for value in cast(list[object], scope["fileIds"])}
-                current = {fid: data for fid, data in current_all.items() if fid in ids}
-                prior = {fid: data for fid, data in previous.items() if fid in ids}
-            else:
-                current, prior = current_all, previous
+            current = select_change_scope(current_all, config)
+            prior = select_change_scope(previous, config)
             changes: list[JSONDict] = []
             initialized = bool(row["initialized"])
             for fid in sorted(set(current) | set(prior)):
@@ -177,20 +193,8 @@ class Monitor:
             )
             return delivery_id if payload else None
 
-        rules = cast(JSONDict, config["fileNameFilter"])
-        folder_ids = {str(value) for value in cast(list[object], config.get("folderIds", []))}
-        current = {
-            fid: data
-            for fid, data in current_all.items()
-            if (not folder_ids or str(data.get("folderId", "")) in folder_ids)
-            and _matches(str(data.get("fileName", "")), rules)
-        }
-        previously_matching = {
-            fid: data
-            for fid, data in previous.items()
-            if (not folder_ids or str(data.get("folderId", "")) in folder_ids)
-            and _matches(str(data.get("fileName", "")), rules)
-        }
+        current = select_freshness_scope(current_all, config)
+        previously_matching = select_freshness_scope(previous, config)
         days = int(str(config["maxAge"])[1:-1])
         local_date = checked.astimezone(ZoneInfo(row["timezone"])).date()
         cutoff = local_date - timedelta(days=days)
@@ -240,3 +244,64 @@ class Monitor:
         )
         self.store.commit_poll(row["job_id"], pages, retained, (delivery_id, payload))
         return delivery_id
+
+
+def build_test_event_payload(store: Store, secrets: SecretBox, row: sqlite3.Row) -> JSONDict:
+    """Build a realistic test event from the job's real, currently-selected
+    Dalux files — without touching stored state or the delivery outbox.
+
+    Change jobs: every currently-selected file, reported against its last
+    known snapshot (added if never seen before, modified otherwise).
+    Freshness jobs: every currently-selected file, with the first half
+    reported compliant and the second half reported as violations — so a
+    downstream pipeline can exercise both branches from one test call.
+    """
+    pages = fetch_pages(
+        row["base_url"],
+        secrets.decrypt(row["api_key_encrypted"]),
+        row["project_id"],
+        row["file_area_id"],
+    )
+    current_all = normalize(pages)
+    config = cast(JSONDict, json.loads(row["config_json"]))
+    checked = datetime.now(timezone.utc)
+    delivery_id = str(uuid.uuid4())
+    envelope: JSONDict = {
+        "deliveryId": delivery_id,
+        "jobId": row["job_id"],
+        "projectId": row["project_id"],
+        "fileAreaId": row["file_area_id"],
+        "scheduledAt": checked.isoformat(),
+        "checkedAt": checked.isoformat(),
+        "test": True,
+    }
+
+    if row["kind"] == "change":
+        current = select_change_scope(current_all, config)
+        previous = select_change_scope(store.states(row["job_id"]), config)
+        changes = [
+            {
+                "changeType": "modified" if fid in previous else "added",
+                "current": data,
+                "previous": previous.get(fid),
+            }
+            for fid, data in sorted(current.items())
+        ]
+        return {**envelope, "type": "dalux.files.changed", "files": cast(JSONValue, changes)}
+
+    current = select_freshness_scope(current_all, config)
+    files = [current[fid] for fid in sorted(current)]
+    half = len(files) // 2
+    violations: list[JSONDict] = [
+        {"reason": "stale", "fileId": data.get("fileId"), "file": data} for data in files[half:]
+    ]
+    if not files:
+        violations.append({"reason": "emptySelection"})
+    return {
+        **envelope,
+        "type": "dalux.files.freshness",
+        "maxAge": config["maxAge"],
+        "compliant": not violations,
+        "filesChecked": len(files),
+        "violations": cast(JSONValue, violations),
+    }

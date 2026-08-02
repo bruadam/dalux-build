@@ -7,12 +7,12 @@ import hmac
 import json
 import logging
 import sqlite3
-import uuid
-from datetime import datetime, timedelta, timezone
+from datetime import timedelta
 from typing import Literal
 
 import httpx
 
+from ..json_types import JSONDict
 from .crypto import SecretBox
 from .models import CallbackConfig, TestWebhookResponse
 from .store import Store, utcnow
@@ -33,56 +33,10 @@ def _headers(delivery_id: str, auth_type: str, secret: str, body: bytes) -> dict
 def send_test_webhook(
     callback: CallbackConfig,
     event_type: Literal["change", "freshness"],
-    job_id: str,
-    project_id: str,
-    file_area_id: str,
-    sample_file_id: str = "test-file",
+    payload: JSONDict,
 ) -> TestWebhookResponse:
-    """Send a realistic event without altering job state or the persistent outbox."""
-    delivery_id = str(uuid.uuid4())
-    now = datetime.now(timezone.utc).isoformat()
-    envelope: dict[str, object] = {
-        "deliveryId": delivery_id,
-        "jobId": job_id,
-        "projectId": project_id,
-        "fileAreaId": file_area_id,
-        "scheduledAt": now,
-        "checkedAt": now,
-        "test": True,
-    }
-    if event_type == "change":
-        payload = {
-            **envelope,
-            "type": "dalux.files.changed",
-            "files": [
-                {
-                    "changeType": "modified",
-                    "current": {
-                        "fileId": sample_file_id,
-                        "fileRevisionId": "test-revision-2",
-                        "fileName": "n8n-webhook-test.ifc",
-                        "lastModified": now[:10],
-                        "deleted": False,
-                    },
-                    "previous": {
-                        "fileId": sample_file_id,
-                        "fileRevisionId": "test-revision-1",
-                        "fileName": "n8n-webhook-test.ifc",
-                        "lastModified": now[:10],
-                        "deleted": False,
-                    },
-                }
-            ],
-        }
-    else:
-        payload = {
-            **envelope,
-            "type": "dalux.files.freshness",
-            "maxAge": "P1D",
-            "compliant": True,
-            "filesChecked": 1,
-            "violations": [],
-        }
+    """Send a prebuilt test event without altering job state or the persistent outbox."""
+    delivery_id = str(payload["deliveryId"])
     body = json.dumps(payload, separators=(",", ":")).encode()
     response = httpx.post(
         str(callback.url),

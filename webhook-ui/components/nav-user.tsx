@@ -1,6 +1,6 @@
 "use client"
 
-import { useClerk, useUser } from "@clerk/nextjs"
+import { useAuth } from "@/components/auth/auth-provider"
 import {
   Avatar,
   AvatarFallback,
@@ -24,15 +24,14 @@ import { CaretUpDownIcon, SignOutIcon } from "@phosphor-icons/react"
 
 export function NavUser() {
   const { isMobile } = useSidebar()
-  const { user, isLoaded } = useUser()
-  const { signOut } = useClerk()
+  const { user, isLoading, signOut } = useAuth()
 
-  if (!isLoaded || !user) {
+  if (isLoading || !user) {
     return null
   }
 
-  const name = user.fullName || user.primaryEmailAddress?.emailAddress || "Account"
-  const email = user.primaryEmailAddress?.emailAddress ?? ""
+  const name = user.name || user.email || "Account"
+  const email = user.email
   const initials = name
     .split(" ")
     .map((part) => part[0])
@@ -50,7 +49,7 @@ export function NavUser() {
               className="data-[state=open]:bg-sidebar-accent data-[state=open]:text-sidebar-accent-foreground"
             >
               <Avatar className="h-8 w-8 rounded-lg">
-                <AvatarImage src={user.imageUrl} alt={name} />
+                <AvatarImage src={user.avatarUrl ?? undefined} alt={name} />
                 <AvatarFallback className="rounded-lg">{initials}</AvatarFallback>
               </Avatar>
               <div className="grid flex-1 text-left text-sm leading-tight">
@@ -69,7 +68,7 @@ export function NavUser() {
             <DropdownMenuLabel className="p-0 font-normal">
               <div className="flex items-center gap-2 px-1 py-1.5 text-left text-sm">
                 <Avatar className="h-8 w-8 rounded-lg">
-                  <AvatarImage src={user.imageUrl} alt={name} />
+                  <AvatarImage src={user.avatarUrl ?? undefined} alt={name} />
                   <AvatarFallback className="rounded-lg">{initials}</AvatarFallback>
                 </Avatar>
                 <div className="grid flex-1 text-left text-sm leading-tight">
@@ -79,7 +78,7 @@ export function NavUser() {
               </div>
             </DropdownMenuLabel>
             <DropdownMenuSeparator />
-            <DropdownMenuItem onSelect={() => signOut({ redirectUrl: "/sign-in" })}>
+            <DropdownMenuItem onSelect={() => signOut()}>
               <SignOutIcon />
               Log out
             </DropdownMenuItem>

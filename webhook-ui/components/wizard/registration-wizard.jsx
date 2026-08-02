@@ -14,6 +14,9 @@ import { buildFilenameFilter, jobAction, matchesFilename, postJson } from "@/lib
 export function RegistrationWizard() {
   const [apiKey, setApiKey] = useState("");
   const [baseUrl, setBaseUrl] = useState(FALLBACK_BASE_URL);
+  const [savedCredentials, setSavedCredentials] = useState([]);
+  const [credentialMode, setCredentialMode] = useState("new");
+  const [credentialName, setCredentialName] = useState("");
   const [connected, setConnected] = useState(false);
   const [projects, setProjects] = useState([]);
   const [project, setProject] = useState(null);
@@ -40,6 +43,7 @@ export function RegistrationWizard() {
   const [timezone, setTimezone] = useState("Europe/Copenhagen");
   const [initialRun, setInitialRun] = useState("baseline");
   const [callbackUrl, setCallbackUrl] = useState("");
+  const [testCallbackUrl, setTestCallbackUrl] = useState("");
   const [authType, setAuthType] = useState("none");
   const [callbackSecret, setCallbackSecret] = useState("");
   const [maxAgeDays, setMaxAgeDays] = useState("1");
@@ -56,6 +60,15 @@ export function RegistrationWizard() {
   const [testResult, setTestResult] = useState(null);
   const [jobMessage, setJobMessage] = useState("");
 
+  function loadSavedCredentials() {
+    fetch("/api/credentials", { cache: "no-store" })
+      .then((response) => response.json())
+      .then((payload) => {
+        if (payload?.ok) setSavedCredentials(payload.data || []);
+      })
+      .catch(() => {});
+  }
+
   useEffect(() => {
     fetch("/api/config", { cache: "no-store" })
       .then((response) => response.json())
@@ -63,9 +76,11 @@ export function RegistrationWizard() {
       .catch(() => {});
     const detected = Intl.DateTimeFormat().resolvedOptions().timeZone;
     if (detected) setTimezone(detected);
+    loadSavedCredentials();
   }, []);
 
-  const credentials = { apiKey, baseUrl };
+  const credentialParams =
+    credentialMode === "new" ? { apiKey, baseUrl } : { credentialId: credentialMode };
   const visibleFiles = useMemo(() => {
     const selected =
       activeFolderId === "all"
@@ -126,7 +141,7 @@ export function RegistrationWizard() {
     try {
       const data = await postJson("/api/dalux", {
         action: "projects",
-        ...credentials,
+        ...credentialParams,
       });
       setProjects(data);
       setConnected(true);
@@ -161,7 +176,7 @@ export function RegistrationWizard() {
         await postJson("/api/dalux", {
           action: "fileAreas",
           projectId: item.projectId,
-          ...credentials,
+          ...credentialParams,
         }),
       );
     } catch (err) {
@@ -185,7 +200,7 @@ export function RegistrationWizard() {
         action: "catalog",
         projectId: project.projectId,
         fileAreaId: item.fileAreaId,
-        ...credentials,
+        ...credentialParams,
       });
       setFolders(catalog.folders || []);
       setFiles(catalog.files || []);
@@ -286,15 +301,24 @@ export function RegistrationWizard() {
 
     const callback = { url: callbackUrl, authType };
     if (authType !== "none") callback.secret = callbackSecret;
+    const testCallback = testCallbackUrl.trim()
+      ? { url: testCallbackUrl.trim(), authType, ...(authType !== "none" ? { secret: callbackSecret } : {}) }
+      : undefined;
     const common = {
       name: name.trim() || null,
       projectId: project.projectId,
       fileAreaId: fileArea.fileAreaId,
-      daluxApiKey: apiKey,
-      daluxBaseUrl: baseUrl,
+      ...(credentialMode === "new"
+        ? {
+            daluxApiKey: apiKey,
+            daluxBaseUrl: baseUrl,
+            credentialName: credentialName.trim() || null,
+          }
+        : { credentialId: credentialMode }),
       cron,
       timezone,
       callback,
+      ...(testCallback ? { testCallback } : {}),
     };
     const job =
       jobType === "change"
@@ -319,6 +343,7 @@ export function RegistrationWizard() {
       setResult(data);
       setTestResult(null);
       setJobMessage("");
+      if (credentialMode === "new") loadSavedCredentials();
     } catch (err) {
       setError(err.message);
     } finally {
@@ -343,6 +368,11 @@ export function RegistrationWizard() {
       />
 
       <ConnectionStep
+        savedCredentials={savedCredentials}
+        credentialMode={credentialMode}
+        setCredentialMode={setCredentialMode}
+        credentialName={credentialName}
+        setCredentialName={setCredentialName}
         apiKey={apiKey}
         setApiKey={setApiKey}
         baseUrl={baseUrl}
@@ -431,6 +461,8 @@ export function RegistrationWizard() {
               setTimezone={setTimezone}
               callbackUrl={callbackUrl}
               setCallbackUrl={setCallbackUrl}
+              testCallbackUrl={testCallbackUrl}
+              setTestCallbackUrl={setTestCallbackUrl}
               authType={authType}
               setAuthType={setAuthType}
               callbackSecret={callbackSecret}
@@ -442,7 +474,7 @@ export function RegistrationWizard() {
       )}
 
       <footer className="pt-2 text-center text-xs text-muted-foreground">
-        Dalux Scheduled Monitor · credentials are never stored in this browser
+        Dalux Scheduled Monitor · credentials are stored server-side only, never in this browser
       </footer>
     </div>
   );

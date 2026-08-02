@@ -75,7 +75,70 @@ def test_management_auth_idempotency_encryption_and_delete(tmp_path):
         assert client.delete(f"/jobs/{first.json()['jobId']}", headers=headers).status_code == 204
 
 
-def test_job_test_endpoint_sends_sample_without_changing_state(tmp_path, monkeypatch):
+def test_disabling_a_job_excludes_it_from_due_jobs(tmp_path):
+    store, _box, jobs, _monitor, _scheduler = core(tmp_path)
+    view, _ = jobs.create(change_request())
+
+    # Force next_run_at into the past so the job would otherwise be due.
+    store._conn.execute(
+        "UPDATE jobs SET next_run_at=? WHERE job_id=?",
+        ("2000-01-01T00:00:00+00:00", view.job_id),
+    )
+
+    due = store.due_jobs(datetime.now(timezone.utc))
+    assert any(row["job_id"] == view.job_id for row in due)
+
+    disabled = jobs.set_enabled(view.job_id, False)
+    assert disabled.enabled is False
+
+    due = store.due_jobs(datetime.now(timezone.utc))
+    assert not any(row["job_id"] == view.job_id for row in due)
+
+    re_enabled = jobs.set_enabled(view.job_id, True)
+    assert re_enabled.enabled is True
+    # Resuming re-arms from "now" instead of firing the missed backlog.
+    assert re_enabled.next_run_at > datetime.now(timezone.utc)
+
+    due = store.due_jobs(datetime.now(timezone.utc))
+    assert not any(row["job_id"] == view.job_id for row in due)
+
+
+def test_set_enabled_raises_for_unknown_job(tmp_path):
+    store, _box, jobs, _monitor, _scheduler = core(tmp_path)
+    try:
+        jobs.set_enabled("does-not-exist", False)
+    except KeyError:
+        pass
+    else:
+        raise AssertionError("set_enabled must raise KeyError for an unknown job")
+
+
+def test_patch_endpoint_enables_and_disables_a_job(tmp_path):
+    store, _box, jobs, _monitor, scheduler = core(tmp_path)
+    app = build_app(jobs=jobs, store=store, scheduler=scheduler, management_token="admin")
+    headers = {"Authorization": "Bearer admin"}
+    with TestClient(app) as client:
+        body = change_request().model_dump(by_alias=True, mode="json")
+        created = client.post("/jobs/change", json=body, headers=headers)
+        job_id = created.json()["jobId"]
+        assert created.json()["enabled"] is True
+
+        response = client.patch(f"/jobs/{job_id}", json={"enabled": False}, headers=headers)
+        assert response.status_code == 200
+        assert response.json()["enabled"] is False
+
+        response = client.patch(f"/jobs/{job_id}", json={"enabled": True}, headers=headers)
+        assert response.status_code == 200
+        assert response.json()["enabled"] is True
+
+        missing = client.patch("/jobs/does-not-exist", json={"enabled": False}, headers=headers)
+        assert missing.status_code == 404
+
+        unauthorized = client.patch(f"/jobs/{job_id}", json={"enabled": False})
+        assert unauthorized.status_code == 401
+
+
+def test_job_test_endpoint_sends_real_selected_files_without_changing_state(tmp_path, monkeypatch):
     store, _box, jobs, _monitor, scheduler = core(tmp_path)
     received = {}
 
@@ -89,7 +152,16 @@ def test_job_test_endpoint_sends_sample_without_changing_state(tmp_path, monkeyp
         received.update(url=url, content=content, headers=headers, timeout=timeout)
         return Response()
 
+    pages = [
+        {
+            "items": [
+                {"data": {"fileId": "file-1", "fileName": "selected.ifc"}},
+                {"data": {"fileId": "file-unselected", "fileName": "other.ifc"}},
+            ]
+        }
+    ]
     monkeypatch.setattr("dalux_build.webhook_server.delivery.httpx.post", fake_post)
+    monkeypatch.setattr("dalux_build.webhook_server.monitor.fetch_pages", lambda *a: pages)
     app = build_app(jobs=jobs, store=store, scheduler=scheduler, management_token="admin")
     headers = {"Authorization": "Bearer admin"}
     with TestClient(app) as client:
@@ -110,9 +182,93 @@ def test_job_test_endpoint_sends_sample_without_changing_state(tmp_path, monkeyp
     assert payload["jobId"] == job_id
     assert payload["projectId"] == "p1"
     assert payload["fileAreaId"] == "fa1"
-    assert payload["files"][0]["current"]["fileId"] == "file-1"
-    assert payload["files"][0]["changeType"] == "modified"
+    # Only the selected file is reported, using its real fetched data.
+    assert [f["current"]["fileId"] for f in payload["files"]] == ["file-1"]
+    assert payload["files"][0]["current"]["fileName"] == "selected.ifc"
+    # No prior snapshot exists yet, so it's reported as newly seen.
+    assert payload["files"][0]["changeType"] == "added"
+    assert payload["files"][0]["previous"] is None
     assert store.states(job_id) == {}
+
+
+def test_job_test_endpoint_prefers_test_callback_over_production(tmp_path, monkeypatch):
+    store, _box, jobs, _monitor, scheduler = core(tmp_path)
+    received = {}
+
+    class Response:
+        status_code = 200
+
+        def raise_for_status(self):
+            return None
+
+    def fake_post(url, content, headers, timeout):
+        received.update(url=url)
+        return Response()
+
+    monkeypatch.setattr("dalux_build.webhook_server.delivery.httpx.post", fake_post)
+    monkeypatch.setattr(
+        "dalux_build.webhook_server.monitor.fetch_pages",
+        lambda *a: [{"items": [{"data": {"fileId": "file-1", "fileName": "a.ifc"}}]}],
+    )
+    app = build_app(jobs=jobs, store=store, scheduler=scheduler, management_token="admin")
+    headers = {"Authorization": "Bearer admin"}
+    with TestClient(app) as client:
+        request = change_request().model_dump(by_alias=True, mode="json")
+        request["scope"] = {"mode": "fileIds", "fileIds": ["file-1"]}
+        request["testCallback"] = {"url": "https://n8n.example/webhook-test/dalux"}
+        created = client.post("/jobs/change", json=request, headers=headers)
+        job_id = created.json()["jobId"]
+        assert created.json()["testCallbackUrl"] == "https://n8n.example/webhook-test/dalux"
+
+        client.post(f"/jobs/{job_id}/test", headers=headers)
+        assert received["url"] == "https://n8n.example/webhook-test/dalux"
+
+
+def test_freshness_test_endpoint_splits_selected_files_half_and_half(tmp_path, monkeypatch):
+    store, _box, jobs, _monitor, scheduler = core(tmp_path)
+    received = {}
+
+    class Response:
+        status_code = 200
+
+        def raise_for_status(self):
+            return None
+
+    def fake_post(url, content, headers, timeout):
+        received.update(url=url, content=content)
+        return Response()
+
+    pages = [
+        {"items": [{"data": {"fileId": f"file-{i}", "fileName": f"f{i}.ifc"}} for i in range(4)]}
+    ]
+    monkeypatch.setattr("dalux_build.webhook_server.delivery.httpx.post", fake_post)
+    monkeypatch.setattr("dalux_build.webhook_server.monitor.fetch_pages", lambda *a: pages)
+    app = build_app(jobs=jobs, store=store, scheduler=scheduler, management_token="admin")
+    headers = {"Authorization": "Bearer admin"}
+    with TestClient(app) as client:
+        created = client.post(
+            "/jobs/freshness",
+            json={
+                "projectId": "p1",
+                "fileAreaId": "fa1",
+                "daluxApiKey": "secret",
+                "cron": "0 9 * * 1",
+                "callback": {"url": "https://n8n.example/fresh"},
+                "fileNameFilter": {"extensions": ["ifc"]},
+                "maxAge": "P1D",
+            },
+            headers=headers,
+        )
+        job_id = created.json()["jobId"]
+        response = client.post(f"/jobs/{job_id}/test", headers=headers)
+
+    assert response.status_code == 200
+    payload = json.loads(received["content"])
+    assert payload["filesChecked"] == 4
+    assert payload["compliant"] is False
+    assert len(payload["violations"]) == 2
+    assert {v["fileId"] for v in payload["violations"]} == {"file-2", "file-3"}
+    assert all(v["reason"] == "stale" for v in payload["violations"])
 
 
 def test_embedded_api_can_test_a_job(tmp_path, monkeypatch):
@@ -134,6 +290,10 @@ def test_embedded_api_can_test_a_job(tmp_path, monkeypatch):
         return Response()
 
     monkeypatch.setattr("dalux_build.webhook_server.delivery.httpx.post", fake_post)
+    monkeypatch.setattr(
+        "dalux_build.webhook_server.monitor.fetch_pages",
+        lambda *a: [{"items": [{"data": {"fileId": "file-2", "fileName": "b.ifc"}}]}],
+    )
     api = WebhookServerApi(
         ApiClient(Configuration(base_url="https://default.example/api", api_key="api-key"))
     )

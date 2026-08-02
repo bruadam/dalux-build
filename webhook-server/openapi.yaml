@@ -153,15 +153,63 @@ paths:
           description: Job is absent after the request
         "401":
           $ref: "#/components/responses/Unauthorized"
+    patch:
+      tags: [Jobs]
+      operationId: updateJob
+      summary: Enable or disable a scheduled job
+      description: |
+        Disabling stops the scheduler from running the job without deleting
+        its saved state. Re-enabling re-arms the job from the current time,
+        so a job paused across several cron cycles does not immediately fire
+        a backlog of missed runs.
+      security:
+        - MONITOR_API_TOKEN: []
+      parameters:
+        - name: job_id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/JobUpdateRequest"
+      responses:
+        "200":
+          description: Job updated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Job"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          description: Job not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "422":
+          $ref: "#/components/responses/ValidationError"
   /jobs/{job_id}/test:
     post:
       tags: [Jobs]
       operationId: testJobWebhook
-      summary: Send a sample event to an existing job's callback
+      summary: Send a realistic event built from live data to the job's test callback
       description: |
-        Uses the job's saved callback URL and authentication. The payload is
-        marked `test: true` and does not poll Dalux, alter snapshots, or enter
-        the retry outbox.
+        Uses `testCallback` if the job registered one (for example an n8n
+        `/webhook-test/` URL, kept separate from the production
+        `/webhook/` URL in `callback`), otherwise falls back to `callback`.
+        The event is built from the job's real, currently-selected Dalux
+        files: change jobs report every selected file against its last known
+        snapshot; freshness jobs report every selected file with the first
+        half compliant and the second half in `violations`, so a downstream
+        pipeline can exercise both branches from one call. The payload is
+        marked `test: true` and does not alter stored snapshots or enter the
+        retry outbox.
       security:
         - MONITOR_API_TOKEN: []
       parameters:
@@ -336,6 +384,13 @@ components:
           examples: [Europe/Copenhagen]
         callback:
           $ref: "#/components/schemas/Callback"
+        testCallback:
+          allOf:
+            - $ref: "#/components/schemas/Callback"
+          description: |
+            Optional separate callback for the "send test webhook" action
+            (for example an n8n `/webhook-test/` URL, vs. the production
+            `/webhook/` URL in `callback`). Falls back to `callback` when omitted.
     FileScope:
       oneOf:
         - type: object
@@ -431,6 +486,7 @@ components:
         - callbackUrl
         - callbackAuthType
         - nextRunAt
+        - enabled
       properties:
         jobId:
           type: string
@@ -456,9 +512,24 @@ components:
         callbackAuthType:
           type: string
           enum: [none, bearer, hmac-sha256]
+        testCallbackUrl:
+          type: [string, "null"]
+          format: uri
+        testCallbackAuthType:
+          type: [string, "null"]
+          enum: [none, bearer, hmac-sha256]
         nextRunAt:
           type: string
           format: date-time
+        enabled:
+          type: boolean
+    JobUpdateRequest:
+      type: object
+      required: [enabled]
+      properties:
+        enabled:
+          type: boolean
+          description: Set false to pause the scheduler for this job without deleting it.
     TestWebhookResponse:
       type: object
       required: [deliveryId, eventType, statusCode]

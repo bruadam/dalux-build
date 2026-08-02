@@ -2,7 +2,7 @@
 
 import * as React from "react"
 import Link from "next/link"
-import { RowsIcon, WebhooksLogoIcon, ClockIcon } from "@phosphor-icons/react"
+import { RowsIcon, WebhooksLogoIcon, ClockIcon, KeyIcon } from "@phosphor-icons/react"
 
 import { NavMain } from "@/components/nav-main"
 import { NavUser } from "@/components/nav-user"
@@ -24,10 +24,14 @@ const navMain = [
     icon: <WebhooksLogoIcon />,
   },
   {
-    title: "Jobs",
-    url: "#",
+    title: "Webhooks",
+    url: "/webhooks",
     icon: <ClockIcon />,
-    disabled: true,
+  },
+  {
+    title: "Credentials",
+    url: "/credentials",
+    icon: <KeyIcon />,
   },
 ]
 

@@ -83,3 +83,5 @@ outputs/
 *.dxf
 *.rvt
 *.rfa
+
+**/supabase/.temp/

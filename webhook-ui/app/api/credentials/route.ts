@@ -7,15 +7,8 @@ import {
   UnauthorizedError,
 } from "@/lib/server";
 import { getOrCreateAuthUser } from "@/lib/supabase/auth";
-import type { DaluxCredential } from "@/types/database";
 
 export const dynamic = "force-dynamic";
-
-// Never send the raw API key back to the browser once it's stored.
-function toPublicCredential(credential: DaluxCredential) {
-  const { api_key: _apiKey, ...rest } = credential;
-  return rest;
-}
 
 export async function GET() {
   try {
@@ -23,7 +16,7 @@ export async function GET() {
     if (!appUserId) throw new UnauthorizedError();
 
     const credentials = await getDaluxCredentials(appUserId);
-    return Response.json({ ok: true, data: (credentials || []).map(toPublicCredential) });
+    return Response.json({ ok: true, data: credentials || [] });
   } catch (error) {
     return errorResponse(error);
   }
@@ -48,7 +41,7 @@ export async function POST(request: Request) {
       description: payload?.description || null,
     });
 
-    return Response.json({ ok: true, data: toPublicCredential(credential) });
+    return Response.json({ ok: true, data: credential });
   } catch (error) {
     return errorResponse(error);
   }

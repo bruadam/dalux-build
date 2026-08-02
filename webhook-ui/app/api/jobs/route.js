@@ -3,6 +3,7 @@ import {
   createDaluxCredential,
   createWebhook,
   getDaluxCredentialById,
+  getDaluxCredentialSecretById,
   errorResponse,
   requireString,
   resolveBaseUrl,
@@ -33,7 +34,7 @@ export async function POST(request) {
     let daluxBaseUrl;
     if (credentialId) {
       const credential = await getDaluxCredentialById(credentialId, appUserId);
-      daluxApiKey = credential.api_key;
+      daluxApiKey = await getDaluxCredentialSecretById(credentialId, appUserId);
       daluxBaseUrl = resolveBaseUrl(credential.base_url);
     } else {
       daluxApiKey = requireString(job.daluxApiKey, "daluxApiKey");

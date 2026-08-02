@@ -2,6 +2,7 @@ import { createClient } from "dalux-build-api";
 import {
   errorResponse,
   getDaluxCredentialById,
+  getDaluxCredentialSecretById,
   requireAuth,
   requireString,
   resolveBaseUrl,
@@ -48,7 +49,7 @@ export async function POST(request) {
       const { appUserId } = await getOrCreateAuthUser();
       if (!appUserId) throw new UnauthorizedError();
       const credential = await getDaluxCredentialById(payload.credentialId, appUserId);
-      apiKey = credential.api_key;
+      apiKey = await getDaluxCredentialSecretById(payload.credentialId, appUserId);
       baseUrl = resolveBaseUrl(credential.base_url);
     } else {
       apiKey = requireString(payload.apiKey, "DALUX_API_KEY");

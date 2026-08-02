@@ -1,6 +1,14 @@
 """Utilities for the Dalux Build API client."""
 
+from .download import (
+    build_local_name,
+    download_file_with_metadata,
+    get_local_file_path,
+    get_local_metadata_path,
+    load_saved_metadata,
+)
 from .exceptions import ApiError, DaluxError, NotFoundError, ValidationError
+from .file_filter import filter_files_by_name, matches_file_name_filter
 from .pagination import get_next_page_params, has_next_page, paginate
 from .path_resolver import resolve_file_area_by_name, resolve_folder_id_from_named_path
 from .search import find_all_by_field, find_by_field
@@ -27,4 +35,13 @@ __all__ = [
     "validate_file_area_id",
     "resolve_project_id",
     "resolve_file_area_id",
+    # Download utilities
+    "download_file_with_metadata",
+    "build_local_name",
+    "get_local_file_path",
+    "get_local_metadata_path",
+    "load_saved_metadata",
+    # File name filtering
+    "matches_file_name_filter",
+    "filter_files_by_name",
 ]

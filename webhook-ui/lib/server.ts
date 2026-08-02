@@ -5,8 +5,10 @@
 
 import { readFile } from "node:fs/promises";
 import { createClient } from "./supabase/server";
+import { createAdminClient } from "./supabase/admin";
 import { getOrCreateAuthUser, getAuthUserId, getUserSubscription, canCreateWebhook } from "./supabase/auth";
 import { 
+  DaluxCredential,
   DaluxCredentialInsert, 
   DaluxCredentialUpdate,
   WebhookInsert, 
@@ -378,6 +380,19 @@ export async function logAudit(
 // DATA ACCESS LAYER - DALUX CREDENTIALS
 // ============================================
 
+const DALUX_CREDENTIAL_COLUMNS = [
+  'id',
+  'user_id',
+  'name',
+  'dalux_user_id',
+  'base_url',
+  'is_active',
+  'is_default',
+  'description',
+  'created_at',
+  'updated_at',
+].join(',');
+
 export async function getDaluxCredentials(appUserId: string) {
   const { appUserId: currentAppUserId } = await getOrCreateAuthUser();
   
@@ -390,7 +405,7 @@ export async function getDaluxCredentials(appUserId: string) {
   
   const { data, error } = await client
     .from('dalux_credentials')
-    .select('*')
+    .select(DALUX_CREDENTIAL_COLUMNS)
     .eq('user_id', appUserId)
     .order('created_at', { ascending: false });
   
@@ -398,7 +413,7 @@ export async function getDaluxCredentials(appUserId: string) {
     throw error;
   }
   
-  return data;
+  return data as unknown as DaluxCredential[];
 }
 
 export async function getDaluxCredentialById(id: string, appUserId: string) {
@@ -413,7 +428,7 @@ export async function getDaluxCredentialById(id: string, appUserId: string) {
   
   const { data, error } = await client
     .from('dalux_credentials')
-    .select('*')
+    .select(DALUX_CREDENTIAL_COLUMNS)
     .eq('id', id)
     .eq('user_id', appUserId)
     .single();
@@ -425,7 +440,30 @@ export async function getDaluxCredentialById(id: string, appUserId: string) {
     throw error;
   }
   
-  return data;
+  return data as unknown as DaluxCredential;
+}
+
+export async function getDaluxCredentialSecretById(id: string, appUserId: string) {
+  const { appUserId: currentAppUserId } = await getOrCreateAuthUser();
+
+  if (appUserId !== currentAppUserId) {
+    throw new ForbiddenError("You don't have permission to access this credential");
+  }
+
+  const adminClient = createAdminClient();
+  const { data, error } = await adminClient.rpc('get_dalux_credential_secret', {
+    p_credential_id: id,
+    p_user_id: appUserId,
+  });
+
+  if (error) {
+    throw error;
+  }
+  if (!data) {
+    throw new NotFoundError('Dalux credential not found');
+  }
+
+  return data as string;
 }
 
 export async function getDefaultCredential(appUserId: string) {
@@ -440,7 +478,7 @@ export async function getDefaultCredential(appUserId: string) {
   
   const { data, error } = await client
     .from('dalux_credentials')
-    .select('*')
+    .select(DALUX_CREDENTIAL_COLUMNS)
     .eq('user_id', appUserId)
     .eq('is_default', true)
     .single();
@@ -449,7 +487,7 @@ export async function getDefaultCredential(appUserId: string) {
     throw error;
   }
   
-  return data || null;
+  return data ? data as unknown as DaluxCredential : null;
 }
 
 export async function createDaluxCredential(input: DaluxCredentialInsert) {
@@ -468,30 +506,31 @@ export async function createDaluxCredential(input: DaluxCredentialInsert) {
   // Validate base URL
   const validatedBaseUrl = resolveBaseUrl(credentialData.base_url);
   
-  const client = await createClient();
-  
-  const { data, error } = await client
-    .from('dalux_credentials')
-    .insert({
-      ...credentialData,
-      base_url: validatedBaseUrl,
-    })
-    .select('*')
-    .single();
+  const adminClient = createAdminClient();
+  const { data, error } = await adminClient.rpc('create_dalux_credential_secret', {
+    p_user_id: appUserId,
+    p_name: credentialData.name,
+    p_api_key: credentialData.api_key,
+    p_base_url: validatedBaseUrl,
+    p_dalux_user_id: credentialData.dalux_user_id || null,
+    p_description: credentialData.description || null,
+  });
   
   if (error) {
     throw error;
   }
+
+  const { secret_id: _secretId, ...credential } = data as typeof data & { secret_id: string };
   
   await logAudit(
     'create',
     'dalux_credential',
-    data.id,
+    credential.id,
     null,
-    data
+    credential
   );
   
-  return data;
+  return credential;
 }
 
 export async function updateDaluxCredential(
@@ -511,32 +550,50 @@ export async function updateDaluxCredential(
   const oldCredential = await getDaluxCredentialById(id, appUserId);
   
   // Validate base URL if provided
-  const updateData: DaluxCredentialUpdate = { ...input };
+  const { api_key: apiKey, ...updateData } = input;
   if (input.base_url) {
     updateData.base_url = resolveBaseUrl(input.base_url);
   }
-  
-  const { data, error } = await client
-    .from('dalux_credentials')
-    .update(updateData)
-    .eq('id', id)
-    .eq('user_id', appUserId)
-    .select('*')
-    .single();
-  
-  if (error) {
-    if (error.code === 'PGRST116') {
-      throw new NotFoundError('Dalux credential not found');
+
+  let data = oldCredential;
+  if (Object.keys(updateData).length > 0) {
+    const result = await client
+      .from('dalux_credentials')
+      .update(updateData)
+      .eq('id', id)
+      .eq('user_id', appUserId)
+      .select(DALUX_CREDENTIAL_COLUMNS)
+      .single();
+
+    if (result.error) {
+      if (result.error.code === 'PGRST116') {
+        throw new NotFoundError('Dalux credential not found');
+      }
+      throw result.error;
     }
-    throw error;
+
+    data = result.data as unknown as DaluxCredential;
+  }
+
+  if (apiKey) {
+    const adminClient = createAdminClient();
+    const { error } = await adminClient.rpc('update_dalux_credential_secret', {
+      p_credential_id: id,
+      p_user_id: appUserId,
+      p_api_key: apiKey,
+    });
+
+    if (error) {
+      throw error;
+    }
   }
   
   await logAudit(
     'update',
     'dalux_credential',
     data.id,
-    oldCredential,
-    data
+    { ...oldCredential },
+    { ...data }
   );
   
   return data;
@@ -549,19 +606,17 @@ export async function deleteDaluxCredential(id: string, appUserId: string) {
     throw new ForbiddenError("You don't have permission to delete this credential");
   }
   
-  const client = await createClient();
-  
   // Get old values for audit logging
   const oldCredential = await getDaluxCredentialById(id, appUserId);
-  
-  const { error } = await client
-    .from('dalux_credentials')
-    .delete()
-    .eq('id', id)
-    .eq('user_id', appUserId);
+
+  const adminClient = createAdminClient();
+  const { error } = await adminClient.rpc('delete_dalux_credential_secret', {
+    p_credential_id: id,
+    p_user_id: appUserId,
+  });
   
   if (error) {
-    if (error.code === 'PGRST116') {
+    if (error.code === 'P0002') {
       throw new NotFoundError('Dalux credential not found');
     }
     throw error;
@@ -571,7 +626,7 @@ export async function deleteDaluxCredential(id: string, appUserId: string) {
     'delete',
     'dalux_credential',
     id,
-    oldCredential,
+    { ...oldCredential },
     null
   );
 }
@@ -597,14 +652,14 @@ export async function setDefaultCredential(id: string, appUserId: string) {
     .update({ is_default: true })
     .eq('id', id)
     .eq('user_id', appUserId)
-    .select('*')
+    .select(DALUX_CREDENTIAL_COLUMNS)
     .single();
   
   if (error) {
     throw error;
   }
   
-  return data;
+  return data as unknown as DaluxCredential;
 }
 
 // ============================================

@@ -12,7 +12,7 @@ import { Label } from "@/components/ui/label";
 import { FALLBACK_BASE_URL } from "@/lib/wizard/constants";
 import type { DaluxCredential } from "@/types/database";
 
-type PublicCredential = Omit<DaluxCredential, "api_key">;
+type PublicCredential = DaluxCredential;
 
 async function requestJson(url: string, options?: RequestInit) {
   const response = await fetch(url, options);

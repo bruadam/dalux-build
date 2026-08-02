@@ -69,7 +69,6 @@ export interface DaluxCredential {
   user_id: string;
   name: string;
   dalux_user_id: string | null;
-  api_key: string; // Encrypted in database
   base_url: string;
   is_active: boolean;
   is_default: boolean;

@@ -12,12 +12,10 @@ export default async function CredentialsPage() {
   }
 
   const credentials = await getDaluxCredentials(appUserId);
-  // Never ship the encrypted-at-rest-but-still-sensitive api_key to the client.
-  const publicCredentials = (credentials || []).map(({ api_key: _apiKey, ...rest }) => rest);
 
   return (
     <div className="mx-auto w-full max-w-5xl pb-8">
-      <CredentialsTable initialCredentials={publicCredentials} />
+      <CredentialsTable initialCredentials={credentials || []} />
     </div>
   );
 }

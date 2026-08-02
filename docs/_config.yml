@@ -1,0 +1,28 @@
+title: Dalux Build API
+description: Node.js and Python clients for the Dalux Build REST API, plus webhook server, UI, playground, and n8n node docs.
+url: "https://bruadam.github.io"
+baseurl: "/dalux-build"
+
+remote_theme: just-the-docs/just-the-docs
+plugins:
+  - jekyll-remote-theme
+
+search_enabled: true
+heading_anchors: true
+
+aux_links:
+  "GitHub":
+    - "https://github.com/bruadam/dalux-build"
+aux_links_new_tab: true
+
+nav_sort: case_insensitive
+
+back_to_top: true
+back_to_top_text: "Back to top"
+
+footer_content: "Not affiliated with Dalux. Maintained by <a href=\"https://github.com/brunoadam\">Bruno Adam</a>. Distributed under the MIT license."
+
+callouts:
+  warning:
+    title: Warning
+    color: red

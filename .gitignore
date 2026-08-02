@@ -34,6 +34,12 @@ python/build/
 .npmrc
 !webhook-server/ui/.npmrc
 
+# ── Jekyll (docs/ GitHub Pages) ──────────────────────────
+docs/_site/
+docs/.jekyll-cache/
+docs/.jekyll-metadata
+docs/Gemfile.lock
+
 # ── Editor / OS ──────────────────────────────────────────
 .vscode/
 .idea/

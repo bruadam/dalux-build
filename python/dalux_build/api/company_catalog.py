@@ -3,6 +3,7 @@
 from typing import TYPE_CHECKING, Literal, overload
 
 from ..api_client import ApiClient
+from ..dashboards.api import DashboardApiMixin
 from ..json_types import JSONDict, JSONValue, QueryParams
 from ..models import CompaniesListResponse, CompanyResponse, ProjectCompany
 from ..response_converter import convert_to_list_response, convert_to_model, to_dataframe_or_empty
@@ -12,8 +13,10 @@ if TYPE_CHECKING:
     import pandas as pd
 
 
-class CompanyCatalogApi:
+class CompanyCatalogApi(DashboardApiMixin):
     """Methods for managing the company catalog."""
+
+    dashboard_resource = "company_catalog"
 
     def __init__(self, api_client: ApiClient) -> None:
         self._client = api_client

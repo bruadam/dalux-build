@@ -7,6 +7,7 @@ from typing import TYPE_CHECKING, Literal, Protocol, overload
 import requests
 
 from ..api_client import ApiClient
+from ..dashboards.api import DashboardApiMixin
 from ..json_types import JSONDict, JSONValue, QueryParams
 from ..models import File, FileArea, FileNameFilter, FileResponse, FilesListResponse
 from ..response_converter import (
@@ -59,8 +60,10 @@ def _file_payload(item: FileLike) -> JSONDict:
     return item
 
 
-class FilesApi:
+class FilesApi(DashboardApiMixin):
     """Methods for files within a file area."""
+
+    dashboard_resource = "files"
 
     def __init__(self, api_client: ApiClient) -> None:
         self._client = api_client

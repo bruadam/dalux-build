@@ -1,12 +1,15 @@
 """File Revisions API."""
 
 from ..api_client import ApiClient
+from ..dashboards.api import DashboardApiMixin
 from ..json_types import JSONValue
 from ..utils.validation import resolve_file_area_id, resolve_project_id
 
 
-class FileRevisionsApi:
+class FileRevisionsApi(DashboardApiMixin):
     """Methods for file revision content."""
+
+    dashboard_resource = "file_revisions"
 
     def __init__(self, api_client: ApiClient) -> None:
         self._client = api_client

@@ -4,6 +4,7 @@ from typing import TYPE_CHECKING, Literal, overload
 from urllib.parse import parse_qs, urlparse
 
 from ..api_client import ApiClient
+from ..dashboards.api import DashboardApiMixin
 from ..json_types import JSONDict, QueryParams
 from ..models import (
     Task,
@@ -53,8 +54,10 @@ def _normalize_task_params(params: QueryParams | TaskListParams | None) -> Query
     return normalized
 
 
-class TasksApi:
+class TasksApi(DashboardApiMixin):
     """Methods for tasks, approvals, safety issues, observations and good practices."""
+
+    dashboard_resource = "tasks"
 
     def __init__(self, api_client: ApiClient) -> None:
         self._client = api_client

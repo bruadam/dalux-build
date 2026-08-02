@@ -3,6 +3,7 @@
 from typing import TYPE_CHECKING, Literal, overload
 
 from ..api_client import ApiClient
+from ..dashboards.api import DashboardApiMixin
 from ..json_types import QueryParams
 from ..models import WorkPackage, WorkPackagesListResponse
 from ..response_converter import convert_to_list_response, to_dataframe_or_empty
@@ -12,8 +13,10 @@ if TYPE_CHECKING:
     import pandas as pd
 
 
-class WorkPackagesApi:
+class WorkPackagesApi(DashboardApiMixin):
     """Methods for work packages on a project."""
+
+    dashboard_resource = "work_packages"
 
     def __init__(self, api_client: ApiClient) -> None:
         self._client = api_client

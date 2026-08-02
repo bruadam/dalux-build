@@ -5,6 +5,7 @@ import re
 from typing import TYPE_CHECKING, Literal, overload
 
 from ..api_client import ApiClient
+from ..dashboards.api import DashboardApiMixin
 from ..json_types import QueryParams
 from ..models import (
     DownloadResult,
@@ -25,8 +26,10 @@ if TYPE_CHECKING:
     import pandas as pd
 
 
-class VersionSetsApi:
+class VersionSetsApi(DashboardApiMixin):
     """Methods for version sets."""
+
+    dashboard_resource = "version_sets"
 
     def __init__(self, api_client: ApiClient) -> None:
         self._client = api_client

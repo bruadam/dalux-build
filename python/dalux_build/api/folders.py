@@ -4,6 +4,7 @@ from concurrent.futures import ThreadPoolExecutor
 from typing import TYPE_CHECKING, Literal, TypedDict, overload
 
 from ..api_client import ApiClient
+from ..dashboards.api import DashboardApiMixin
 from ..json_types import JSONDict, JSONValue, QueryParams
 from ..models import File, Folder, FolderResponse, FoldersListResponse
 from ..response_converter import (
@@ -71,8 +72,10 @@ def _folder_name(item: FolderLike) -> str:
     return name if isinstance(name, str) else "?"
 
 
-class FoldersApi:
+class FoldersApi(DashboardApiMixin):
     """Methods for folders within a file area."""
+
+    dashboard_resource = "folders"
 
     def __init__(self, api_client: ApiClient) -> None:
         self._client = api_client

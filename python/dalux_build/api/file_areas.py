@@ -3,6 +3,7 @@
 from typing import TYPE_CHECKING, Literal, overload
 
 from ..api_client import ApiClient
+from ..dashboards.api import DashboardApiMixin
 from ..json_types import QueryParams
 from ..models import FileArea, FileAreasListResponse
 from ..response_converter import convert_to_list_response, convert_to_model, to_dataframe_or_empty
@@ -13,8 +14,10 @@ if TYPE_CHECKING:
     import pandas as pd
 
 
-class FileAreasApi:
+class FileAreasApi(DashboardApiMixin):
     """Methods for file areas on a project."""
+
+    dashboard_resource = "file_areas"
 
     def __init__(self, api_client: ApiClient) -> None:
         self._client = api_client

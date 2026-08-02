@@ -5,6 +5,7 @@ from __future__ import annotations
 import hashlib
 import hmac
 import json
+import logging
 import sqlite3
 import uuid
 from datetime import datetime, timedelta, timezone
@@ -15,6 +16,8 @@ import httpx
 from .crypto import SecretBox
 from .models import CallbackConfig, TestWebhookResponse
 from .store import Store, utcnow
+
+logger = logging.getLogger(__name__)
 
 
 def _headers(delivery_id: str, auth_type: str, secret: str, body: bytes) -> dict[str, str]:
@@ -88,6 +91,11 @@ def send_test_webhook(
         timeout=30.0,
     )
     response.raise_for_status()
+    logger.info(
+        "Test webhook delivered successfully to %s with status %s",
+        callback.url,
+        response.status_code,
+    )
     return TestWebhookResponse(
         deliveryId=delivery_id, eventType=event_type, statusCode=response.status_code
     )
@@ -110,12 +118,30 @@ class DeliveryWorker:
         headers = _headers(row["delivery_id"], row["callback_auth_type"], secret, body)
         attempts = int(row["attempts"]) + 1
         try:
+            logger.info(
+                "Sending webhook delivery %s for job %s to %s",
+                row["delivery_id"],
+                row["job_id"],
+                row["callback_url"],
+            )
             response = httpx.post(row["callback_url"], content=body, headers=headers, timeout=30.0)
             response.raise_for_status()
+            logger.info(
+                "Webhook delivery %s for job %s succeeded with status %s",
+                row["delivery_id"],
+                row["job_id"],
+                response.status_code,
+            )
             self.store.delivery_result(
                 row["delivery_id"], success=True, attempts=attempts, next_at=utcnow()
             )
         except httpx.HTTPError as exc:
+            logger.warning(
+                "Webhook delivery %s for job %s failed: %s",
+                row["delivery_id"],
+                row["job_id"],
+                exc,
+            )
             if attempts >= self.max_attempts:
                 self.store.fail_delivery(row["delivery_id"], attempts, str(exc))
             else:

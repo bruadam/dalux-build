@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import logging
 import sqlite3
 import uuid
 from datetime import date, datetime, timedelta, timezone
@@ -15,6 +16,8 @@ from ..configuration import Configuration
 from ..json_types import JSONDict, JSONValue, QueryParams
 from .crypto import SecretBox
 from .store import Store
+
+logger = logging.getLogger(__name__)
 
 
 def _next_bookmark(page: JSONDict) -> str | None:
@@ -160,6 +163,12 @@ class Monitor:
                     "checkedAt": checked.isoformat(),
                     "files": [cast(JSONValue, change) for change in changes],
                 }
+                logger.info(
+                    "Queued change webhook %s for job %s with %s file change(s)",
+                    delivery_id,
+                    row["job_id"],
+                    len(changes),
+                )
             self.store.commit_poll(
                 row["job_id"],
                 pages,
@@ -219,6 +228,12 @@ class Monitor:
             "filesChecked": len(current),
             "violations": [cast(JSONValue, violation) for violation in violations],
         }
+        logger.info(
+            "Queued freshness webhook %s for job %s with %s checked file(s)",
+            delivery_id,
+            row["job_id"],
+            len(current),
+        )
         retained = dict(current)
         retained.update(
             {fid: data for fid, data in previously_matching.items() if fid not in current}

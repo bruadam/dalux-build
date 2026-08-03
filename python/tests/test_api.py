@@ -1,5 +1,6 @@
 """Tests for create_client() and all API resource classes."""
 
+from unittest.mock import patch
 from urllib.parse import parse_qs, urlparse
 
 import responses as rsps_lib
@@ -28,6 +29,7 @@ from dalux_build.api import (
 from dalux_build.api_client import ApiClient
 from dalux_build.configuration import Configuration
 from dalux_build.models import (
+    File,
     InspectionPlan,
     InspectionPlanItem,
     InspectionPlanItemZone,
@@ -658,6 +660,95 @@ class TestFilesApi:
             )
             == []
         )
+
+    @rsps_lib.activate
+    def test_bulk_download_files_accepts_ids_with_default_file_area(self):
+        config = Configuration(
+            base_url=BASE_URL,
+            api_key=API_KEY,
+            project_id="p1",
+            file_area_id="fa1",
+        )
+        api = FilesApi(ApiClient(config))
+
+        _reg(
+            rsps_lib.GET,
+            "/5.0/projects/p1/file_areas/fa1/files/S325605919784173571",
+            body={
+                "data": {
+                    "fileId": "S325605919784173571",
+                    "fileName": "model.ifc",
+                    "fileAreaId": "fa1",
+                    "downloadLink": "https://example.test/download/model.ifc",
+                }
+            },
+        )
+
+        with patch.object(
+            api,
+            "_download_file_with_metadata",
+            side_effect=lambda file_obj, **kwargs: file_obj,
+        ):
+            result = api.bulk_download_files(files=["S325605919784173571"])
+
+        assert len(result) == 1
+        assert result[0].file_id == "S325605919784173571"
+        assert "/file_areas/fa1/files/S325605919784173571" in rsps_lib.calls[0].request.url
+
+    @rsps_lib.activate
+    def test_bulk_download_files_accepts_mixed_ids_and_paths(self):
+        config = Configuration(
+            base_url=BASE_URL,
+            api_key=API_KEY,
+            project_id="p1",
+            file_area_id="fa1",
+        )
+        api = FilesApi(ApiClient(config))
+
+        _reg(
+            rsps_lib.GET,
+            "/5.0/projects/p1/file_areas/fa1/files/S326298311252246531",
+            body={
+                "data": {
+                    "fileId": "S326298311252246531",
+                    "fileName": "id-file.ifc",
+                    "fileAreaId": "fa1",
+                    "downloadLink": "https://example.test/download/id-file.ifc",
+                }
+            },
+        )
+
+        path_file = File.model_validate(
+            {
+                "fileId": "path-file-1",
+                "fileName": "path-file.ifc",
+                "fileAreaId": "fa2",
+                "folderId": "folder-1",
+                "downloadLink": "https://example.test/download/path-file.ifc",
+            }
+        )
+
+        with (
+            patch(
+                "dalux_build.api.files.resolve_folder_id_from_named_path",
+                return_value=("fa2", "folder-1"),
+            ),
+            patch.object(api, "get_all_files", return_value=[path_file]),
+            patch.object(
+                api,
+                "_download_file_with_metadata",
+                side_effect=lambda file_obj, **kwargs: file_obj,
+            ),
+        ):
+            result = api.bulk_download_files(
+                files=[
+                    "S326298311252246531",
+                    "Files/4_Design/C07_Geometry/path-file.ifc",
+                ]
+            )
+
+        assert len(result) == 2
+        assert {file.file_id for file in result} == {"S326298311252246531", "path-file-1"}
 
 
 # ---------- FoldersApi ----------

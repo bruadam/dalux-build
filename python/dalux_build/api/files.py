@@ -421,6 +421,11 @@ class FilesApi(DashboardApiMixin):
                 return None
         return None
 
+    def _looks_like_path(self, value: str) -> bool:
+        """Return True when the given value looks like a slash-delimited file path."""
+        normalized = value.strip().replace("\\", "/")
+        return "/" in normalized.strip("/")
+
     def bulk_download_folder(
         self,
         folder_id: str | None = None,
@@ -528,11 +533,10 @@ class FilesApi(DashboardApiMixin):
 
         Args:
             files: List of file IDs or full file paths.
-            file_area_id: File area ID when *files* contains file IDs. Leave unset
-                when *files* contains full paths like
-                ``Files/folder/.../file.ext`` — ``None`` here specifically selects
-                path-based resolution and is *not* backfilled from the client's
-                configured default file area.
+            file_area_id: Optional file area ID for file ID lookups. If omitted,
+                ID lookups use the client's configured default file area. Path
+                lookups (e.g. ``Files/folder/.../file.ext``) resolve file area
+                from the path itself.
             save_path: Optional directory to save files. Defaults to current directory.
             save_metadata: If True, write ``model_dump()`` metadata for each downloaded
                 file to a sibling ``.txt`` file.
@@ -555,12 +559,17 @@ class FilesApi(DashboardApiMixin):
         resolved_paths_cache: dict[str, tuple[str | None, str | None]] = {}
         all_files_cache: dict[str, list[FileLike]] = {}
         total = len(files)
+        resolved_file_area_id_for_ids: str | None = None
         for i, item in enumerate(files, 1):
-            if file_area_id is None:
-                path_parts = [part.strip() for part in item.strip("/").split("/") if part.strip()]
+            normalized_item = item.strip()
+            if self._looks_like_path(normalized_item):
+                normalized_path = normalized_item.replace("\\", "/")
+                path_parts = [
+                    part.strip() for part in normalized_path.strip("/").split("/") if part.strip()
+                ]
                 if len(path_parts) < 3:
                     if verbose:
-                        print(f"  [{i}/{total}] Skipping {item!r} (invalid path)")
+                        print(f"  [{i}/{total}] Skipping {normalized_item!r} (invalid path)")
                     continue
 
                 resolved_file_area_id, folder_id = resolve_folder_id_from_named_path(
@@ -574,7 +583,10 @@ class FilesApi(DashboardApiMixin):
                 )
                 if not resolved_file_area_id or not folder_id:
                     if verbose:
-                        print(f"  [{i}/{total}] Skipping {item!r} (File does not exist: {item})")
+                        print(
+                            f"  [{i}/{total}] Skipping {normalized_item!r} "
+                            f"(File does not exist: {normalized_item})"
+                        )
                     continue
                 if resolved_file_area_id not in all_files_cache:
                     all_files_cache[resolved_file_area_id] = self.get_all_files(
@@ -594,19 +606,26 @@ class FilesApi(DashboardApiMixin):
                 file_match = find_by_field(folder_files, "file_name", path_parts[-1])
                 if not file_match:
                     if verbose:
-                        print(f"  [{i}/{total}] Skipping {item!r} (File does not exist: {item})")
+                        print(
+                            f"  [{i}/{total}] Skipping {normalized_item!r} "
+                            f"(File does not exist: {normalized_item})"
+                        )
                     continue
                 file_obj = self._coerce_file(file_match)
             else:
+                if resolved_file_area_id_for_ids is None:
+                    resolved_file_area_id_for_ids = resolve_file_area_id(
+                        file_area_id, self._client.configuration.file_area_id
+                    )
                 file_info = self.get_file(
-                    item,
+                    normalized_item,
                     verbose=verbose,
                     project_id=project_id,
-                    file_area_id=file_area_id,
+                    file_area_id=resolved_file_area_id_for_ids,
                 )
                 if isinstance(file_info, str):
                     if verbose:
-                        print(f"  [{i}/{total}] Skipping {item!r} ({file_info})")
+                        print(f"  [{i}/{total}] Skipping {normalized_item!r} ({file_info})")
                     continue
                 if isinstance(file_info, FileResponse):
                     file_obj = file_info.data
@@ -617,7 +636,7 @@ class FilesApi(DashboardApiMixin):
 
             if not file_obj or not file_obj.download_link:
                 if verbose:
-                    file_name = file_obj.file_name if file_obj else item
+                    file_name = file_obj.file_name if file_obj else normalized_item
                     print(f"  [{i}/{total}] Skipping {file_name!r} (no downloadLink)")
                 continue
 

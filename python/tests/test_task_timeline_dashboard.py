@@ -84,6 +84,8 @@ def test_filter_records_selects_exact_task_id():
         statuses=[],
         actions=[],
         search="",
+        assignees=[],
+        companies=[],
     )
 
     assert [record.label for record in filtered] == ["TASK-2"]

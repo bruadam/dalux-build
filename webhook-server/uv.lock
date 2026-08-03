@@ -421,7 +421,7 @@ requires-dist = [
     { name = "mypy", marker = "extra == 'dev'", specifier = ">=1.15" },
     { name = "pandas", specifier = ">=2.3.3" },
     { name = "pandas", marker = "extra == 'dev'", specifier = ">=2.0" },
-    { name = "pandas-stubs", marker = "extra == 'dev'", specifier = ">=2.0" },
+    { name = "pandas-stubs", marker = "extra == 'dev'", specifier = ">=2.3.3.260113" },
     { name = "plotly", marker = "extra == 'dashboard'", specifier = ">=5.24" },
     { name = "plotly", marker = "extra == 'dev'", specifier = ">=5.24" },
     { name = "pre-commit", marker = "extra == 'dev'", specifier = ">=4.6.1" },

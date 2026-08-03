@@ -388,7 +388,7 @@ wheels = [
 
 [[package]]
 name = "dalux-build"
-version = "2.1.0"
+version = "2.1.1"
 source = { editable = "../python" }
 dependencies = [
     { name = "fastapi" },
@@ -416,7 +416,7 @@ requires-dist = [
     { name = "fastapi", specifier = ">=0.141.1" },
     { name = "fastapi", marker = "extra == 'webhook'", specifier = ">=0.110" },
     { name = "httpx", marker = "extra == 'webhook'", specifier = ">=0.27" },
-    { name = "httpx2", marker = "extra == 'dev'", specifier = ">=2.0.0" },
+    { name = "httpx2", marker = "extra == 'dev'", specifier = ">=2.9.1" },
     { name = "ipykernel", marker = "extra == 'dev'", specifier = ">=7.3.0" },
     { name = "mypy", marker = "extra == 'dev'", specifier = ">=1.15" },
     { name = "pandas", specifier = ">=2.3.3" },

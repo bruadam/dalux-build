@@ -1,5 +1,11 @@
 # dalux-build-api
 
+## 2.1.2
+
+### Patch Changes
+
+- [#47](https://github.com/bruadam/dalux-build/pull/47) [`e4b79fb`](https://github.com/bruadam/dalux-build/commit/e4b79fb72b92c102741e64968a6e2002841e45e4) Thanks [@bruadam](https://github.com/bruadam)! - fix: files ids or file path were not recognised and causing failure on download function in files api
+
 ## 2.1.1
 
 ### Patch Changes

@@ -138,7 +138,7 @@ def test_patch_endpoint_enables_and_disables_a_job(tmp_path):
         assert unauthorized.status_code == 401
 
 
-def test_job_test_endpoint_sends_real_selected_files_without_changing_state(tmp_path, monkeypatch):
+def test_job_test_endpoint_reports_changed_and_unchanged(tmp_path, monkeypatch):
     store, _box, jobs, _monitor, scheduler = core(tmp_path)
     received = {}
 
@@ -155,7 +155,13 @@ def test_job_test_endpoint_sends_real_selected_files_without_changing_state(tmp_
     pages = [
         {
             "items": [
-                {"data": {"fileId": "file-1", "fileName": "selected.ifc"}},
+                {
+                    "data": {
+                        "fileId": "file-1",
+                        "fileName": "selected.ifc",
+                        "fileRevisionId": "r1",
+                    }
+                },
                 {"data": {"fileId": "file-unselected", "fileName": "other.ifc"}},
             ]
         }
@@ -173,6 +179,21 @@ def test_job_test_endpoint_sends_real_selected_files_without_changing_state(tmp_
             headers=headers,
         )
         job_id = created.json()["jobId"]
+
+        # Preload a previous snapshot with the same fingerprint so the test
+        # payload can report an unchanged file using real data.
+        store.commit_poll(
+            job_id,
+            [],
+            {
+                "file-1": {
+                    "fileId": "file-1",
+                    "fileName": "selected.ifc",
+                    "fileRevisionId": "r1",
+                }
+            },
+            None,
+        )
         response = client.post(f"/jobs/{job_id}/test", headers=headers)
 
     assert response.status_code == 200
@@ -182,13 +203,14 @@ def test_job_test_endpoint_sends_real_selected_files_without_changing_state(tmp_
     assert payload["jobId"] == job_id
     assert payload["projectId"] == "p1"
     assert payload["fileAreaId"] == "fa1"
-    # Only the selected file is reported, using its real fetched data.
-    assert [f["current"]["fileId"] for f in payload["files"]] == ["file-1"]
-    assert payload["files"][0]["current"]["fileName"] == "selected.ifc"
-    # No prior snapshot exists yet, so it's reported as newly seen.
-    assert payload["files"][0]["changeType"] == "added"
-    assert payload["files"][0]["previous"] is None
-    assert store.states(job_id) == {}
+    assert payload["changed"] == []
+    assert payload["files"] == []
+    assert [f["current"]["fileId"] for f in payload["unchanged"]] == ["file-1"]
+    assert payload["unchanged"][0]["changeType"] == "unchanged"
+    assert payload["unchanged"][0]["current"]["fileName"] == "selected.ifc"
+    assert store.states(job_id) == {
+        "file-1": {"fileId": "file-1", "fileName": "selected.ifc", "fileRevisionId": "r1"}
+    }
 
 
 def test_job_test_endpoint_prefers_test_callback_over_production(tmp_path, monkeypatch):
@@ -224,7 +246,7 @@ def test_job_test_endpoint_prefers_test_callback_over_production(tmp_path, monke
         assert received["url"] == "https://n8n.example/webhook-test/dalux"
 
 
-def test_freshness_test_endpoint_splits_selected_files_half_and_half(tmp_path, monkeypatch):
+def test_freshness_test_endpoint_reports_all_selected_files_in_violations(tmp_path, monkeypatch):
     store, _box, jobs, _monitor, scheduler = core(tmp_path)
     received = {}
 
@@ -266,8 +288,13 @@ def test_freshness_test_endpoint_splits_selected_files_half_and_half(tmp_path, m
     payload = json.loads(received["content"])
     assert payload["filesChecked"] == 4
     assert payload["compliant"] is False
-    assert len(payload["violations"]) == 2
-    assert {v["fileId"] for v in payload["violations"]} == {"file-2", "file-3"}
+    assert len(payload["violations"]) == 4
+    assert {v["fileId"] for v in payload["violations"]} == {
+        "file-0",
+        "file-1",
+        "file-2",
+        "file-3",
+    }
     assert all(v["reason"] == "stale" for v in payload["violations"])
 
 

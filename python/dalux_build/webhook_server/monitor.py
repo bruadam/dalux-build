@@ -250,11 +250,11 @@ def build_test_event_payload(store: Store, secrets: SecretBox, row: sqlite3.Row)
     """Build a realistic test event from the job's real, currently-selected
     Dalux files — without touching stored state or the delivery outbox.
 
-    Change jobs: every currently-selected file, reported against its last
-    known snapshot (added if never seen before, modified otherwise).
-    Freshness jobs: every currently-selected file, with the first half
-    reported compliant and the second half reported as violations — so a
-    downstream pipeline can exercise both branches from one test call.
+    Change jobs: every currently-selected file split into `changed` and
+    `unchanged` arrays using the last known snapshot as comparison baseline.
+    Freshness jobs: every currently-selected file is reported in
+    `violations`, so downstream flows can validate the violation branch
+    against real selected file data.
     """
     pages = fetch_pages(
         row["base_url"],
@@ -279,21 +279,39 @@ def build_test_event_payload(store: Store, secrets: SecretBox, row: sqlite3.Row)
     if row["kind"] == "change":
         current = select_change_scope(current_all, config)
         previous = select_change_scope(store.states(row["job_id"]), config)
-        changes = [
-            {
-                "changeType": "modified" if fid in previous else "added",
-                "current": data,
-                "previous": previous.get(fid),
-            }
-            for fid, data in sorted(current.items())
-        ]
-        return {**envelope, "type": "dalux.files.changed", "files": cast(JSONValue, changes)}
+        changed: list[JSONDict] = []
+        unchanged: list[JSONDict] = []
+        for fid in sorted(set(current) | set(previous)):
+            now = current.get(fid)
+            old = previous.get(fid)
+            if now is None and old is not None and not bool(old.get("deleted")):
+                changed.append({"changeType": "deleted", "current": None, "previous": old})
+                continue
+            if now is None:
+                continue
+            if old is None:
+                changed.append({"changeType": "added", "current": now, "previous": None})
+                continue
+            if _fingerprint(now) != _fingerprint(old):
+                changed.append({"changeType": "modified", "current": now, "previous": old})
+            else:
+                unchanged.append(
+                    {"changeType": "unchanged", "current": now, "previous": old}
+                )
+
+        return {
+            **envelope,
+            "type": "dalux.files.changed",
+            # Keep `files` for compatibility; it now mirrors the changed-only set.
+            "files": cast(JSONValue, changed),
+            "changed": cast(JSONValue, changed),
+            "unchanged": cast(JSONValue, unchanged),
+        }
 
     current = select_freshness_scope(current_all, config)
     files = [current[fid] for fid in sorted(current)]
-    half = len(files) // 2
     violations: list[JSONDict] = [
-        {"reason": "stale", "fileId": data.get("fileId"), "file": data} for data in files[half:]
+        {"reason": "stale", "fileId": data.get("fileId"), "file": data} for data in files
     ]
     if not files:
         violations.append({"reason": "emptySelection"})

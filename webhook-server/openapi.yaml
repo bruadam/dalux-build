@@ -204,12 +204,11 @@ paths:
         `/webhook-test/` URL, kept separate from the production
         `/webhook/` URL in `callback`), otherwise falls back to `callback`.
         The event is built from the job's real, currently-selected Dalux
-        files: change jobs report every selected file against its last known
-        snapshot; freshness jobs report every selected file with the first
-        half compliant and the second half in `violations`, so a downstream
-        pipeline can exercise both branches from one call. The payload is
-        marked `test: true` and does not alter stored snapshots or enter the
-        retry outbox.
+        files: change jobs include `changed` and `unchanged` groups from the
+        real selected files compared to the last known snapshot, and freshness
+        jobs include every selected file in `violations`. The payload is marked
+        `test: true` and does not alter stored snapshots or enter the retry
+        outbox.
       security:
         - MONITOR_API_TOKEN: []
       parameters:
@@ -565,7 +564,7 @@ components:
       properties:
         changeType:
           type: string
-          enum: [added, modified, deleted]
+          enum: [added, modified, deleted, unchanged]
         current:
           oneOf:
             - $ref: "#/components/schemas/DaluxFile"
@@ -595,7 +594,16 @@ components:
               const: dalux.files.changed
             files:
               type: array
-              minItems: 1
+              items:
+                $ref: "#/components/schemas/FileChange"
+            changed:
+              type: array
+              description: Present in test events; mirrors changed entries from `files`.
+              items:
+                $ref: "#/components/schemas/FileChange"
+            unchanged:
+              type: array
+              description: Present in test events; includes selected files with unchanged fingerprints.
               items:
                 $ref: "#/components/schemas/FileChange"
     FreshnessViolation:

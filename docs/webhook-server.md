@@ -101,11 +101,10 @@ always-on `/webhook/<id>` URL as `callback`:
 `POST /jobs/{jobId}/test` sends to `testCallback` when one is registered,
 otherwise falls back to `callback`. Instead of a placeholder file, the event
 is built from the job's real, currently-selected Dalux files: change jobs
-report every selected file against its last known snapshot (added or
-modified); freshness jobs report every selected file with the first half
-compliant and the second half in `violations`, so a downstream pipeline can
-be built against both branches from one test call. Nothing is written to
-stored snapshots or the retry outbox.
+include both `changed` and `unchanged` arrays from the selected files compared
+to the last known snapshot; freshness jobs put all selected files in
+`violations` using their real file payloads. Nothing is written to stored
+snapshots or the retry outbox.
 
 ## Embedded mode
 

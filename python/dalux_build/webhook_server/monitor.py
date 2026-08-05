@@ -295,9 +295,7 @@ def build_test_event_payload(store: Store, secrets: SecretBox, row: sqlite3.Row)
             if _fingerprint(now) != _fingerprint(old):
                 changed.append({"changeType": "modified", "current": now, "previous": old})
             else:
-                unchanged.append(
-                    {"changeType": "unchanged", "current": now, "previous": old}
-                )
+                unchanged.append({"changeType": "unchanged", "current": now, "previous": old})
 
         return {
             **envelope,

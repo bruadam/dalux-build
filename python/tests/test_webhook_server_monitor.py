@@ -138,7 +138,7 @@ def test_patch_endpoint_enables_and_disables_a_job(tmp_path):
         assert unauthorized.status_code == 401
 
 
-def test_job_test_endpoint_sends_real_selected_files_with_changed_and_unchanged(tmp_path, monkeypatch):
+def test_job_test_endpoint_reports_changed_and_unchanged(tmp_path, monkeypatch):
     store, _box, jobs, _monitor, scheduler = core(tmp_path)
     received = {}
 

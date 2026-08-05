@@ -1,5 +1,11 @@
 # dalux-build-api
 
+## 2.1.3
+
+### Patch Changes
+
+- [#54](https://github.com/bruadam/dalux-build/pull/54) [`aa5c7f4`](https://github.com/bruadam/dalux-build/commit/aa5c7f4e8db1c95b4e7107293bc12e8d9b923cab) Thanks [@bruadam](https://github.com/bruadam)! - Align webhook test payloads with real selected file data: change test events now expose both `changed` and `unchanged` arrays (while keeping `files` as changed-only for compatibility), and freshness test events now include all selected files in `violations`.
+
 ## 2.1.2
 
 ### Patch Changes

@@ -6,12 +6,24 @@ name: Tests (reusable)
 
 on:
   workflow_call:
+    inputs:
+      run-javascript:
+        description: Run JavaScript tests
+        required: false
+        type: boolean
+        default: true
+      run-python:
+        description: Run Python tests
+        required: false
+        type: boolean
+        default: true
 
 permissions:
   contents: read
 
 jobs:
   test-js:
+    if: inputs.run-javascript
     name: Test Node.js (${{ matrix.node-version }})
     runs-on: ubuntu-latest
     timeout-minutes: 10
@@ -31,6 +43,7 @@ jobs:
       - run: npm test --workspace=javascript
 
   test-python:
+    if: inputs.run-python
     name: Test Python (${{ matrix.python-version }})
     runs-on: ubuntu-latest
     timeout-minutes: 10
@@ -58,6 +71,7 @@ jobs:
         run: pytest --cov=dalux_build --cov-report=term-missing
 
   ruff-python:
+    if: inputs.run-python
     name: Ruff (Python)
     runs-on: ubuntu-latest
     timeout-minutes: 10
@@ -94,6 +108,7 @@ jobs:
         run: ruff format --check .
 
   mypy-python:
+    if: inputs.run-python
     name: mypy (Python)
     runs-on: ubuntu-latest
     timeout-minutes: 10
@@ -129,6 +144,7 @@ jobs:
         run: mypy -p dalux_webhook
 
   test-webhook-server:
+    if: inputs.run-python
     name: Test webhook server (${{ matrix.python-version }})
     runs-on: ubuntu-latest
     timeout-minutes: 10

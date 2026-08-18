@@ -15,9 +15,42 @@ permissions:
   contents: read
 
 jobs:
+  changes:
+    name: Detect changed clients
+    runs-on: ubuntu-latest
+    outputs:
+      javascript: ${{ steps.detect.outputs.javascript }}
+      python: ${{ steps.detect.outputs.python }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+      - id: detect
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          BEFORE: ${{ github.event.before }}
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+        run: |
+          set -euo pipefail
+          if [ "$EVENT_NAME" = workflow_dispatch ]; then
+            changed=$(git ls-files)
+          elif [ "$EVENT_NAME" = pull_request ]; then
+            changed=$(git diff --name-only "$BASE_SHA...HEAD")
+          else
+            changed=$(git diff --name-only "$BEFORE" HEAD)
+          fi
+          grep -qE '^javascript/' <<<"$changed" && js=true || js=false
+          grep -qE '^(python/|webhook-server/)' <<<"$changed" && py=true || py=false
+          echo "javascript=$js" >> "$GITHUB_OUTPUT"
+          echo "python=$py" >> "$GITHUB_OUTPUT"
+
   test:
     name: Test
+    needs: changes
     uses: ./.github/workflows/tests.yml
+    with:
+      run-javascript: ${{ needs.changes.outputs.javascript == 'true' }}
+      run-python: ${{ needs.changes.outputs.python == 'true' }}
 
   # A changeset is required whenever javascript/ or python/dalux_build (the
   # published code) changes, since both packages release together (see

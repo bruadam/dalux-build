@@ -132,12 +132,11 @@ jobs:
         id: changesets
         uses: changesets/action@v2
         with:
+          github-token: ${{ secrets.RELEASE_PAT || secrets.GITHUB_TOKEN }}
           version-script: npm run version
           publish-script: npm run release
           commit-message: "chore: version packages"
           pr-title: "chore: version packages"
-        env:
-          GITHUB_TOKEN: ${{ secrets.RELEASE_PAT || secrets.GITHUB_TOKEN }}
 
       - name: Create GitHub Release
         if: steps.changesets.outputs.published == 'true'

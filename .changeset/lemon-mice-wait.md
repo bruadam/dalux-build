@@ -1,5 +1,5 @@
 ---
-"@dalux-build/dalux-build-api": patch
+"dalux-build-api": patch
 ---
 
 fix: add comprehensive sidebar filters, user/company name resolution, and response deadline coloring to task timeline dashboard

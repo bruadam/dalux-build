@@ -17,6 +17,11 @@ on:
         required: false
         type: boolean
         default: true
+      run-release-dry-runs:
+        description: Run package release dry runs
+        required: false
+        type: boolean
+        default: true
 
 permissions:
   contents: read
@@ -41,6 +46,21 @@ jobs:
 
       - run: npm ci
       - run: npm test --workspace=javascript
+
+  release-dry-run-npm:
+    if: inputs.run-release-dry-runs
+    name: Dry-run npm release
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: package-lock.json
+      - run: npm ci
+      - run: npm publish --workspace=javascript --dry-run --access public
 
   test-python:
     if: inputs.run-python
@@ -69,6 +89,33 @@ jobs:
 
       - name: Run tests
         run: pytest --cov=dalux_build --cov-report=term-missing
+
+  release-dry-run-python:
+    if: inputs.run-release-dry-runs
+    name: Dry-run PyPI release
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.13"
+      - name: Install build tools
+        run: python -m pip install build twine
+      - name: Verify synchronized versions
+        run: |
+          set -euo pipefail
+          js=$(python -c 'import json; print(json.load(open("javascript/package.json"))["version"])')
+          py=$(grep -E '^version = ' python/pyproject.toml | head -1 | sed -E 's/^version = "([^"]+)".*/\1/')
+          if [ -z "$js" ] || [ "$js" != "$py" ]; then
+            echo "Version mismatch: JavaScript=${js:-missing}, Python=$py" >&2
+            exit 1
+          fi
+      - name: Build and validate distribution
+        working-directory: python
+        run: |
+          python -m build
+          python -m twine check dist/*
 
   ruff-python:
     if: inputs.run-python

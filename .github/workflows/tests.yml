@@ -17,6 +17,11 @@ on:
         required: false
         type: boolean
         default: true
+      run-release-dry-runs:
+        description: Run package release dry runs
+        required: false
+        type: boolean
+        default: true
 
 permissions:
   contents: read
@@ -43,7 +48,7 @@ jobs:
       - run: npm test --workspace=javascript
 
   release-dry-run-npm:
-    if: inputs.run-javascript
+    if: inputs.run-release-dry-runs
     name: Dry-run npm release
     runs-on: ubuntu-latest
     timeout-minutes: 10
@@ -86,7 +91,7 @@ jobs:
         run: pytest --cov=dalux_build --cov-report=term-missing
 
   release-dry-run-python:
-    if: inputs.run-python
+    if: inputs.run-release-dry-runs
     name: Dry-run PyPI release
     runs-on: ubuntu-latest
     timeout-minutes: 10

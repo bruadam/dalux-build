@@ -39,15 +39,45 @@ permissions:
   contents: read
 
 jobs:
+  changes:
+    name: Detect changed clients
+    runs-on: ubuntu-latest
+    outputs:
+      javascript: ${{ steps.detect.outputs.javascript }}
+      python: ${{ steps.detect.outputs.python }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+      - id: detect
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          BEFORE: ${{ github.event.before }}
+        run: |
+          set -euo pipefail
+          if [ "$EVENT_NAME" = workflow_dispatch ]; then
+            changed=$(git ls-files)
+          else
+            changed=$(git diff --name-only "$BEFORE" HEAD)
+          fi
+          grep -qE '^javascript/' <<<"$changed" && js=true || js=false
+          grep -qE '^(python/|webhook-server/)' <<<"$changed" && py=true || py=false
+          echo "javascript=$js" >> "$GITHUB_OUTPUT"
+          echo "python=$py" >> "$GITHUB_OUTPUT"
+
   test:
     name: Test
+    needs: changes
     if: ${{ !contains(github.event.head_commit.message, '[skip release]') }}
     uses: ./.github/workflows/tests.yml
+    with:
+      run-javascript: ${{ needs.changes.outputs.javascript == 'true' }}
+      run-python: ${{ needs.changes.outputs.python == 'true' }}
 
   release:
     name: Version or publish npm package
-    needs: test
-    if: github.event_name == 'push'
+    needs: [changes, test]
+    if: github.event_name == 'push' && (needs.changes.outputs.javascript == 'true' || needs.changes.outputs.python == 'true')
     runs-on: ubuntu-latest
     timeout-minutes: 15
     environment:
@@ -100,9 +130,10 @@ jobs:
 
   publish-python:
     name: Publish Python package
-    needs: [test, release]
+    needs: [changes, test, release]
     if: >-
       always() &&
+      needs.changes.outputs.python == 'true' &&
       needs.test.result == 'success' &&
       (needs.release.outputs.published == 'true' || github.event_name == 'workflow_dispatch')
     runs-on: ubuntu-latest

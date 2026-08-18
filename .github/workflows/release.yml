@@ -28,6 +28,16 @@ on:
   push:
     branches: [main]
   workflow_dispatch:
+    inputs:
+      release-type:
+        description: Release bump to prepare (the version PR is then opened)
+        required: true
+        type: choice
+        options:
+          - patch
+          - minor
+          - major
+        default: patch
 
 concurrency:
   group: release-${{ github.ref }}
@@ -77,7 +87,7 @@ jobs:
   release:
     name: Version or publish npm package
     needs: [changes, test]
-    if: github.event_name == 'push' && (needs.changes.outputs.javascript == 'true' || needs.changes.outputs.python == 'true')
+    if: (github.event_name == 'push' || github.event_name == 'workflow_dispatch') && (needs.changes.outputs.javascript == 'true' || needs.changes.outputs.python == 'true')
     runs-on: ubuntu-latest
     timeout-minutes: 15
     environment:
@@ -102,6 +112,21 @@ jobs:
           registry-url: https://registry.npmjs.org/
 
       - run: npm ci
+
+      - name: Create manual release changeset
+        if: github.event_name == 'workflow_dispatch'
+        env:
+          RELEASE_TYPE: ${{ inputs.release-type }}
+          RUN_ID: ${{ github.run_id }}
+        run: |
+          set -euo pipefail
+          cat > ".changeset/manual-release-${RUN_ID}.md" <<EOF
+          ---
+          "dalux-build-api": ${RELEASE_TYPE}
+          ---
+
+          Manual ${RELEASE_TYPE} release requested from main.
+          EOF
 
       - name: Create Version Packages PR, or publish to npm
         id: changesets

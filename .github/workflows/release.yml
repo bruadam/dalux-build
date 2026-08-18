@@ -75,12 +75,12 @@ jobs:
 
       - name: Create Version Packages PR, or publish to npm
         id: changesets
-        uses: changesets/action@v1
+        uses: changesets/action@v2
         with:
-          version: npm run version
-          publish: npm run release
-          commit: "chore: version packages"
-          title: "chore: version packages"
+          version-script: npm run version
+          publish-script: npm run release
+          commit-message: "chore: version packages"
+          pr-title: "chore: version packages"
         env:
           GITHUB_TOKEN: ${{ secrets.RELEASE_PAT || secrets.GITHUB_TOKEN }}
 

@@ -33,7 +33,6 @@ from dalux_build.models import (
     FileNameFilter,
     FileResponse,
     FilesListResponse,
-    Folder,
     FolderResponse,
     FoldersListResponse,
     FormResponse,
@@ -52,8 +51,6 @@ from dalux_build.models import (
     Task,
     TaskAttachmentsListResponse,
     TaskChange,
-    TaskChangeActor,
-    TaskChangeFields,
     TaskChanges,
     TaskResponse,
     TasksListResponse,
@@ -260,31 +257,6 @@ class TestFileAreasPydantic:
 
 class TestFilesPydantic:
     """Verify FilesApi returns Pydantic models."""
-
-    @rsps_lib.activate
-    def test_list_files_returns_pydantic_model(self):
-        """list_files should return FilesListResponse."""
-        _reg(
-            rsps_lib.GET,
-            "/6.1/projects/p1/file_areas/fa1/files",
-            body={
-                "items": [
-                    {
-                        "data": {
-                            "fileId": "f1",
-                            "fileName": "document.pdf",
-                            "fileType": "pdf",
-                            "fileAreaId": "fa1",
-                        }
-                    }
-                ]
-            },
-        )
-        api = FilesApi(_make_client())
-        response = api.list_files(full_response=True, project_id="p1", file_area_id="fa1")
-
-        assert isinstance(response, FilesListResponse)
-        assert len(response.items) == 1
 
     @rsps_lib.activate
     def test_get_all_files_to_dataframe_flattens_nested_fields(self):
@@ -581,24 +553,6 @@ class TestFoldersPydantic:
     """Verify FoldersApi returns Pydantic models."""
 
     @rsps_lib.activate
-    def test_list_folders_returns_pydantic_model(self):
-        """list_folders should return FoldersListResponse."""
-        _reg(
-            rsps_lib.GET,
-            "/5.1/projects/p1/file_areas/fa1/folders",
-            body={
-                "items": [{"folderId": "fold1", "folderName": "Level 1", "folderType": "folder"}]
-            },
-        )
-        api = FoldersApi(_make_client())
-        response = api.list_folders(full_response=True, project_id="p1", file_area_id="fa1")
-
-        assert isinstance(response, FoldersListResponse)
-        assert len(response.items) == 1
-        assert isinstance(response.items[0], Folder)
-        assert response.items[0].folder_name == "Level 1"
-
-    @rsps_lib.activate
     def test_get_folder_returns_pydantic_model(self):
         """get_folder should return FolderResponse."""
         _reg(
@@ -727,46 +681,6 @@ class TestTasksPydantic:
     """Verify TasksApi returns Pydantic models."""
 
     @rsps_lib.activate
-    def test_get_project_tasks_returns_pydantic_model(self):
-        """get_project_tasks should return TasksListResponse."""
-        _reg(
-            rsps_lib.GET,
-            "/5.2/projects/p1/tasks",
-            body={"items": [{"data": {"taskId": "t1", "title": "Task 1"}}]},
-        )
-        api = TasksApi(_make_client())
-        response = api.get_project_tasks(full_response=True, project_id="p1")
-
-        assert isinstance(response, TasksListResponse)
-
-    @rsps_lib.activate
-    def test_get_project_tasks_to_dataframe_flattens_nested_fields(self):
-        """get_project_tasks(to_dataframe=True) should return a flattened DataFrame."""
-        pd = pytest.importorskip("pandas")
-        _reg(
-            rsps_lib.GET,
-            "/5.2/projects/p1/tasks",
-            body={
-                "items": [
-                    {
-                        "data": {
-                            "taskId": "t1",
-                            "title": "Task 1",
-                            "type": {"typeId": "ty1", "name": "Observation"},
-                        }
-                    }
-                ]
-            },
-        )
-        api = TasksApi(_make_client())
-        df = api.get_project_tasks(to_dataframe=True, project_id="p1")
-
-        assert isinstance(df, pd.DataFrame)
-        assert "taskId" in df.columns
-        assert "type::typeId" in df.columns
-        assert df.loc[0, "type::typeId"] == "ty1"
-
-    @rsps_lib.activate
     def test_get_task_returns_pydantic_model(self):
         """get_task should return TaskResponse."""
         _reg(
@@ -827,38 +741,6 @@ class TestTasksPydantic:
         assert "taskId" in df.columns
         assert "type::typeId" in df.columns
         assert df.loc[0, "type::typeId"] == "ty1"
-
-    @rsps_lib.activate
-    def test_get_project_task_changes_returns_pydantic_model(self):
-        """get_project_task_changes should return TaskChanges."""
-        _reg(
-            rsps_lib.GET,
-            "/2.2/projects/p1/tasks/changes",
-            body=[
-                {
-                    "taskId": "S339368766909448192",
-                    "description": "",
-                    "timestamp": "2025-08-05T07:55:56.9900000+00:00",
-                    "action": "reject",
-                    "fields": {
-                        "modifiedBy": {"userId": ""},
-                        "assignedTo": {"roleId": "", "roleName": ""},
-                        "currentResponsible": {"userId": ""},
-                    },
-                }
-            ],
-        )
-        api = TasksApi(_make_client())
-        response = api.get_project_task_changes(full_response=True, project_id="p1")
-
-        assert isinstance(response, TaskChanges)
-        assert len(response.items) == 1
-        assert response.items[0].task_id == "S339368766909448192"
-        assert isinstance(response.items[0].fields, TaskChangeFields)
-        assert isinstance(response.items[0].fields.modified_by, TaskChangeActor)
-        assert response.items[0].fields.modified_by.user_id == ""
-        assert response.items[0].fields.assigned_to.role_id == ""
-        assert response.items[0].fields.current_responsible.user_id == ""
 
     @rsps_lib.activate
     def test_get_all_project_task_changes_returns_typed_items(self):

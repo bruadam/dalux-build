@@ -3,7 +3,10 @@
     "allow": [
       "Bash(npx shadcn@latest init --help)",
       "Bash(git commit -m ' *)",
-      "Bash(npm view *)"
+      "Bash(npm view *)",
+      "Bash(git commit -m 'fix: properly import ProjectCompany and ProjectUser to resolve Pydantic validation errors *)",
+      "Bash(python -m py_compile python/dalux_build/utils/user_mapping.py python/dalux_build/api/files.py)",
+      "Bash(git commit -m 'fix: remove duplicate ID fields and enrich users with companies *)"
     ]
   }
 }

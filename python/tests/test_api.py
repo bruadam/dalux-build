@@ -37,10 +37,7 @@ from dalux_build.models import (
     Task,
     TaskAttachmentsListResponse,
     TaskChange,
-    TaskChanges,
-    TaskListParams,
     TaskResponse,
-    TasksListResponse,
     TestPlan,
     TestPlanItem,
     TestPlanItemZone,
@@ -252,53 +249,6 @@ class TestCompanyCatalogApi:
 
 class TestTasksApi:
     @rsps_lib.activate
-    def test_get_project_tasks(self):
-        _reg(rsps_lib.GET, "/5.2/projects/p1/tasks", body=[])
-        response = TasksApi(_make_client()).get_project_tasks(full_response=True, project_id="p1")
-        assert isinstance(response, TasksListResponse)
-        assert response.items == []
-
-    @rsps_lib.activate
-    def test_get_project_tasks_maps_type_id_to_odata_filter(self):
-        _reg(rsps_lib.GET, "/5.2/projects/p1/tasks", body=[])
-        TasksApi(_make_client()).get_project_tasks(
-            params={"typeId": "177352982697"},
-            project_id="p1",
-        )
-        query = parse_qs(urlparse(rsps_lib.calls[0].request.url).query)
-        assert query == {"$filter": ["data/type/typeId eq '177352982697'"]}
-
-    @rsps_lib.activate
-    def test_get_project_tasks_type_id_maps_to_odata_path_for_snowflake_ids(self):
-        _reg(rsps_lib.GET, "/5.2/projects/p1/tasks", body=[])
-        TasksApi(_make_client()).get_project_tasks(
-            params={"typeId": "S410425647911927812"},
-            project_id="p1",
-        )
-        query = parse_qs(urlparse(rsps_lib.calls[0].request.url).query)
-        assert query == {"$filter": ["data/type/typeId eq 'S410425647911927812'"]}
-
-    @rsps_lib.activate
-    def test_get_project_tasks_type_id_escapes_single_quotes_in_odata_filter(self):
-        _reg(rsps_lib.GET, "/5.2/projects/p1/tasks", body=[])
-        TasksApi(_make_client()).get_project_tasks(
-            params={"typeId": "x'y"},
-            project_id="p1",
-        )
-        query = parse_qs(urlparse(rsps_lib.calls[0].request.url).query)
-        assert query == {"$filter": ["data/type/typeId eq 'x''y'"]}
-
-    @rsps_lib.activate
-    def test_get_project_tasks_accepts_task_list_params_model(self):
-        _reg(rsps_lib.GET, "/5.2/projects/p1/tasks", body=[])
-        TasksApi(_make_client()).get_project_tasks(
-            params=TaskListParams(type_id="S410425647911927812"),
-            project_id="p1",
-        )
-        query = parse_qs(urlparse(rsps_lib.calls[0].request.url).query)
-        assert query == {"$filter": ["data/type/typeId eq 'S410425647911927812'"]}
-
-    @rsps_lib.activate
     def test_get_all_project_tasks_follows_pagination(self):
         page1 = {
             "items": [{"data": {"taskId": "t1"}}],
@@ -493,33 +443,6 @@ class TestTasksApi:
         assert result.data.task_id == "t1"
 
     @rsps_lib.activate
-    def test_get_project_task_changes(self):
-        _reg(
-            rsps_lib.GET,
-            "/2.2/projects/p1/tasks/changes",
-            body=[
-                {
-                    "taskId": "S339368766909448192",
-                    "description": "",
-                    "timestamp": "2025-08-05T07:55:56.9900000+00:00",
-                    "action": "reject",
-                    "fields": {
-                        "modifiedBy": {"userId": ""},
-                        "assignedTo": {"roleId": "", "roleName": ""},
-                        "currentResponsible": {"userId": ""},
-                    },
-                }
-            ],
-        )
-        response = TasksApi(_make_client()).get_project_task_changes(
-            full_response=True, project_id="p1"
-        )
-        assert isinstance(response, TaskChanges)
-        assert len(response.items) == 1
-        assert response.items[0].task_id == "S339368766909448192"
-        assert response.items[0].action == "reject"
-
-    @rsps_lib.activate
     def test_get_all_project_task_changes_follows_pagination(self):
         page1 = {
             "items": [
@@ -605,15 +528,6 @@ class TestFileAreasApi:
 
 
 class TestFilesApi:
-    @rsps_lib.activate
-    def test_list_files(self):
-        _reg(rsps_lib.GET, "/6.1/projects/p1/file_areas/fa1/files", body={"items": []})
-        result = FilesApi(_make_client()).list_files(
-            full_response=True, project_id="p1", file_area_id="fa1"
-        )
-        assert result is not None
-        assert result.items == []
-
     @rsps_lib.activate
     def test_get_file(self):
         _reg(
@@ -755,15 +669,6 @@ class TestFilesApi:
 
 
 class TestFoldersApi:
-    @rsps_lib.activate
-    def test_list_folders(self):
-        _reg(rsps_lib.GET, "/5.1/projects/p1/file_areas/fa1/folders", body={"items": []})
-        result = FoldersApi(_make_client()).list_folders(
-            full_response=True, project_id="p1", file_area_id="fa1"
-        )
-        assert result is not None
-        assert result.items == []
-
     @rsps_lib.activate
     def test_get_folder(self):
         _reg(

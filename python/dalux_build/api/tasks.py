@@ -1,9 +1,15 @@
 """Tasks API."""
 
+import warnings
 from typing import TYPE_CHECKING, Literal, overload
 from urllib.parse import parse_qs, urlparse
 
 from ..api_client import ApiClient
+
+try:
+    from tqdm import tqdm
+except ImportError:
+    tqdm = None  # type: ignore[assignment, misc]
 from ..dashboards.api import DashboardApiMixin
 from ..json_types import JSONDict, QueryParams
 from ..models import (
@@ -59,6 +65,12 @@ class TasksApi(DashboardApiMixin):
     """Methods for tasks, approvals, safety issues, observations and good practices."""
 
     dashboard_resource = "tasks"
+    __all__ = [
+        "get_all_project_tasks",
+        "get_task",
+        "get_all_project_task_changes",
+        "get_all_project_task_attachments",
+    ]
 
     def __init__(self, api_client: ApiClient) -> None:
         self._client = api_client
@@ -69,7 +81,7 @@ class TasksApi(DashboardApiMixin):
         params: QueryParams | TaskListParams | None = None,
         full_response: Literal[False] = False,
         to_dataframe: Literal[False] = False,
-        include_users: bool = False,
+        recursively_populate: bool = False,
         *,
         project_id: str | None = None,
     ) -> list[Task]: ...
@@ -81,7 +93,7 @@ class TasksApi(DashboardApiMixin):
         *,
         full_response: Literal[True],
         to_dataframe: Literal[False] = False,
-        include_users: bool = False,
+        recursively_populate: bool = False,
         project_id: str | None = None,
     ) -> TasksListResponse | None: ...
 
@@ -92,7 +104,7 @@ class TasksApi(DashboardApiMixin):
         full_response: bool = ...,
         *,
         to_dataframe: Literal[True],
-        include_users: bool = False,
+        recursively_populate: bool = False,
         project_id: str | None = None,
     ) -> "pd.DataFrame": ...
 
@@ -101,11 +113,15 @@ class TasksApi(DashboardApiMixin):
         params: QueryParams | TaskListParams | None = None,
         full_response: bool = False,
         to_dataframe: bool = False,
-        include_users: bool = False,
+        recursively_populate: bool = False,
         *,
         project_id: str | None = None,
     ) -> "TasksListResponse | list[Task] | pd.DataFrame | None":
         """GET /5.2/projects/{projectId}/tasks.
+
+        .. deprecated::
+            Use :meth:`get_all_project_tasks` instead. This method only
+            returns the first page of results.
 
         Args:
             params: Optional query parameters. Pass ``typeId`` as a shorthand for
@@ -117,7 +133,7 @@ class TasksApi(DashboardApiMixin):
                 just the list of Task items.
             to_dataframe: If True, return the items flattened into a pandas
                 DataFrame (requires pandas). Takes precedence over full_response.
-            include_users: If True, replace user_id fields with ProjectUser objects
+            recursively_populate: If True, populate user fields with ProjectUser objects
                 (requires one additional API call to fetch project users).
             project_id: Project ID. Falls back to the client's configured default.
 
@@ -125,13 +141,19 @@ class TasksApi(DashboardApiMixin):
             List of Task items, the full TasksListResponse when
             full_response=True, or a DataFrame when to_dataframe=True.
         """
+        warnings.warn(
+            "get_project_tasks() is deprecated and only returns the first page of results. "
+            "Use get_all_project_tasks() instead to fetch all tasks with pagination.",
+            DeprecationWarning,
+            stacklevel=2,
+        )
         project_id = resolve_project_id(project_id, self._client.configuration.project_id)
         response = self._client.get(
             f"/5.2/projects/{project_id}/tasks",
             params=_normalize_task_params(params),
         )
 
-        if include_users and isinstance(response, dict):
+        if recursively_populate and isinstance(response, dict):
             from .users import UsersApi
 
             users_api = UsersApi(self._client)
@@ -152,7 +174,7 @@ class TasksApi(DashboardApiMixin):
         params: QueryParams | TaskListParams | None = None,
         verbose: bool = False,
         to_dataframe: Literal[False] = False,
-        include_users: bool = False,
+        recursively_populate: bool = False,
         *,
         project_id: str | None = None,
     ) -> list[Task]: ...
@@ -164,7 +186,7 @@ class TasksApi(DashboardApiMixin):
         verbose: bool = False,
         *,
         to_dataframe: Literal[True],
-        include_users: bool = False,
+        recursively_populate: bool = False,
         project_id: str | None = None,
     ) -> "pd.DataFrame": ...
 
@@ -173,7 +195,7 @@ class TasksApi(DashboardApiMixin):
         params: QueryParams | TaskListParams | None = None,
         verbose: bool = False,
         to_dataframe: bool = False,
-        include_users: bool = False,
+        recursively_populate: bool = False,
         *,
         project_id: str | None = None,
     ) -> "list[Task] | pd.DataFrame":
@@ -198,14 +220,13 @@ class TasksApi(DashboardApiMixin):
         Args:
             params: Optional query parameters (OData). ``typeId`` is expanded to
                 ``$filter=data/type/typeId eq '<typeId>'`` when ``$filter`` is not
-                set (same as :meth:`get_project_tasks`). Pagination ``bookmark`` is
-                applied automatically across pages.
+                set. Pagination ``bookmark`` is applied automatically across pages.
             verbose: If ``True``, print progress using the same pattern as
                 :meth:`FilesApi.get_all_files`, plus the next page URL when present.
             to_dataframe: If True, return the items flattened into a pandas
                 DataFrame (requires pandas) instead of a list.
-            include_users: If True, replace user_id fields with ProjectUser objects
-                (requires one additional API call to fetch project users).
+            recursively_populate: If True, recursively populate user and company
+                objects from their IDs (requires one additional API call to fetch project users).
             project_id: Project ID. Falls back to the client's configured default.
         """
         project_id = resolve_project_id(project_id, self._client.configuration.project_id)
@@ -217,88 +238,101 @@ class TasksApi(DashboardApiMixin):
         # (first pages carry the largest value); later pages may report a stale non-zero.
         tasks_items_ceiling: int | None = None
 
-        while has_next_page:
-            raw_response = self._client.get(
-                f"/5.2/projects/{project_id}/tasks", params=current_params
-            )
-            response: JSONDict = raw_response if isinstance(raw_response, dict) else {}
-            raw_items = response.get("items")
-            items: list[Task] = []
-            if isinstance(raw_items, list):
-                for item in raw_items:
-                    task_data = (
-                        item.get("data") if isinstance(item, dict) and "data" in item else item
-                    )
-                    if isinstance(task_data, dict):
-                        items.append(Task.model_validate(task_data))
-            if items:
-                all_items.extend(items)
-            meta = response.get("metadata")
-            meta = meta if isinstance(meta, dict) else {}
-            total_remaining = meta.get("totalRemainingItems")
-            total_items = meta.get("totalItems")
-            if "totalRemainingItems" in meta and isinstance(total_remaining, (int, float, str)):
-                remaining = int(total_remaining)
-                use_files_remaining_stop = True
-            elif "totalItems" in meta and isinstance(total_items, (int, float, str)):
-                ti = int(total_items)
-                tasks_items_ceiling = max(tasks_items_ceiling or 0, ti)
-                remaining = ti
-                use_files_remaining_stop = False
-            else:
-                remaining = 0
-                use_files_remaining_stop = True
+        if recursively_populate:
+            from .users import UsersApi
 
-            links = response.get("links")
-            next_link = next(
-                (
-                    link
-                    for link in (links if isinstance(links, list) else [])
-                    if isinstance(link, dict) and link.get("rel") == "nextPage"
-                ),
-                None,
-            )
-            next_href = next_link.get("href") if next_link else None
+            users_api = UsersApi(self._client)
+            users = users_api.list_project_users(project_id=project_id)
+            user_mapping = create_user_mapping(users)
+        else:
+            user_mapping = None
 
-            if verbose:
-                next_part = f" next: {next_href}" if next_href else " next: (none)"
-                if use_files_remaining_stop:
-                    print(
-                        f"Retrieved {len(all_items)} tasks so far, "
-                        f"{remaining} remaining...{next_part}"
-                    )
-                elif tasks_items_ceiling is not None:
-                    rem_v = max(0, tasks_items_ceiling - len(all_items))
-                    print(
-                        f"Retrieved {len(all_items)} tasks so far, {rem_v} remaining...{next_part}"
-                    )
+        pbar = None
+
+        try:
+            while has_next_page:
+                raw_response = self._client.get(
+                    f"/5.2/projects/{project_id}/tasks", params=current_params
+                )
+                response: JSONDict = raw_response if isinstance(raw_response, dict) else {}
+                raw_items = response.get("items")
+                items: list[Task] = []
+                if isinstance(raw_items, list):
+                    for item in raw_items:
+                        task_data = (
+                            item.get("data") if isinstance(item, dict) and "data" in item else item
+                        )
+                        if isinstance(task_data, dict):
+                            if user_mapping:
+                                task_data = enrich_response_with_users(
+                                    task_data,
+                                    user_mapping,
+                                    {"userId": "user"},
+                                )
+                            items.append(Task.model_validate(task_data))
+                if items:
+                    all_items.extend(items)
+
+                meta = response.get("metadata")
+                meta = meta if isinstance(meta, dict) else {}
+                total_remaining = meta.get("totalRemainingItems")
+                total_items = meta.get("totalItems")
+                if "totalRemainingItems" in meta and isinstance(total_remaining, (int, float, str)):
+                    remaining = int(total_remaining)
+                    use_files_remaining_stop = True
+                elif "totalItems" in meta and isinstance(total_items, (int, float, str)):
+                    ti = int(total_items)
+                    tasks_items_ceiling = max(tasks_items_ceiling or 0, ti)
+                    remaining = ti
+                    use_files_remaining_stop = False
                 else:
-                    print(
-                        f"Retrieved {len(all_items)} tasks so far, "
-                        f"{remaining} remaining...{next_part}"
-                    )
+                    remaining = 0
+                    use_files_remaining_stop = True
 
-            if not items:
-                has_next_page = False
-            elif use_files_remaining_stop and remaining == 0:
-                has_next_page = False
-            elif (
-                not use_files_remaining_stop
-                and tasks_items_ceiling is not None
-                and len(all_items) >= tasks_items_ceiling
-            ):
-                has_next_page = False
-            else:
-                href = next_link.get("href") if next_link else None
-                if isinstance(href, str):
-                    qs = parse_qs(urlparse(href).query)
-                    bookmark = qs.get("bookmark", [None])[0]
-                    current_params = {**base_params, "bookmark": bookmark}
-                else:
+                # Initialize progress bar after first response with known total
+                if pbar is None and verbose and tqdm is not None:
+                    total = None
+                    if use_files_remaining_stop:
+                        # totalRemainingItems already includes items from this page
+                        total = remaining
+                    elif tasks_items_ceiling is not None:
+                        total = tasks_items_ceiling
+                    pbar = tqdm(total=total, desc="Fetching tasks", unit="task", leave=True)
+                    pbar.update(len(items))
+                elif pbar is not None:
+                    pbar.update(len(items))
+
+                links = response.get("links")
+                next_link = next(
+                    (
+                        link
+                        for link in (links if isinstance(links, list) else [])
+                        if isinstance(link, dict) and link.get("rel") == "nextPage"
+                    ),
+                    None,
+                )
+
+                if not items:
                     has_next_page = False
-
-        if verbose:
-            print(f"Done. Total tasks retrieved: {len(all_items)}")
+                elif use_files_remaining_stop and remaining == 0:
+                    has_next_page = False
+                elif (
+                    not use_files_remaining_stop
+                    and tasks_items_ceiling is not None
+                    and len(all_items) >= tasks_items_ceiling
+                ):
+                    has_next_page = False
+                else:
+                    href = next_link.get("href") if next_link else None
+                    if isinstance(href, str):
+                        qs = parse_qs(urlparse(href).query)
+                        bookmark = qs.get("bookmark", [None])[0]
+                        current_params = {**base_params, "bookmark": bookmark}
+                    else:
+                        has_next_page = False
+        finally:
+            if pbar is not None:
+                pbar.close()
         if to_dataframe:
             return flatten_items_to_dataframe(list(all_items))
         return all_items
@@ -319,7 +353,7 @@ class TasksApi(DashboardApiMixin):
         params: QueryParams | None = None,
         full_response: Literal[False] = False,
         to_dataframe: Literal[False] = False,
-        include_users: bool = False,
+        recursively_populate: bool = False,
         *,
         project_id: str | None = None,
     ) -> list[TaskChange]: ...
@@ -331,7 +365,7 @@ class TasksApi(DashboardApiMixin):
         *,
         full_response: Literal[True],
         to_dataframe: Literal[False] = False,
-        include_users: bool = False,
+        recursively_populate: bool = False,
         project_id: str | None = None,
     ) -> TaskChanges | None: ...
 
@@ -342,7 +376,7 @@ class TasksApi(DashboardApiMixin):
         full_response: bool = ...,
         *,
         to_dataframe: Literal[True],
-        include_users: bool = False,
+        recursively_populate: bool = False,
         project_id: str | None = None,
     ) -> "pd.DataFrame": ...
 
@@ -351,11 +385,15 @@ class TasksApi(DashboardApiMixin):
         params: QueryParams | None = None,
         full_response: bool = False,
         to_dataframe: bool = False,
-        include_users: bool = False,
+        recursively_populate: bool = False,
         *,
         project_id: str | None = None,
     ) -> "TaskChanges | list[TaskChange] | pd.DataFrame | None":
         """GET /2.2/projects/{projectId}/tasks/changes.
+
+        .. deprecated::
+            Use :meth:`get_all_project_task_changes` instead. This method
+            only returns the first page of results.
 
         Args:
             params: Optional query parameters.
@@ -364,7 +402,7 @@ class TasksApi(DashboardApiMixin):
                 just the list of TaskChange items.
             to_dataframe: If True, return the items flattened into a pandas
                 DataFrame (requires pandas). Takes precedence over full_response.
-            include_users: If True, replace user_id fields with ProjectUser objects
+            recursively_populate: If True, populate user fields with ProjectUser objects
                 (requires one additional API call to fetch project users).
             project_id: Project ID. Falls back to the client's configured default.
 
@@ -372,10 +410,17 @@ class TasksApi(DashboardApiMixin):
             List of TaskChange items, the full TaskChanges model when
             full_response=True, or a DataFrame when to_dataframe=True.
         """
+        warnings.warn(
+            "get_project_task_changes() is deprecated and only returns the first page "
+            "of results. Use get_all_project_task_changes() instead to fetch all "
+            "task changes with pagination.",
+            DeprecationWarning,
+            stacklevel=2,
+        )
         project_id = resolve_project_id(project_id, self._client.configuration.project_id)
         response = self._client.get(f"/2.2/projects/{project_id}/tasks/changes", params=params)
 
-        if include_users and isinstance(response, dict):
+        if recursively_populate and isinstance(response, dict):
             from .users import UsersApi
 
             users_api = UsersApi(self._client)
@@ -384,12 +429,7 @@ class TasksApi(DashboardApiMixin):
             response = enrich_response_with_users(
                 response,
                 user_mapping,
-                {
-                    "userId": "user",
-                    "modifiedBy": "modifiedBy",
-                    "assignedTo": "assignedTo",
-                    "currentResponsible": "currentResponsible",
-                },
+                {"userId": "user"},
             )
 
         result = convert_to_list_response(response, TaskChanges)
@@ -405,7 +445,7 @@ class TasksApi(DashboardApiMixin):
         params: QueryParams | None = None,
         verbose: bool = False,
         to_dataframe: Literal[False] = False,
-        include_users: bool = False,
+        recursively_populate: bool = False,
         *,
         project_id: str | None = None,
     ) -> list[TaskChange]: ...
@@ -417,7 +457,7 @@ class TasksApi(DashboardApiMixin):
         verbose: bool = False,
         *,
         to_dataframe: Literal[True],
-        include_users: bool = False,
+        recursively_populate: bool = False,
         project_id: str | None = None,
     ) -> "pd.DataFrame": ...
 
@@ -426,7 +466,7 @@ class TasksApi(DashboardApiMixin):
         params: QueryParams | None = None,
         verbose: bool = False,
         to_dataframe: bool = False,
-        include_users: bool = False,
+        recursively_populate: bool = False,
         *,
         project_id: str | None = None,
     ) -> "list[TaskChange] | pd.DataFrame":
@@ -438,8 +478,8 @@ class TasksApi(DashboardApiMixin):
             verbose: If ``True``, print page-by-page pagination progress.
             to_dataframe: If True, return the items flattened into a pandas
                 DataFrame (requires pandas) instead of a list.
-            include_users: If True, replace user_id fields with ProjectUser objects
-                (requires one additional API call to fetch project users).
+            recursively_populate: If True, recursively populate user and company
+                objects from their IDs (requires one additional API call to fetch project users).
             project_id: Project ID. Falls back to the client's configured default.
 
         Returns:
@@ -448,7 +488,7 @@ class TasksApi(DashboardApiMixin):
         """
         project_id = resolve_project_id(project_id, self._client.configuration.project_id)
 
-        if include_users:
+        if recursively_populate:
             from .users import UsersApi
 
             users_api = UsersApi(self._client)
@@ -471,12 +511,7 @@ class TasksApi(DashboardApiMixin):
                     item = enrich_response_with_users(
                         item,
                         user_mapping,
-                        {
-                            "userId": "user",
-                            "modifiedBy": "modifiedBy",
-                            "assignedTo": "assignedTo",
-                            "currentResponsible": "currentResponsible",
-                        },
+                        {"userId": "user"},
                     )
                 typed_items.append(TaskChange.model_validate(item))
         if to_dataframe:

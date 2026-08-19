@@ -1,5 +1,6 @@
 """Folders API."""
 
+import warnings
 from concurrent.futures import ThreadPoolExecutor
 from typing import TYPE_CHECKING, Literal, TypedDict, overload
 
@@ -76,6 +77,12 @@ class FoldersApi(DashboardApiMixin):
     """Methods for folders within a file area."""
 
     dashboard_resource = "folders"
+    __all__ = [
+        "get_all_folders",
+        "get_folder",
+        "get_folder_files_properties",
+        "get_file_area_tree",
+    ]
 
     def __init__(self, api_client: ApiClient) -> None:
         self._client = api_client
@@ -121,6 +128,10 @@ class FoldersApi(DashboardApiMixin):
     ) -> "FoldersListResponse | list[Folder] | pd.DataFrame | None":
         """GET /5.1/projects/{projectId}/file_areas/{fileAreaId}/folders.
 
+        .. deprecated::
+            Use :meth:`get_all_folders` instead. This method only returns
+            the first page of results.
+
         Args:
             params: Optional query parameters.
             full_response: If True, return the full FoldersListResponse
@@ -135,6 +146,12 @@ class FoldersApi(DashboardApiMixin):
             List of Folder items, the full FoldersListResponse when
             full_response=True, or a DataFrame when to_dataframe=True.
         """
+        warnings.warn(
+            "list_folders() is deprecated and only returns the first page of results. "
+            "Use get_all_folders() instead to fetch all folders with pagination.",
+            DeprecationWarning,
+            stacklevel=2,
+        )
         project_id = resolve_project_id(project_id, self._client.configuration.project_id)
         file_area_id = resolve_file_area_id(file_area_id, self._client.configuration.file_area_id)
         response = self._client.get(

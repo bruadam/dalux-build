@@ -1,5 +1,6 @@
 """Projects API."""
 
+import warnings
 from typing import TYPE_CHECKING, Literal, overload
 
 from ..api_client import ApiClient
@@ -7,6 +8,7 @@ from ..dashboards.api import DashboardApiMixin
 from ..json_types import JSONDict, JSONValue, QueryParams
 from ..models import Project, ProjectResponse, ProjectsListResponse
 from ..response_converter import convert_to_list_response, convert_to_model, to_dataframe_or_empty
+from ..utils.pagination import paginate
 from ..utils.search import find_by_field
 from ..utils.validation import resolve_project_id
 
@@ -22,9 +24,68 @@ class ProjectsApi(DashboardApiMixin):
     """
 
     dashboard_resource = "projects"
+    __all__ = [
+        "get_all_projects",
+        "get_project",
+        "create_project",
+        "update_project",
+    ]
 
     def __init__(self, api_client: ApiClient) -> None:
         self._client = api_client
+
+    @overload
+    def get_all_projects(
+        self,
+        params: QueryParams | None = None,
+        verbose: bool = False,
+        to_dataframe: Literal[False] = False,
+    ) -> list[Project]: ...
+
+    @overload
+    def get_all_projects(
+        self,
+        params: QueryParams | None = None,
+        verbose: bool = False,
+        *,
+        to_dataframe: Literal[True],
+    ) -> "pd.DataFrame": ...
+
+    def get_all_projects(
+        self,
+        params: QueryParams | None = None,
+        verbose: bool = False,
+        to_dataframe: bool = False,
+    ) -> "list[Project] | pd.DataFrame":
+        """Retrieve all projects by following pagination automatically.
+
+        Args:
+            params: Optional query parameters.
+            verbose: If True, show progress with tqdm.
+            to_dataframe: If True, return items flattened into a pandas
+                DataFrame (requires pandas) instead of a list.
+
+        Returns:
+            List of all Project items, or a DataFrame when to_dataframe=True.
+        """
+        from ..response_converter import flatten_items_to_dataframe
+
+        raw_items = paginate(
+            endpoint="/5.1/projects",
+            client=self._client,
+            params=params,
+            verbose=verbose,
+            item_accessor="items",
+        )
+        typed_items: list[Project] = []
+        for item in raw_items:
+            if isinstance(item, dict):
+                project_data = item.get("data", item)
+                if isinstance(project_data, dict):
+                    typed_items.append(Project.model_validate(project_data))
+        if to_dataframe:
+            return flatten_items_to_dataframe(list(typed_items))
+        return typed_items
 
     @overload
     def list_projects(
@@ -57,6 +118,10 @@ class ProjectsApi(DashboardApiMixin):
     ) -> "ProjectsListResponse | list[Project] | pd.DataFrame | None":
         """GET /5.1/projects — List all available projects.
 
+        .. deprecated::
+            Use :meth:`get_all_projects` instead. This method only fetches
+            the first page of results.
+
         Args:
             params: Optional query parameters.
             full_response: If True, return the full ProjectsListResponse
@@ -69,6 +134,12 @@ class ProjectsApi(DashboardApiMixin):
             List of Project items, the full ProjectsListResponse when
             full_response=True, or a DataFrame when to_dataframe=True.
         """
+        warnings.warn(
+            "list_projects() is deprecated and only returns the first page of results. "
+            "Use get_all_projects() instead to fetch all projects with pagination.",
+            DeprecationWarning,
+            stacklevel=2,
+        )
         response = self._client.get("/5.1/projects", params=params)
         result = convert_to_list_response(response, ProjectsListResponse)
         if to_dataframe:

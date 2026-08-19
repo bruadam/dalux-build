@@ -1,8 +1,12 @@
 """Data models for Tasks endpoint."""
 
 from datetime import date, datetime
+from typing import TYPE_CHECKING
 
 from pydantic import BaseModel, ConfigDict, Field, JsonValue, field_validator
+
+if TYPE_CHECKING:
+    from ..users import ProjectUser
 
 
 class Task(BaseModel):
@@ -31,6 +35,7 @@ class TaskChangeActor(BaseModel):
     """Flexible nested actor model used by task change fields."""
 
     user_id: str | None = Field(None, alias="userId")
+    user: "ProjectUser | None" = Field(None)
     role_id: str | None = Field(None, alias="roleId")
     role_name: str | None = Field(None, alias="roleName")
     user_name: str | None = Field(None, alias="userName")

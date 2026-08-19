@@ -21,6 +21,11 @@ from ..utils.file_filter import filter_files_by_name
 from ..utils.pagination import paginate
 from ..utils.path_resolver import resolve_folder_id_from_named_path
 from ..utils.search import find_all_by_field, find_by_field
+from ..utils.user_mapping import (
+    create_company_mapping,
+    create_user_mapping,
+    enrich_response_with_users,
+)
 from ..utils.validation import resolve_file_area_id, resolve_project_id, validate_folder_id
 
 if TYPE_CHECKING:
@@ -233,10 +238,13 @@ class FilesApi(DashboardApiMixin):
         params: QueryParams | None = None,
         verbose: bool = False,
         to_dataframe: Literal[False] = False,
+        include_users: bool = False,
+        include_companies: bool = False,
         *,
         project_id: str | None = None,
         file_area_id: str | None = None,
     ) -> list[FileLike]: ...
+
     @overload
     def get_all_files(
         self,
@@ -244,14 +252,19 @@ class FilesApi(DashboardApiMixin):
         verbose: bool = False,
         *,
         to_dataframe: Literal[True],
+        include_users: bool = False,
+        include_companies: bool = False,
         project_id: str | None = None,
         file_area_id: str | None = None,
     ) -> "pd.DataFrame": ...
+
     def get_all_files(
         self,
         params: QueryParams | None = None,
         verbose: bool = False,
         to_dataframe: bool = False,
+        include_users: bool = False,
+        include_companies: bool = False,
         *,
         project_id: str | None = None,
         file_area_id: str | None = None,
@@ -263,6 +276,10 @@ class FilesApi(DashboardApiMixin):
             verbose: If True, print progress information.
             to_dataframe: If True, return the items flattened into a pandas
                 DataFrame (requires pandas) instead of a list.
+            include_users: If True, replace user_id fields with ProjectUser objects
+                (requires one additional API call to fetch project users).
+            include_companies: If True, replace company_id in ProjectUser objects
+                with ProjectCompany objects (requires one additional API call).
             project_id: Project ID. Falls back to the client's configured default.
             file_area_id: File area ID. Falls back to the client's configured default.
 
@@ -274,6 +291,24 @@ class FilesApi(DashboardApiMixin):
         project_id = resolve_project_id(project_id, self._client.configuration.project_id)
         file_area_id = resolve_file_area_id(file_area_id, self._client.configuration.file_area_id)
 
+        if include_users:
+            from .users import UsersApi
+
+            users_api = UsersApi(self._client)
+            users = users_api.list_project_users(project_id=project_id)
+            user_mapping = create_user_mapping(users)
+        else:
+            user_mapping = None
+
+        if include_companies:
+            from .companies import CompaniesApi
+
+            companies_api = CompaniesApi(self._client)
+            companies = companies_api.list_project_companies(project_id=project_id)
+            company_mapping = create_company_mapping(companies)
+        else:
+            company_mapping = None
+
         endpoint = f"/6.1/projects/{project_id}/file_areas/{file_area_id}/files"
         self._print_endpoint("GET", endpoint, params=params, verbose=verbose)
         raw_items = paginate(endpoint, self._client, params, verbose)
@@ -283,6 +318,19 @@ class FilesApi(DashboardApiMixin):
         for item in raw_items:
             if isinstance(item, dict) and "data" in item:
                 file_data = item["data"]
+                if user_mapping:
+                    file_data = enrich_response_with_users(
+                        file_data,
+                        user_mapping,
+                        {
+                            "uploadedByUserId": "uploadedByUser",
+                            "lastModifiedByUserId": "lastModifiedByUser",
+                        },
+                    )
+                if company_mapping:
+                    file_data = enrich_response_with_users(
+                        file_data, company_mapping, {"companyId": "company"}
+                    )
                 try:
                     file_obj = File.model_validate(file_data)
                     files.append(file_obj)
@@ -661,6 +709,8 @@ class FilesApi(DashboardApiMixin):
         save_path: str | None = None,
         params: QueryParams | None = None,
         verbose: bool = False,
+        include_users: bool = False,
+        include_companies: bool = False,
         *,
         path: str | None = None,
         project_id: str | None = None,
@@ -681,6 +731,10 @@ class FilesApi(DashboardApiMixin):
             save_path: Optional directory to save the file (default: current directory).
             params: Optional additional query parameters used for path-based resolution.
             verbose: If True, print progress information for path-based resolution.
+            include_users: If True, replace user_id fields with ProjectUser objects
+                (requires one additional API call to fetch project users).
+            include_companies: If True, replace company_id in ProjectUser objects
+                with ProjectCompany objects (requires one additional API call).
             path: A full path starting with the file area name, e.g.
                 ``"Files/folder/.../file.ext"``. Alternative to *file_id* +
                 *file_area_id*.
@@ -742,6 +796,32 @@ class FilesApi(DashboardApiMixin):
         response = self._client.get(
             f"/5.0/projects/{project_id}/file_areas/{file_area_id}/files/{file_id}"
         )
+
+        if include_users and isinstance(response, dict):
+            from .users import UsersApi
+
+            users_api = UsersApi(self._client)
+            users = users_api.list_project_users(project_id=project_id)
+            user_mapping = create_user_mapping(users)
+            response = enrich_response_with_users(
+                response,
+                user_mapping,
+                {
+                    "uploadedByUserId": "uploadedByUser",
+                    "lastModifiedByUserId": "lastModifiedByUser",
+                },
+            )
+
+        if include_companies and isinstance(response, dict):
+            from .companies import CompaniesApi
+
+            companies_api = CompaniesApi(self._client)
+            companies = companies_api.list_project_companies(project_id=project_id)
+            company_mapping = create_company_mapping(companies)
+            response = enrich_response_with_users(
+                response, company_mapping, {"companyId": "company"}
+            )
+
         file_info = convert_to_model(response, FileResponse)
 
         if download and file_info:

@@ -2,9 +2,12 @@
 
 import datetime
 from datetime import date
-from typing import Literal
+from typing import TYPE_CHECKING, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, JsonValue
+
+if TYPE_CHECKING:
+    from ..users import ProjectUser
 
 
 class Reference(BaseModel):
@@ -117,8 +120,10 @@ class File(BaseModel):
     file_area_id: str = Field(..., alias="fileAreaId")
     folder_id: str | None = Field(None, alias="folderId")
     uploaded_by_user_id: str | None = Field(None, alias="uploadedByUserId")
+    uploaded_by_user: "ProjectUser | None" = Field(None)
     uploaded: date | None = None
     last_modified_by_user_id: str | None = Field(None, alias="lastModifiedByUserId")
+    last_modified_by_user: "ProjectUser | None" = Field(None)
     last_modified: date | None = Field(None, alias="lastModified")
     version: str | None = None
     deleted: bool | None = False

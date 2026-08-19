@@ -23,6 +23,7 @@ from ..response_converter import (
     to_dataframe_or_empty,
 )
 from ..utils.pagination import paginate
+from ..utils.user_mapping import create_user_mapping, enrich_response_with_users
 from ..utils.validation import resolve_project_id
 
 if TYPE_CHECKING:
@@ -68,9 +69,11 @@ class TasksApi(DashboardApiMixin):
         params: QueryParams | TaskListParams | None = None,
         full_response: Literal[False] = False,
         to_dataframe: Literal[False] = False,
+        include_users: bool = False,
         *,
         project_id: str | None = None,
     ) -> list[Task]: ...
+
     @overload
     def get_project_tasks(
         self,
@@ -78,8 +81,10 @@ class TasksApi(DashboardApiMixin):
         *,
         full_response: Literal[True],
         to_dataframe: Literal[False] = False,
+        include_users: bool = False,
         project_id: str | None = None,
     ) -> TasksListResponse | None: ...
+
     @overload
     def get_project_tasks(
         self,
@@ -87,13 +92,16 @@ class TasksApi(DashboardApiMixin):
         full_response: bool = ...,
         *,
         to_dataframe: Literal[True],
+        include_users: bool = False,
         project_id: str | None = None,
     ) -> "pd.DataFrame": ...
+
     def get_project_tasks(
         self,
         params: QueryParams | TaskListParams | None = None,
         full_response: bool = False,
         to_dataframe: bool = False,
+        include_users: bool = False,
         *,
         project_id: str | None = None,
     ) -> "TasksListResponse | list[Task] | pd.DataFrame | None":
@@ -109,6 +117,8 @@ class TasksApi(DashboardApiMixin):
                 just the list of Task items.
             to_dataframe: If True, return the items flattened into a pandas
                 DataFrame (requires pandas). Takes precedence over full_response.
+            include_users: If True, replace user_id fields with ProjectUser objects
+                (requires one additional API call to fetch project users).
             project_id: Project ID. Falls back to the client's configured default.
 
         Returns:
@@ -120,6 +130,15 @@ class TasksApi(DashboardApiMixin):
             f"/5.2/projects/{project_id}/tasks",
             params=_normalize_task_params(params),
         )
+
+        if include_users and isinstance(response, dict):
+            from .users import UsersApi
+
+            users_api = UsersApi(self._client)
+            users = users_api.list_project_users(project_id=project_id)
+            user_mapping = create_user_mapping(users)
+            response = enrich_response_with_users(response, user_mapping, {"userId": "user"})
+
         result = convert_to_list_response(response, TasksListResponse)
         if to_dataframe:
             return to_dataframe_or_empty(result)
@@ -133,9 +152,11 @@ class TasksApi(DashboardApiMixin):
         params: QueryParams | TaskListParams | None = None,
         verbose: bool = False,
         to_dataframe: Literal[False] = False,
+        include_users: bool = False,
         *,
         project_id: str | None = None,
     ) -> list[Task]: ...
+
     @overload
     def get_all_project_tasks(
         self,
@@ -143,13 +164,16 @@ class TasksApi(DashboardApiMixin):
         verbose: bool = False,
         *,
         to_dataframe: Literal[True],
+        include_users: bool = False,
         project_id: str | None = None,
     ) -> "pd.DataFrame": ...
+
     def get_all_project_tasks(
         self,
         params: QueryParams | TaskListParams | None = None,
         verbose: bool = False,
         to_dataframe: bool = False,
+        include_users: bool = False,
         *,
         project_id: str | None = None,
     ) -> "list[Task] | pd.DataFrame":
@@ -180,6 +204,8 @@ class TasksApi(DashboardApiMixin):
                 :meth:`FilesApi.get_all_files`, plus the next page URL when present.
             to_dataframe: If True, return the items flattened into a pandas
                 DataFrame (requires pandas) instead of a list.
+            include_users: If True, replace user_id fields with ProjectUser objects
+                (requires one additional API call to fetch project users).
             project_id: Project ID. Falls back to the client's configured default.
         """
         project_id = resolve_project_id(project_id, self._client.configuration.project_id)
@@ -293,9 +319,11 @@ class TasksApi(DashboardApiMixin):
         params: QueryParams | None = None,
         full_response: Literal[False] = False,
         to_dataframe: Literal[False] = False,
+        include_users: bool = False,
         *,
         project_id: str | None = None,
     ) -> list[TaskChange]: ...
+
     @overload
     def get_project_task_changes(
         self,
@@ -303,8 +331,10 @@ class TasksApi(DashboardApiMixin):
         *,
         full_response: Literal[True],
         to_dataframe: Literal[False] = False,
+        include_users: bool = False,
         project_id: str | None = None,
     ) -> TaskChanges | None: ...
+
     @overload
     def get_project_task_changes(
         self,
@@ -312,13 +342,16 @@ class TasksApi(DashboardApiMixin):
         full_response: bool = ...,
         *,
         to_dataframe: Literal[True],
+        include_users: bool = False,
         project_id: str | None = None,
     ) -> "pd.DataFrame": ...
+
     def get_project_task_changes(
         self,
         params: QueryParams | None = None,
         full_response: bool = False,
         to_dataframe: bool = False,
+        include_users: bool = False,
         *,
         project_id: str | None = None,
     ) -> "TaskChanges | list[TaskChange] | pd.DataFrame | None":
@@ -331,6 +364,8 @@ class TasksApi(DashboardApiMixin):
                 just the list of TaskChange items.
             to_dataframe: If True, return the items flattened into a pandas
                 DataFrame (requires pandas). Takes precedence over full_response.
+            include_users: If True, replace user_id fields with ProjectUser objects
+                (requires one additional API call to fetch project users).
             project_id: Project ID. Falls back to the client's configured default.
 
         Returns:
@@ -339,6 +374,24 @@ class TasksApi(DashboardApiMixin):
         """
         project_id = resolve_project_id(project_id, self._client.configuration.project_id)
         response = self._client.get(f"/2.2/projects/{project_id}/tasks/changes", params=params)
+
+        if include_users and isinstance(response, dict):
+            from .users import UsersApi
+
+            users_api = UsersApi(self._client)
+            users = users_api.list_project_users(project_id=project_id)
+            user_mapping = create_user_mapping(users)
+            response = enrich_response_with_users(
+                response,
+                user_mapping,
+                {
+                    "userId": "user",
+                    "modifiedBy": "modifiedBy",
+                    "assignedTo": "assignedTo",
+                    "currentResponsible": "currentResponsible",
+                },
+            )
+
         result = convert_to_list_response(response, TaskChanges)
         if to_dataframe:
             return to_dataframe_or_empty(result)
@@ -352,9 +405,11 @@ class TasksApi(DashboardApiMixin):
         params: QueryParams | None = None,
         verbose: bool = False,
         to_dataframe: Literal[False] = False,
+        include_users: bool = False,
         *,
         project_id: str | None = None,
     ) -> list[TaskChange]: ...
+
     @overload
     def get_all_project_task_changes(
         self,
@@ -362,13 +417,16 @@ class TasksApi(DashboardApiMixin):
         verbose: bool = False,
         *,
         to_dataframe: Literal[True],
+        include_users: bool = False,
         project_id: str | None = None,
     ) -> "pd.DataFrame": ...
+
     def get_all_project_task_changes(
         self,
         params: QueryParams | None = None,
         verbose: bool = False,
         to_dataframe: bool = False,
+        include_users: bool = False,
         *,
         project_id: str | None = None,
     ) -> "list[TaskChange] | pd.DataFrame":
@@ -380,6 +438,8 @@ class TasksApi(DashboardApiMixin):
             verbose: If ``True``, print page-by-page pagination progress.
             to_dataframe: If True, return the items flattened into a pandas
                 DataFrame (requires pandas) instead of a list.
+            include_users: If True, replace user_id fields with ProjectUser objects
+                (requires one additional API call to fetch project users).
             project_id: Project ID. Falls back to the client's configured default.
 
         Returns:
@@ -387,6 +447,16 @@ class TasksApi(DashboardApiMixin):
             DataFrame when to_dataframe=True.
         """
         project_id = resolve_project_id(project_id, self._client.configuration.project_id)
+
+        if include_users:
+            from .users import UsersApi
+
+            users_api = UsersApi(self._client)
+            users = users_api.list_project_users(project_id=project_id)
+            user_mapping = create_user_mapping(users)
+        else:
+            user_mapping = None
+
         raw_items = paginate(
             endpoint=f"/2.2/projects/{project_id}/tasks/changes",
             client=self._client,
@@ -397,6 +467,17 @@ class TasksApi(DashboardApiMixin):
         typed_items: list[TaskChange] = []
         for item in raw_items:
             if isinstance(item, dict):
+                if user_mapping:
+                    item = enrich_response_with_users(
+                        item,
+                        user_mapping,
+                        {
+                            "userId": "user",
+                            "modifiedBy": "modifiedBy",
+                            "assignedTo": "assignedTo",
+                            "currentResponsible": "currentResponsible",
+                        },
+                    )
                 typed_items.append(TaskChange.model_validate(item))
         if to_dataframe:
             return flatten_items_to_dataframe(list(typed_items))

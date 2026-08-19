@@ -1,6 +1,11 @@
 """Data models for Users endpoint."""
 
+from typing import TYPE_CHECKING
+
 from pydantic import BaseModel, ConfigDict, EmailStr, Field
+
+if TYPE_CHECKING:
+    from ..projects import ProjectCompany
 
 
 class User(BaseModel):
@@ -19,5 +24,6 @@ class ProjectUser(User):
     """Project user model."""
 
     company_id: str | None = Field(None, alias="companyId")
+    company: "ProjectCompany | None" = Field(None)
 
     model_config = ConfigDict(populate_by_name=True)

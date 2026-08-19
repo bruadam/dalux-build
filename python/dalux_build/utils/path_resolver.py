@@ -127,10 +127,6 @@ def resolve_folder_id_from_named_path(
         else:
             key_parent = None
 
-        if verbose:
-            parent_label = "root" if key_parent is None else f"folder {key_parent}"
-            print(f"  Indexed: {folder_name!r} under {parent_label}")
-
         folder_index[(key_parent, folder_name)] = fid
 
     parent_folder_id: str | None = None

@@ -4,3 +4,6 @@
 [submodule "dalux-build-tuto"]
 	path = dalux-build-tuto
 	url = https://github.com/bruadam/dalux-build-tuto.git
+[submodule "webhook-ui"]
+	path = webhook-ui
+	url = https://github.com/bruadam/dalux-wehbooks-ui.git

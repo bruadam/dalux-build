@@ -259,8 +259,8 @@ class TestFilesPydantic:
     """Verify FilesApi returns Pydantic models."""
 
     @rsps_lib.activate
-    def test_get_all_files_to_dataframe_flattens_nested_fields(self):
-        """get_all_files(to_dataframe=True) should return a flattened DataFrame."""
+    def test_get_files_to_dataframe_flattens_nested_fields(self):
+        """get_files(to_dataframe=True) should return a flattened DataFrame."""
         pd = pytest.importorskip("pandas")
         _reg(
             rsps_lib.GET,
@@ -279,19 +279,19 @@ class TestFilesPydantic:
             },
         )
         api = FilesApi(_make_client())
-        df = api.get_all_files(to_dataframe=True, project_id="p1", file_area_id="fa1")
+        df = api.get_files(to_dataframe=True, project_id="p1", file_area_id="fa1")
 
         assert isinstance(df, pd.DataFrame)
         assert "fileId" in df.columns
         assert df.loc[0, "fileId"] == "f1"
 
     @rsps_lib.activate
-    def test_get_all_files_to_dataframe_empty_when_no_items(self):
+    def test_get_files_to_dataframe_empty_when_no_items(self):
         """to_dataframe=True should return an empty DataFrame, not raise, for no items."""
         pd = pytest.importorskip("pandas")
         _reg(rsps_lib.GET, "/6.1/projects/p1/file_areas/fa1/files", body={"items": []})
         api = FilesApi(_make_client())
-        df = api.get_all_files(to_dataframe=True, project_id="p1", file_area_id="fa1")
+        df = api.get_files(to_dataframe=True, project_id="p1", file_area_id="fa1")
 
         assert isinstance(df, pd.DataFrame)
         assert df.empty
@@ -332,7 +332,7 @@ class TestFilesPydantic:
             }
         )
 
-        def fake_get_all_files_in_folder(
+        def fake_get_files_in_folder(
             folder_id=None,
             params=None,
             verbose=False,
@@ -345,7 +345,7 @@ class TestFilesPydantic:
             assert folder_id is None
             return [file_obj]
 
-        monkeypatch.setattr(api, "get_all_files_in_folder", fake_get_all_files_in_folder)
+        monkeypatch.setattr(api, "get_files_in_folder", fake_get_files_in_folder)
         rsps_lib.add(rsps_lib.GET, "https://download.example.com/f1", body="content", status=200)
 
         results = api.bulk_download_folder(
@@ -394,7 +394,7 @@ class TestFilesPydantic:
 
         monkeypatch.setattr(
             api,
-            "get_all_files_in_folder",
+            "get_files_in_folder",
             lambda *args, **kwargs: [file_obj],
         )
 
@@ -432,7 +432,7 @@ class TestFilesPydantic:
 
         monkeypatch.setattr(
             api,
-            "get_all_files_in_folder",
+            "get_files_in_folder",
             lambda *args, **kwargs: [file_obj],
         )
         rsps_lib.add(rsps_lib.GET, "https://download.example.com/f1", body="content", status=200)
@@ -482,7 +482,7 @@ class TestFilesPydantic:
 
         monkeypatch.setattr(
             api,
-            "get_all_files_in_folder",
+            "get_files_in_folder",
             lambda *args, **kwargs: [file_obj],
         )
         rsps_lib.add(rsps_lib.GET, "https://download.example.com/f1", body="new", status=200)
@@ -532,7 +532,7 @@ class TestFilesPydantic:
 
         monkeypatch.setattr(
             api,
-            "get_all_files_in_folder",
+            "get_files_in_folder",
             lambda *args, **kwargs: [file_obj],
         )
         monkeypatch.setattr(api, "_download_file_from_link", fail_download)
@@ -694,8 +694,8 @@ class TestTasksPydantic:
         assert isinstance(response, TaskResponse)
 
     @rsps_lib.activate
-    def test_get_all_project_tasks_returns_typed_items(self):
-        """get_all_project_tasks should return list[ApiTaskGet]."""
+    def test_get_project_tasks_returns_typed_items(self):
+        """get_project_tasks should return list[ApiTaskGet]."""
         page1 = {
             "items": [{"data": {"taskId": "t1", "title": "Task 1"}}],
             "metadata": {"totalRemainingItems": 1},
@@ -716,7 +716,7 @@ class TestTasksPydantic:
         rsps_lib.add(rsps_lib.GET, f"{BASE_URL}/5.2/projects/p1/tasks", json=page2, status=200)
 
         api = TasksApi(_make_client())
-        response = api.get_all_project_tasks(project_id="p1")
+        response = api.get_project_tasks(project_id="p1")
 
         assert len(response) == 2
         assert all(isinstance(item, Task) for item in response)
@@ -724,8 +724,8 @@ class TestTasksPydantic:
         assert response[1].task_id == "t2"
 
     @rsps_lib.activate
-    def test_get_all_project_tasks_to_dataframe_flattens_nested_fields(self):
-        """get_all_project_tasks(to_dataframe=True) should return a flattened DataFrame."""
+    def test_get_project_tasks_to_dataframe_flattens_nested_fields(self):
+        """get_project_tasks(to_dataframe=True) should return a flattened DataFrame."""
         pd = pytest.importorskip("pandas")
         page1 = {
             "items": [{"data": {"taskId": "t1", "type": {"typeId": "ty1", "name": "Observation"}}}],
@@ -735,7 +735,7 @@ class TestTasksPydantic:
         rsps_lib.add(rsps_lib.GET, f"{BASE_URL}/5.2/projects/p1/tasks", json=page1, status=200)
 
         api = TasksApi(_make_client())
-        df = api.get_all_project_tasks(to_dataframe=True, project_id="p1")
+        df = api.get_project_tasks(to_dataframe=True, project_id="p1")
 
         assert isinstance(df, pd.DataFrame)
         assert "taskId" in df.columns
@@ -743,8 +743,8 @@ class TestTasksPydantic:
         assert df.loc[0, "type::typeId"] == "ty1"
 
     @rsps_lib.activate
-    def test_get_all_project_task_changes_returns_typed_items(self):
-        """get_all_project_task_changes should return list[TaskChange]."""
+    def test_get_project_task_changes_returns_typed_items(self):
+        """get_project_task_changes should return list[TaskChange]."""
         page1 = {
             "items": [
                 {
@@ -785,7 +785,7 @@ class TestTasksPydantic:
         )
 
         api = TasksApi(_make_client())
-        response = api.get_all_project_task_changes(project_id="p1")
+        response = api.get_project_task_changes(project_id="p1")
 
         assert len(response) == 2
         assert all(isinstance(item, TaskChange) for item in response)
@@ -793,7 +793,7 @@ class TestTasksPydantic:
         assert response[1].task_id == "t2"
 
     @rsps_lib.activate
-    def test_get_all_project_task_changes_parses_wrapped_deadline(self):
+    def test_get_project_task_changes_parses_wrapped_deadline(self):
         """Task change fields.deadline can be wrapped as {'value': iso_datetime}."""
         _reg(
             rsps_lib.GET,
@@ -813,14 +813,14 @@ class TestTasksPydantic:
             },
         )
         api = TasksApi(_make_client())
-        response = api.get_all_project_task_changes(project_id="p1")
+        response = api.get_project_task_changes(project_id="p1")
 
         assert len(response) == 1
         assert response[0].fields is not None
         assert response[0].fields.deadline is not None
 
     @rsps_lib.activate
-    def test_get_all_project_task_changes_parses_empty_deadline_wrapper(self):
+    def test_get_project_task_changes_parses_empty_deadline_wrapper(self):
         """Task change fields.deadline can be wrapped as {'empty': true}."""
         _reg(
             rsps_lib.GET,
@@ -840,7 +840,7 @@ class TestTasksPydantic:
             },
         )
         api = TasksApi(_make_client())
-        response = api.get_all_project_task_changes(project_id="p1")
+        response = api.get_project_task_changes(project_id="p1")
 
         assert len(response) == 1
         assert response[0].fields is not None

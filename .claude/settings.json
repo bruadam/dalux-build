@@ -6,7 +6,34 @@
       "Bash(npm view *)",
       "Bash(git commit -m 'fix: properly import ProjectCompany and ProjectUser to resolve Pydantic validation errors *)",
       "Bash(python -m py_compile python/dalux_build/utils/user_mapping.py python/dalux_build/api/files.py)",
-      "Bash(git commit -m 'fix: remove duplicate ID fields and enrich users with companies *)"
+      "Bash(git commit -m 'fix: remove duplicate ID fields and enrich users with companies *)",
+      "Bash(git diff *)",
+      "Bash(python3 -c \"from dalux_build import AiMixin, HealthReport, AiAnalysisResult, AIProviderManager, ProviderType; print\\('✓ All imports successful'\\)\")",
+      "Bash(python3)",
+      "Bash(ANTHROPIC_API_KEY=\"sk-ant-test\" MISTRAL_API_KEY=\"mistral-test\" OPENAI_API_KEY=\"sk-test\" python3)",
+      "Bash(python3 -c \"from mistralai.client import Mistral; print\\('Found Mistral'\\)\")",
+      "Bash(python3 -c \"import mistralai.client as c; print\\(dir\\(c\\)\\)\")",
+      "Bash(curl -s https://pypi.org/pypi/ai/json)",
+      "Bash(unset VIRTUAL_ENV)",
+      "Bash(uv sync *)",
+      "Bash(python3 -c \"import ai; print\\('✓ ai package imported successfully'\\)\")",
+      "Bash(python3 -c \"import ai; print\\('✓ ai installed'\\)\")",
+      "Bash(cat > *)",
+      "Bash(python3 -c \"import mistralai; print\\(dir\\(mistralai\\)\\)\")",
+      "Bash(python -c ' *)",
+      "Bash(git commit -m 'feat: add created_by_user and company to Task model *)",
+      "Bash(curl -s \"https://docs.mistral.ai/api/endpoint/ocr\")",
+      "Bash(python3 -c \"from mistralai.types import OCRDocumentFileChunk, OCRDocumentUrl; import inspect; print\\('OCRDocumentUrl fields:'\\); print\\(inspect.signature\\(OCRDocumentUrl\\)\\); print\\('\\\\nOCRDocumentFileChunk fields:'\\); print\\(inspect.signature\\(OCRDocumentFileChunk\\)\\)\")",
+      "Bash(python -m mypy python/dalux_build/ --ignore-missing-imports)",
+      "Bash(python -m ruff check python/dalux_build/models/files/models.py --select E501,B007)",
+      "Bash(python -m ruff check python/dalux_build/models/files/models.py --select E501)",
+      "Bash(python -m ruff check python/dalux_build/ --select ANN401)",
+      "Bash(python -m ruff check python/dalux_build/)",
+      "Skill(commit-commands:commit-push-pr)",
+      "Skill(commit-commands:commit-push-pr:*)"
+    ],
+    "additionalDirectories": [
+      "/tmp"
     ]
   }
 }

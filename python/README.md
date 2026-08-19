@@ -148,7 +148,7 @@ dalux = create_client(
 )
 
 dalux.tasks.get_project_tasks()  # uses the default project_id
-dalux.files.list_files()  # uses the default project_id + file_area_id
+dalux.files.get_files()  # uses the default project_id + file_area_id
 dalux.tasks.get_project_tasks(project_id="other-project-id")  # explicit value wins
 ```
 
@@ -157,13 +157,13 @@ client default; a `ValidationError` is raised if neither is available.
 
 ### `full_response`
 
-List/collection methods (`list_projects`, `get_project_tasks`, `list_files`, …)
-default to returning just the plain `list[...]` of items. Pass
-`full_response=True` to get the full response model instead, which also exposes
-`.metadata` (pagination info) and `.links`:
+Single-page list methods (`list_projects`, `list_files`, …) default to returning
+just the plain `list[...]` of items. Pass `full_response=True` to get the full
+response model instead, which also exposes `.metadata` (pagination info) and `.links`:
 
 ```python
-files = dalux.files.list_files(project_id="p1", file_area_id="fa1")  # list[File]
+files = dalux.files.get_files(project_id="p1", file_area_id="fa1")  # list[File]
+# Note: get_files() paginates automatically; for single-page results, use list_files()
 
 response = dalux.files.list_files(project_id="p1", file_area_id="fa1", full_response=True)
 response.items  # same list[File]
@@ -188,13 +188,13 @@ response = dalux.tasks.get_project_tasks(project_id="p1", full_response=True)
 df = response.to_dataframe() if response else pd.DataFrame()
 ```
 
-The paginated `get_all_*` helpers (`get_all_files`, `get_all_folders`,
-`get_all_project_tasks`, `get_all_inspection_plans`, …) accept
-`to_dataframe=True` too — they have no `full_response` mode (they return a bare
-list already), but flatten the same way:
+The primary paginated methods (`get_files`, `get_folders`,
+`get_project_tasks`, `list_inspection_plans`, …) automatically follow
+pagination and accept `to_dataframe=True` too — they have no `full_response` mode
+(they return a bare list already), but flatten the same way:
 
 ```python
-df = dalux.files.get_all_files(project_id="p1", file_area_id="fa1", to_dataframe=True)
+df = dalux.files.get_files(project_id="p1", file_area_id="fa1", to_dataframe=True)
 ```
 
 ## Authentication
@@ -292,10 +292,9 @@ Account-level (not project-scoped) — no `project_id`.
 
 | Method                                                                               | HTTP            | Path                                          |
 | ------------------------------------------------------------------------------------ | --------------- | --------------------------------------------- |
-| `get_project_tasks(params=None, full_response=False, *, project_id=None)`            | GET             | `/5.1/projects/{projectId}/tasks`             |
+| `get_project_tasks(params=None, verbose=False, *, project_id=None)`                  | GET (paginated) | `/5.1/projects/{projectId}/tasks`             |
 | `get_task(task_id, *, project_id=None)`                                              | GET             | `/3.3/projects/{projectId}/tasks/{taskId}`    |
-| `get_project_task_changes(params=None, full_response=False, *, project_id=None)`     | GET             | `/2.2/projects/{projectId}/tasks/changes`     |
-| `get_all_project_task_changes(params=None, verbose=False, *, project_id=None)`       | GET (paginated) | `/2.2/projects/{projectId}/tasks/changes`     |
+| `get_project_task_changes(params=None, verbose=False, *, project_id=None)`           | GET (paginated) | `/2.2/projects/{projectId}/tasks/changes`     |
 | `get_project_task_attachments(params=None, full_response=False, *, project_id=None)` | GET             | `/1.1/projects/{projectId}/tasks/attachments` |
 
 ### FileAreasApi
@@ -307,17 +306,17 @@ Account-level (not project-scoped) — no `project_id`.
 
 ### FilesApi
 
-Browse (`list_files`, `get_all_files`, …) uses **GET
-`/6.1/projects/{projectId}/file_areas/{fileAreaId}/files`**. `get_file` uses
-**5.0** for a single file id (Dalux Build API 4.14).
+Browse (`get_files`, `get_files_in_folder`, …) uses **GET
+`/6.1/projects/{projectId}/file_areas/{fileAreaId}/files`** with automatic pagination.
+Single-page access via `list_files`. `get_file` uses **5.0** for a single file id (Dalux Build API 4.14).
 
-| Method                                                                                      | HTTP | Path                                                               |
-| ------------------------------------------------------------------------------------------- | ---- | ------------------------------------------------------------------ |
-| `list_files(params=None, full_response=False, *, project_id=None, file_area_id=None)`       | GET  | `/6.1/projects/{projectId}/file_areas/{fileAreaId}/files`          |
-| `get_all_files` / `get_all_files_in_folder` / bulk helpers                                  | GET  | Same **6.1** browse path (pagination or filtering in the client)   |
-| `get_file(file_id=None, ..., *, path=None, project_id=None, file_area_id=None)`             | GET  | `/5.0/projects/{projectId}/file_areas/{fileAreaId}/files/{fileId}` |
-| `get_file_properties_mapping(file_id, *, project_id=None, file_area_id=None)`               | GET  | `/1.0/.../files/{fileId}/properties/1.0/mappings`                  |
-| `get_file_property_mapping_values(file_property_id, *, project_id=None, file_area_id=None)` | GET  | `/1.0/.../files/properties/1.0/mappings/{filePropertyId}/values`   |
+| Method                                                                                      | HTTP            | Path                                                               |
+| ------------------------------------------------------------------------------------------- | --------------- | ------------------------------------------------------------------ |
+| `list_files(params=None, full_response=False, *, project_id=None, file_area_id=None)`       | GET             | `/6.1/projects/{projectId}/file_areas/{fileAreaId}/files`          |
+| `get_files` / `get_files_in_folder` / bulk helpers                                          | GET (paginated) | Same **6.1** browse path (pagination in the client)                |
+| `get_file(file_id=None, ..., *, path=None, project_id=None, file_area_id=None)`             | GET             | `/5.0/projects/{projectId}/file_areas/{fileAreaId}/files/{fileId}` |
+| `get_file_properties_mapping(file_id, *, project_id=None, file_area_id=None)`               | GET             | `/1.0/.../files/{fileId}/properties/1.0/mappings`                  |
+| `get_file_property_mapping_values(file_property_id, *, project_id=None, file_area_id=None)` | GET             | `/1.0/.../files/properties/1.0/mappings/{filePropertyId}/values`   |
 
 `bulk_download_files`' own `file_area_id` parameter is the exception: passing
 `None` there selects path-based resolution and is intentionally **not**
@@ -325,11 +324,12 @@ backfilled from the client default.
 
 ### FoldersApi
 
-| Method                                                                                  | HTTP | Path                                                        |
-| --------------------------------------------------------------------------------------- | ---- | ----------------------------------------------------------- |
-| `list_folders(params=None, full_response=False, *, project_id=None, file_area_id=None)` | GET  | `/5.1/.../folders`                                          |
-| `get_folder(folder_id, *, project_id=None, file_area_id=None)`                          | GET  | `/5.0/.../folders/{folderId}`                               |
-| `get_folder_files_properties(folder_id, *, project_id=None, file_area_id=None)`         | GET  | `/1.0/.../folders/{folderId}/files/properties/1.0/mappings` |
+| Method                                                                                  | HTTP            | Path                                                        |
+| --------------------------------------------------------------------------------------- | --------------- | ----------------------------------------------------------- |
+| `list_folders(params=None, full_response=False, *, project_id=None, file_area_id=None)` | GET             | `/5.1/.../folders`                                          |
+| `get_folders(params=None, verbose=False, *, project_id=None, file_area_id=None)`        | GET (paginated) | `/5.1/.../folders`                                          |
+| `get_folder(folder_id, *, project_id=None, file_area_id=None)`                          | GET             | `/5.0/.../folders/{folderId}`                               |
+| `get_folder_files_properties(folder_id, *, project_id=None, file_area_id=None)`         | GET             | `/1.0/.../folders/{folderId}/files/properties/1.0/mappings` |
 
 ### FileUploadApi
 

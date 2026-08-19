@@ -528,8 +528,8 @@ def render(client: DaluxClient, options: JSONDict) -> None:
 
     st.set_page_config(page_title=title, layout="wide")
     st.title(title)
-    tasks = client.tasks.get_all_project_tasks(params=_query_params(options), project_id=project_id)
-    changes = client.tasks.get_all_project_task_changes(project_id=project_id)
+    tasks = client.tasks.get_project_tasks(params=_query_params(options), project_id=project_id)
+    changes = client.tasks.get_project_task_changes(project_id=project_id)
 
     users = client.users.list_project_users(project_id=project_id)
     companies = client.companies.list_project_companies(project_id=project_id)

@@ -249,7 +249,7 @@ class TestCompanyCatalogApi:
 
 class TestTasksApi:
     @rsps_lib.activate
-    def test_get_all_project_tasks_follows_pagination(self):
+    def test_get_project_tasks_follows_pagination(self):
         page1 = {
             "items": [{"data": {"taskId": "t1"}}],
             "metadata": {"totalItems": 2, "totalRemainingItems": 1},
@@ -268,15 +268,15 @@ class TestTasksApi:
         }
         rsps_lib.add(rsps_lib.GET, f"{BASE_URL}/5.2/projects/p1/tasks", json=page1, status=200)
         rsps_lib.add(rsps_lib.GET, f"{BASE_URL}/5.2/projects/p1/tasks", json=page2, status=200)
-        result = TasksApi(_make_client()).get_all_project_tasks(project_id="p1")
+        result = TasksApi(_make_client()).get_project_tasks(project_id="p1")
         assert len(result) == 2
         assert isinstance(result[0], Task)
         assert result[0].task_id == "t1"
         assert result[1].task_id == "t2"
 
     @rsps_lib.activate
-    def test_get_all_project_tasks_stops_when_total_remaining_zero_ignores_next_link(self):
-        """Same idea as get_all_files: remaining=0 ends pagination even if nextPage exists."""
+    def test_get_project_tasks_stops_when_total_remaining_zero_ignores_next_link(self):
+        """Same idea as get_files: remaining=0 ends pagination even if nextPage exists."""
         page1 = {
             "items": [{"data": {"taskId": "t1"}}],
             "metadata": {"totalRemainingItems": 1},
@@ -301,13 +301,13 @@ class TestTasksApi:
         }
         rsps_lib.add(rsps_lib.GET, f"{BASE_URL}/5.2/projects/p1/tasks", json=page1, status=200)
         rsps_lib.add(rsps_lib.GET, f"{BASE_URL}/5.2/projects/p1/tasks", json=page2, status=200)
-        result = TasksApi(_make_client()).get_all_project_tasks(project_id="p1")
+        result = TasksApi(_make_client()).get_project_tasks(project_id="p1")
         assert len(result) == 2
         assert all(isinstance(item, Task) for item in result)
         assert len(rsps_lib.calls) == 2
 
     @rsps_lib.activate
-    def test_get_all_project_tasks_verbose_matches_files_when_total_remaining(self, capsys):
+    def test_get_project_tasks_verbose_matches_files_when_total_remaining(self, capsys):
         page1 = {
             "items": [{"data": {"taskId": "t1"}}],
             "metadata": {"totalRemainingItems": 1},
@@ -326,14 +326,14 @@ class TestTasksApi:
         }
         rsps_lib.add(rsps_lib.GET, f"{BASE_URL}/5.2/projects/p1/tasks", json=page1, status=200)
         rsps_lib.add(rsps_lib.GET, f"{BASE_URL}/5.2/projects/p1/tasks", json=page2, status=200)
-        TasksApi(_make_client()).get_all_project_tasks(verbose=True, project_id="p1")
+        TasksApi(_make_client()).get_project_tasks(verbose=True, project_id="p1")
         out = capsys.readouterr().out
         assert "Retrieved 1 tasks so far, 1 remaining..." in out
         assert "Retrieved 2 tasks so far, 0 remaining..." in out
         assert "Done. Total tasks retrieved: 2" in out
 
     @rsps_lib.activate
-    def test_get_all_project_tasks_verbose_uses_total_items_when_no_total_remaining(self, capsys):
+    def test_get_project_tasks_verbose_uses_total_items_when_no_total_remaining(self, capsys):
         """Tasks list may only return totalItems; last page may report 0."""
         page1 = {
             "items": [{"data": {"taskId": "t1"}}],
@@ -353,14 +353,14 @@ class TestTasksApi:
         }
         rsps_lib.add(rsps_lib.GET, f"{BASE_URL}/5.2/projects/p1/tasks", json=page1, status=200)
         rsps_lib.add(rsps_lib.GET, f"{BASE_URL}/5.2/projects/p1/tasks", json=page2, status=200)
-        TasksApi(_make_client()).get_all_project_tasks(verbose=True, project_id="p1")
+        TasksApi(_make_client()).get_project_tasks(verbose=True, project_id="p1")
         out = capsys.readouterr().out
         assert "Retrieved 1 tasks so far, 1 remaining..." in out
         assert "Retrieved 2 tasks so far, 0 remaining..." in out
         assert "Done. Total tasks retrieved: 2" in out
 
     @rsps_lib.activate
-    def test_get_all_project_tasks_total_items_ceiling_stops_when_metadata_stuck(self):
+    def test_get_project_tasks_total_items_ceiling_stops_when_metadata_stuck(self):
         """totalItems can stay >0 with nextPage; max(totalItems) caps rows (Dalux quirk)."""
         page1 = {
             "items": [{"data": {"taskId": "a"}}],
@@ -398,12 +398,12 @@ class TestTasksApi:
         rsps_lib.add(rsps_lib.GET, f"{BASE_URL}/5.2/projects/p1/tasks", json=page1, status=200)
         rsps_lib.add(rsps_lib.GET, f"{BASE_URL}/5.2/projects/p1/tasks", json=page2, status=200)
         rsps_lib.add(rsps_lib.GET, f"{BASE_URL}/5.2/projects/p1/tasks", json=page3, status=200)
-        result = TasksApi(_make_client()).get_all_project_tasks(project_id="p1")
+        result = TasksApi(_make_client()).get_project_tasks(project_id="p1")
         assert [x.task_id for x in result] == ["a", "b", "c"]
         assert len(rsps_lib.calls) == 3
 
     @rsps_lib.activate
-    def test_get_all_project_tasks_keeps_type_id_filter_during_pagination(self):
+    def test_get_project_tasks_keeps_type_id_filter_during_pagination(self):
         page1 = {
             "items": [{"data": {"taskId": "t1"}}],
             "metadata": {"totalRemainingItems": 1},
@@ -422,7 +422,7 @@ class TestTasksApi:
         }
         rsps_lib.add(rsps_lib.GET, f"{BASE_URL}/5.2/projects/p1/tasks", json=page1, status=200)
         rsps_lib.add(rsps_lib.GET, f"{BASE_URL}/5.2/projects/p1/tasks", json=page2, status=200)
-        TasksApi(_make_client()).get_all_project_tasks(
+        TasksApi(_make_client()).get_project_tasks(
             params={"typeId": "177352982697"},
             project_id="p1",
         )
@@ -443,7 +443,7 @@ class TestTasksApi:
         assert result.data.task_id == "t1"
 
     @rsps_lib.activate
-    def test_get_all_project_task_changes_follows_pagination(self):
+    def test_get_project_task_changes_follows_pagination(self):
         page1 = {
             "items": [
                 {
@@ -480,7 +480,7 @@ class TestTasksApi:
         rsps_lib.add(
             rsps_lib.GET, f"{BASE_URL}/2.2/projects/p1/tasks/changes", json=page2, status=200
         )
-        result = TasksApi(_make_client()).get_all_project_task_changes(project_id="p1")
+        result = TasksApi(_make_client()).get_project_task_changes(project_id="p1")
         assert len(result) == 2
         assert all(isinstance(item, TaskChange) for item in result)
         assert result[0].task_id == "t1"
@@ -647,7 +647,7 @@ class TestFilesApi:
                 "dalux_build.api.files.resolve_folder_id_from_named_path",
                 return_value=("fa2", "folder-1"),
             ),
-            patch.object(api, "get_all_files", return_value=[path_file]),
+            patch.object(api, "get_files", return_value=[path_file]),
             patch.object(
                 api,
                 "_download_file_with_metadata",

@@ -74,7 +74,7 @@ def resolve_folder_id_from_named_path(
     if folders is None:
         if verbose:
             print(f"GET /5.1/projects/{project_id}/file_areas/{file_area_id}/folders")
-        folders = FoldersApi(api_client).get_all_folders(
+        folders = FoldersApi(api_client).get_folders(
             verbose=verbose, project_id=project_id, file_area_id=file_area_id
         )
         if folders_cache is not None:

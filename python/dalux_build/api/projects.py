@@ -1,8 +1,9 @@
 """Projects API."""
 
 import warnings
-from typing import TYPE_CHECKING, Literal, overload
+from typing import TYPE_CHECKING, Any, Literal, overload
 
+from ..ai import AiMixin
 from ..api_client import ApiClient
 from ..dashboards.api import DashboardApiMixin
 from ..json_types import JSONDict, JSONValue, QueryParams
@@ -16,7 +17,7 @@ if TYPE_CHECKING:
     import pandas as pd
 
 
-class ProjectsApi(DashboardApiMixin):
+class ProjectsApi(AiMixin, DashboardApiMixin):
     """Methods for managing projects.
 
     Args:
@@ -24,18 +25,21 @@ class ProjectsApi(DashboardApiMixin):
     """
 
     dashboard_resource = "projects"
+    _resource_name = "project"
     __all__ = [
-        "get_all_projects",
+        "get_projects",
         "get_project",
         "create_project",
         "update_project",
+        "health",
+        "ask",
     ]
 
     def __init__(self, api_client: ApiClient) -> None:
         self._client = api_client
 
     @overload
-    def get_all_projects(
+    def get_projects(
         self,
         params: QueryParams | None = None,
         verbose: bool = False,
@@ -43,7 +47,7 @@ class ProjectsApi(DashboardApiMixin):
     ) -> list[Project]: ...
 
     @overload
-    def get_all_projects(
+    def get_projects(
         self,
         params: QueryParams | None = None,
         verbose: bool = False,
@@ -51,7 +55,7 @@ class ProjectsApi(DashboardApiMixin):
         to_dataframe: Literal[True],
     ) -> "pd.DataFrame": ...
 
-    def get_all_projects(
+    def get_projects(
         self,
         params: QueryParams | None = None,
         verbose: bool = False,
@@ -87,6 +91,29 @@ class ProjectsApi(DashboardApiMixin):
             return flatten_items_to_dataframe(list(typed_items))
         return typed_items
 
+    def get_all_projects(
+        self,
+        params: QueryParams | None = None,
+        verbose: bool = False,
+        to_dataframe: bool = False,
+    ) -> "list[Project] | pd.DataFrame":
+        """Retrieve all projects by following pagination automatically.
+
+        .. deprecated::
+            Use :meth:`get_projects` instead.
+
+        Args:
+            params: Optional query parameters.
+            verbose: If True, show progress.
+            to_dataframe: If True, return as DataFrame.
+        """
+        warnings.warn(
+            "get_all_projects() is deprecated. Use get_projects() instead.",
+            DeprecationWarning,
+            stacklevel=2,
+        )
+        return self.get_projects(params=params, verbose=verbose, to_dataframe=to_dataframe)  # type: ignore[call-overload]
+
     @overload
     def list_projects(
         self,
@@ -119,7 +146,7 @@ class ProjectsApi(DashboardApiMixin):
         """GET /5.1/projects — List all available projects.
 
         .. deprecated::
-            Use :meth:`get_all_projects` instead. This method only fetches
+            Use :meth:`get_projects` instead. This method only fetches
             the first page of results.
 
         Args:
@@ -136,7 +163,7 @@ class ProjectsApi(DashboardApiMixin):
         """
         warnings.warn(
             "list_projects() is deprecated and only returns the first page of results. "
-            "Use get_all_projects() instead to fetch all projects with pagination.",
+            "Use get_projects() instead to fetch all projects with pagination.",
             DeprecationWarning,
             stacklevel=2,
         )
@@ -229,3 +256,32 @@ class ProjectsApi(DashboardApiMixin):
 
         # Use generic search utility - search by the Pydantic field name "project_name"
         return find_by_field(items, "project_name", project_name)
+
+    def _fetch_all_data(self, **kwargs: Any) -> list[Project]:  # noqa: ANN401
+        """Fetch all projects using get_projects."""
+        return self.get_projects(verbose=False)
+
+    def _format_data_for_analysis(self, data: list[Any]) -> str:
+        """Format projects for Claude analysis."""
+        import pprint
+
+        formatted_projects = []
+        for p in data[:100]:
+            if isinstance(p, Project):
+                formatted_projects.append(
+                    {
+                        "id": p.project_id,
+                        "name": p.project_name,
+                    }
+                )
+            elif isinstance(p, dict):
+                project_data = p.get("data", p)
+                formatted_projects.append(
+                    {
+                        "id": project_data.get("projectId", project_data.get("id")),
+                        "name": project_data.get("projectName"),
+                        "status": project_data.get("status"),
+                    }
+                )
+
+        return pprint.pformat(formatted_projects)[:8000]

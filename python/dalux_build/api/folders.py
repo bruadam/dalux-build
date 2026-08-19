@@ -2,8 +2,9 @@
 
 import warnings
 from concurrent.futures import ThreadPoolExecutor
-from typing import TYPE_CHECKING, Literal, TypedDict, overload
+from typing import TYPE_CHECKING, Any, Literal, TypedDict, overload
 
+from ..ai import AiMixin
 from ..api_client import ApiClient
 from ..dashboards.api import DashboardApiMixin
 from ..json_types import JSONDict, JSONValue, QueryParams
@@ -24,7 +25,7 @@ if TYPE_CHECKING:
 
     from .files import FilesApi
 
-# get_all_folders() falls back to the raw payload (dict) when a page's item
+# get_folders() falls back to the raw payload (dict) when a page's item
 # can't be validated as a Folder, so callers must handle both shapes.
 FolderLike = Folder | JSONDict
 
@@ -73,15 +74,18 @@ def _folder_name(item: FolderLike) -> str:
     return name if isinstance(name, str) else "?"
 
 
-class FoldersApi(DashboardApiMixin):
+class FoldersApi(AiMixin, DashboardApiMixin):
     """Methods for folders within a file area."""
 
     dashboard_resource = "folders"
+    _resource_name = "folder"
     __all__ = [
-        "get_all_folders",
+        "get_folders",
         "get_folder",
         "get_folder_files_properties",
         "get_file_area_tree",
+        "health",
+        "ask",
     ]
 
     def __init__(self, api_client: ApiClient) -> None:
@@ -129,7 +133,7 @@ class FoldersApi(DashboardApiMixin):
         """GET /5.1/projects/{projectId}/file_areas/{fileAreaId}/folders.
 
         .. deprecated::
-            Use :meth:`get_all_folders` instead. This method only returns
+            Use :meth:`get_folders` instead. This method only returns
             the first page of results.
 
         Args:
@@ -148,7 +152,7 @@ class FoldersApi(DashboardApiMixin):
         """
         warnings.warn(
             "list_folders() is deprecated and only returns the first page of results. "
-            "Use get_all_folders() instead to fetch all folders with pagination.",
+            "Use get_folders() instead to fetch all folders with pagination.",
             DeprecationWarning,
             stacklevel=2,
         )
@@ -166,7 +170,7 @@ class FoldersApi(DashboardApiMixin):
         return result.items if result is not None else []
 
     @overload
-    def get_all_folders(
+    def get_folders(
         self,
         params: QueryParams | None = None,
         verbose: bool = False,
@@ -176,7 +180,7 @@ class FoldersApi(DashboardApiMixin):
         file_area_id: str | None = None,
     ) -> list[FolderLike]: ...
     @overload
-    def get_all_folders(
+    def get_folders(
         self,
         params: QueryParams | None = None,
         verbose: bool = False,
@@ -185,7 +189,7 @@ class FoldersApi(DashboardApiMixin):
         project_id: str | None = None,
         file_area_id: str | None = None,
     ) -> "pd.DataFrame": ...
-    def get_all_folders(
+    def get_folders(
         self,
         params: QueryParams | None = None,
         verbose: bool = False,
@@ -233,6 +237,40 @@ class FoldersApi(DashboardApiMixin):
         if to_dataframe:
             return flatten_items_to_dataframe(list(folders))
         return folders
+
+    def get_all_folders(
+        self,
+        params: QueryParams | None = None,
+        verbose: bool = False,
+        to_dataframe: bool = False,
+        *,
+        project_id: str | None = None,
+        file_area_id: str | None = None,
+    ) -> "list[FolderLike] | pd.DataFrame":
+        """Retrieve all folders by following bookmark pagination automatically.
+
+        .. deprecated::
+            Use :meth:`get_folders` instead.
+
+        Args:
+            params: Optional query parameters.
+            verbose: Whether to print progress.
+            to_dataframe: If True, return as DataFrame.
+            project_id: Project ID. Falls back to the client's configured default.
+            file_area_id: File area ID. Falls back to the client's configured default.
+        """
+        warnings.warn(
+            "get_all_folders() is deprecated. Use get_folders() instead.",
+            DeprecationWarning,
+            stacklevel=2,
+        )
+        return self.get_folders(
+            params=params,
+            verbose=verbose,
+            to_dataframe=to_dataframe,
+            project_id=project_id,
+            file_area_id=file_area_id,
+        )  # type: ignore[call-overload]
 
     def get_folder(
         self,
@@ -308,7 +346,7 @@ class FoldersApi(DashboardApiMixin):
         project_id = resolve_project_id(project_id, self._client.configuration.project_id)
         file_area_id = resolve_file_area_id(file_area_id, self._client.configuration.file_area_id)
 
-        all_folders = self.get_all_folders(project_id=project_id, file_area_id=file_area_id)
+        all_folders = self.get_folders(project_id=project_id, file_area_id=file_area_id)
 
         # Use generic search utility
         folder = find_by_field(
@@ -366,7 +404,7 @@ class FoldersApi(DashboardApiMixin):
         if not path_parts:
             return None
 
-        all_folders = self.get_all_folders(project_id=project_id, file_area_id=file_area_id)
+        all_folders = self.get_folders(project_id=project_id, file_area_id=file_area_id)
 
         def _get_fid(folder_data: JSONDict) -> str | None:
             fid = folder_data.get("folderId") or folder_data.get("id")
@@ -472,13 +510,13 @@ class FoldersApi(DashboardApiMixin):
         if files_api is not None:
             with ThreadPoolExecutor(max_workers=2) as executor:
                 folders_fut = executor.submit(
-                    self.get_all_folders, project_id=project_id, file_area_id=file_area_id
+                    self.get_folders, project_id=project_id, file_area_id=file_area_id
                 )
                 files_fut = executor.submit(_fetch_files)
                 all_folders = folders_fut.result()
                 all_files = files_fut.result()
         else:
-            all_folders = self.get_all_folders(project_id=project_id, file_area_id=file_area_id)
+            all_folders = self.get_folders(project_id=project_id, file_area_id=file_area_id)
             all_files = []
 
         if verbose:
@@ -554,3 +592,24 @@ class FoldersApi(DashboardApiMixin):
             _prune_to_depth(root, 0)
 
         return root
+
+    def _fetch_all_data(self, **kwargs: Any) -> list[FolderLike]:  # noqa: ANN401
+        """Fetch all folders using get_folders."""
+        return self.get_folders(
+            project_id=kwargs.get("project_id"),
+            file_area_id=kwargs.get("file_area_id"),
+            verbose=False,
+        )
+
+    def _format_data_for_analysis(self, data: list[Any]) -> str:
+        """Format folders for AI analysis."""
+        import pprint
+
+        formatted_folders = []
+        for f in data[:50]:  # Limit to 50 folders for analysis
+            if isinstance(f, Folder):
+                formatted_folders.append(f.model_dump(by_alias=True))
+            elif isinstance(f, dict):
+                formatted_folders.append(f)
+
+        return pprint.pformat(formatted_folders)[:8000]

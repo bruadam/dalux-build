@@ -3,10 +3,11 @@
 import json
 import os
 import warnings
-from typing import TYPE_CHECKING, Literal, Protocol, overload
+from typing import TYPE_CHECKING, Any, Literal, Protocol, overload
 
 import requests
 
+from ..ai import AiMixin
 from ..api_client import ApiClient
 from ..dashboards.api import DashboardApiMixin
 from ..json_types import JSONDict, JSONValue, QueryParams
@@ -67,13 +68,14 @@ def _file_payload(item: FileLike) -> JSONDict:
     return item
 
 
-class FilesApi(DashboardApiMixin):
+class FilesApi(AiMixin, DashboardApiMixin):
     """Methods for files within a file area."""
 
     dashboard_resource = "files"
+    _resource_name = "file"
     __all__ = [
-        "get_all_files",
-        "get_all_files_in_folder",
+        "get_files",
+        "get_files_in_folder",
         "get_file",
         "bulk_download_folder",
         "bulk_download_files",
@@ -81,6 +83,8 @@ class FilesApi(DashboardApiMixin):
         "select_files_interactive",
         "get_file_properties_mapping",
         "get_file_property_mapping_values",
+        "health",
+        "ask",
     ]
 
     def __init__(self, api_client: ApiClient) -> None:
@@ -219,7 +223,7 @@ class FilesApi(DashboardApiMixin):
         """GET /6.1/projects/{projectId}/file_areas/{fileAreaId}/files.
 
         .. deprecated::
-            Use :meth:`get_all_files` instead. This method only returns
+            Use :meth:`get_files` instead. This method only returns
             the first page of results.
 
         See ``docs/official-api-docs/Dalux Build API.yaml`` (operationId: listFiles).
@@ -243,7 +247,7 @@ class FilesApi(DashboardApiMixin):
         """
         warnings.warn(
             "list_files() is deprecated and only returns the first page of results. "
-            "Use get_all_files() instead to fetch all files with pagination.",
+            "Use get_files() instead to fetch all files with pagination.",
             DeprecationWarning,
             stacklevel=2,
         )
@@ -266,39 +270,39 @@ class FilesApi(DashboardApiMixin):
         return result.items if result is not None else []
 
     @overload
-    def get_all_files(
+    def get_files(
         self,
         params: QueryParams | None = None,
         verbose: bool = False,
         to_dataframe: Literal[False] = False,
-        recursively_populate: bool = False,
+        recursively_populate: bool = True,
         *,
-        include_properties: bool = False,
+        include_properties: bool = True,
         project_id: str | None = None,
         file_area_id: str | None = None,
     ) -> list[FileLike]: ...
 
     @overload
-    def get_all_files(
+    def get_files(
         self,
         params: QueryParams | None = None,
         verbose: bool = False,
         *,
         to_dataframe: Literal[True],
-        recursively_populate: bool = False,
-        include_properties: bool = False,
+        recursively_populate: bool = True,
+        include_properties: bool = True,
         project_id: str | None = None,
         file_area_id: str | None = None,
     ) -> "pd.DataFrame": ...
 
-    def get_all_files(
+    def get_files(
         self,
         params: QueryParams | None = None,
         verbose: bool = False,
         to_dataframe: bool = False,
-        recursively_populate: bool = False,
+        recursively_populate: bool = True,
         *,
-        include_properties: bool = False,
+        include_properties: bool = True,
         project_id: str | None = None,
         file_area_id: str | None = None,
     ) -> "list[FileLike] | pd.DataFrame":
@@ -385,39 +389,39 @@ class FilesApi(DashboardApiMixin):
         return files
 
     @overload
-    def get_all_files_in_folder(
+    def get_files_in_folder(
         self,
         folder_id: str | None = None,
         params: QueryParams | None = None,
         verbose: bool = False,
         to_dataframe: Literal[False] = False,
         *,
-        include_properties: bool = False,
+        include_properties: bool = True,
         path: str | None = None,
         project_id: str | None = None,
         file_area_id: str | None = None,
     ) -> list[FileLike]: ...
     @overload
-    def get_all_files_in_folder(
+    def get_files_in_folder(
         self,
         folder_id: str | None = None,
         params: QueryParams | None = None,
         verbose: bool = False,
         *,
         to_dataframe: Literal[True],
-        include_properties: bool = False,
+        include_properties: bool = True,
         path: str | None = None,
         project_id: str | None = None,
         file_area_id: str | None = None,
     ) -> "pd.DataFrame": ...
-    def get_all_files_in_folder(
+    def get_files_in_folder(
         self,
         folder_id: str | None = None,
         params: QueryParams | None = None,
         verbose: bool = False,
         to_dataframe: bool = False,
         *,
-        include_properties: bool = False,
+        include_properties: bool = True,
         path: str | None = None,
         project_id: str | None = None,
         file_area_id: str | None = None,
@@ -490,6 +494,89 @@ class FilesApi(DashboardApiMixin):
         if to_dataframe:
             return flatten_items_to_dataframe(list(filtered))
         return filtered
+
+    def get_all_files(
+        self,
+        params: QueryParams | None = None,
+        verbose: bool = False,
+        to_dataframe: bool = False,
+        recursively_populate: bool = True,
+        *,
+        include_properties: bool = True,
+        project_id: str | None = None,
+        file_area_id: str | None = None,
+    ) -> "list[FileLike] | pd.DataFrame":
+        """Retrieve all files by following bookmark pagination automatically.
+
+        .. deprecated::
+            Use :meth:`get_files` instead.
+
+        Args:
+            params: Optional query parameters.
+            verbose: If True, print progress.
+            to_dataframe: If True, return as DataFrame.
+            recursively_populate: If True, populate user/company objects.
+            include_properties: If True, include file properties.
+            project_id: Project ID. Falls back to the client's configured default.
+            file_area_id: File area ID. Falls back to the client's configured default.
+        """
+        warnings.warn(
+            "get_all_files() is deprecated. Use get_files() instead.",
+            DeprecationWarning,
+            stacklevel=2,
+        )
+        return self.get_files(
+            params=params,
+            verbose=verbose,
+            to_dataframe=to_dataframe,
+            recursively_populate=recursively_populate,
+            include_properties=include_properties,
+            project_id=project_id,
+            file_area_id=file_area_id,
+        )  # type: ignore[call-overload]
+
+    def get_all_files_in_folder(
+        self,
+        folder_id: str | None = None,
+        params: QueryParams | None = None,
+        verbose: bool = False,
+        to_dataframe: bool = False,
+        *,
+        include_properties: bool = False,
+        path: str | None = None,
+        project_id: str | None = None,
+        file_area_id: str | None = None,
+    ) -> "list[FileLike] | pd.DataFrame":
+        """Retrieve all files in a folder by following bookmark pagination automatically.
+
+        .. deprecated::
+            Use :meth:`get_files_in_folder` instead.
+
+        Args:
+            folder_id: The folder ID to fetch files from.
+            params: Optional query parameters.
+            verbose: If True, print progress.
+            to_dataframe: If True, return as DataFrame.
+            include_properties: If True, include file properties.
+            path: Optional file path to resolve folder.
+            project_id: Project ID. Falls back to the client's configured default.
+            file_area_id: File area ID. Falls back to the client's configured default.
+        """
+        warnings.warn(
+            "get_all_files_in_folder() is deprecated. Use get_files_in_folder() instead.",
+            DeprecationWarning,
+            stacklevel=2,
+        )
+        return self.get_files_in_folder(
+            folder_id=folder_id,
+            params=params,
+            verbose=verbose,
+            to_dataframe=to_dataframe,
+            include_properties=include_properties,
+            path=path,
+            project_id=project_id,
+            file_area_id=file_area_id,
+        )  # type: ignore[call-overload,misc]
 
     def _extract_file_name(self, file_item: FileLike) -> str:
         """Extract a file name from either a File model or raw API item."""
@@ -1178,3 +1265,24 @@ class FilesApi(DashboardApiMixin):
             f"/1.0/projects/{project_id}/file_areas/{file_area_id}"
             f"/files/properties/1.0/mappings/{file_property_id}/values"
         )
+
+    def _fetch_all_data(self, **kwargs: Any) -> list[FileLike]:  # noqa: ANN401
+        """Fetch all files using get_all_files."""
+        return self.get_files(
+            project_id=kwargs.get("project_id"),
+            file_area_id=kwargs.get("file_area_id"),
+            verbose=False,
+        )
+
+    def _format_data_for_analysis(self, data: list[Any]) -> str:
+        """Format files for AI analysis."""
+        import pprint
+
+        formatted_files = []
+        for f in data[:50]:  # Limit to 50 files for analysis
+            if isinstance(f, File):
+                formatted_files.append(f.model_dump(by_alias=True))
+            elif isinstance(f, dict):
+                formatted_files.append(f)
+
+        return pprint.pformat(formatted_files)[:8000]

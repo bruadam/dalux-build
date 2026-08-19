@@ -88,15 +88,37 @@ def resolve_folder_id_from_named_path(
         if fid is None:
             continue
         candidate_parent_id = _folder_parent_id(folder)
-        key_parent = candidate_parent_id if candidate_parent_id in all_folder_ids else None
-        folder_index[(key_parent, _folder_name(folder))] = fid
+        folder_name = _folder_name(folder).strip()
+
+        # Normalize parent_id: treat empty string or file_area_id as root (None)
+        if not candidate_parent_id or candidate_parent_id == file_area_id:
+            key_parent = None
+        elif candidate_parent_id in all_folder_ids:
+            key_parent = candidate_parent_id
+        else:
+            key_parent = None
+
+        if verbose:
+            parent_label = "root" if key_parent is None else f"folder {key_parent}"
+            print(f"  Indexed: {folder_name!r} under {parent_label}")
+
+        folder_index[(key_parent, folder_name)] = fid
 
     parent_folder_id: str | None = None
     for folder_name in folder_names:
-        matched_folder_id = folder_index.get((parent_folder_id, folder_name))
+        search_name = folder_name.strip()
+        matched_folder_id = folder_index.get((parent_folder_id, search_name))
+
+        if not matched_folder_id and verbose:
+            # Debug: show what was indexed at this level
+            available = [
+                name for (parent, name) in folder_index.keys() if parent == parent_folder_id
+            ]
+            parent_label = "root" if parent_folder_id is None else f"folder {parent_folder_id}"
+            print(f"Could not resolve folder segment: {search_name}")
+            print(f"  Available in {parent_label}: {available}")
+
         if not matched_folder_id:
-            if verbose:
-                print(f"Could not resolve folder segment: {folder_name}")
             not_found: tuple[str | None, str | None] = (file_area_id, None)
             if resolved_paths_cache is not None:
                 resolved_paths_cache[path] = not_found

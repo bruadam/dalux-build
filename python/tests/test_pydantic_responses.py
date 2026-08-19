@@ -279,7 +279,7 @@ class TestFilesPydantic:
             },
         )
         api = FilesApi(_make_client())
-        df = api.get_files(to_dataframe=True, project_id="p1", file_area_id="fa1")
+        df = api.get_files(to_dataframe=True, project_id="p1", file_area_id="fa1", recursively_populate=False)
 
         assert isinstance(df, pd.DataFrame)
         assert "fileId" in df.columns
@@ -291,7 +291,7 @@ class TestFilesPydantic:
         pd = pytest.importorskip("pandas")
         _reg(rsps_lib.GET, "/6.1/projects/p1/file_areas/fa1/files", body={"items": []})
         api = FilesApi(_make_client())
-        df = api.get_files(to_dataframe=True, project_id="p1", file_area_id="fa1")
+        df = api.get_files(to_dataframe=True, project_id="p1", file_area_id="fa1", recursively_populate=False)
 
         assert isinstance(df, pd.DataFrame)
         assert df.empty
@@ -336,7 +336,9 @@ class TestFilesPydantic:
             folder_id=None,
             params=None,
             verbose=False,
+            to_dataframe=False,
             *,
+            include_properties=False,
             path=None,
             project_id=None,
             file_area_id=None,

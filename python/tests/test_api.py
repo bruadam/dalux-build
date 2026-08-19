@@ -425,6 +425,7 @@ class TestTasksApi:
         TasksApi(_make_client()).get_project_tasks(
             params={"typeId": "177352982697"},
             project_id="p1",
+            recursively_populate=False,
         )
         first_query = parse_qs(urlparse(rsps_lib.calls[0].request.url).query)
         second_query = parse_qs(urlparse(rsps_lib.calls[1].request.url).query)

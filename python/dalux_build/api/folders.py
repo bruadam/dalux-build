@@ -419,6 +419,7 @@ class FoldersApi(DashboardApiMixin):
         files_api: "FilesApi | None" = None,
         verbose: bool = False,
         *,
+        depth: int | None = None,
         project_id: str | None = None,
         file_area_id: str | None = None,
     ) -> TreeNode:
@@ -445,11 +446,16 @@ class FoldersApi(DashboardApiMixin):
             files_api: Optional :class:`FilesApi` instance. When provided, files
                 are fetched in parallel and attached to their folder nodes.
             verbose: If ``True``, print progress information.
+            depth: Optional maximum depth to traverse from the file area root.
+                depth=0 returns file area root only (no folders),
+                depth=1 returns root + direct children folders,
+                depth=2 returns root + children + grandchildren, etc.
+                None (default) returns the complete tree.
             project_id: Project ID. Falls back to the client's configured default.
             file_area_id: File area ID. Falls back to the client's configured default.
 
         Returns:
-            Root tree node (dict).
+            Root tree node (dict) optionally limited to specified depth.
         """
         project_id = resolve_project_id(project_id, self._client.configuration.project_id)
         file_area_id = resolve_file_area_id(file_area_id, self._client.configuration.file_area_id)
@@ -533,5 +539,18 @@ class FoldersApi(DashboardApiMixin):
 
             target = nodes.get(file_folder_id, root) if file_folder_id else root
             target["files"].append(f)
+
+        # --- prune tree to specified depth ---
+        if depth is not None and depth >= 0:
+
+            def _prune_to_depth(node: TreeNode, current_depth: int) -> None:
+                """Recursively prune children beyond max depth."""
+                if current_depth >= depth:
+                    node["children"] = []
+                    return
+                for child in node["children"]:
+                    _prune_to_depth(child, current_depth + 1)
+
+            _prune_to_depth(root, 0)
 
         return root

@@ -289,7 +289,7 @@ class File(BaseModel):
                     })
             elif extracted_text and include_image_base64:
                 # Extracted text available but no images from OCR
-                content: list[dict[str, Any]] = [
+                content = [
                     {
                         "type": "text",
                         "text": f"File: {self.file_name}\n\nExtracted content:\n\n{extracted_text}\n\nQuestion: {question}",  # noqa: E501

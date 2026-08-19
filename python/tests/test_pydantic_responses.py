@@ -716,7 +716,7 @@ class TestTasksPydantic:
         rsps_lib.add(rsps_lib.GET, f"{BASE_URL}/5.2/projects/p1/tasks", json=page2, status=200)
 
         api = TasksApi(_make_client())
-        response = api.get_project_tasks(project_id="p1")
+        response = api.get_project_tasks(project_id="p1", recursively_populate=False)
 
         assert len(response) == 2
         assert all(isinstance(item, Task) for item in response)
@@ -735,7 +735,7 @@ class TestTasksPydantic:
         rsps_lib.add(rsps_lib.GET, f"{BASE_URL}/5.2/projects/p1/tasks", json=page1, status=200)
 
         api = TasksApi(_make_client())
-        df = api.get_project_tasks(to_dataframe=True, project_id="p1")
+        df = api.get_project_tasks(to_dataframe=True, project_id="p1", recursively_populate=False)
 
         assert isinstance(df, pd.DataFrame)
         assert "taskId" in df.columns
@@ -785,7 +785,7 @@ class TestTasksPydantic:
         )
 
         api = TasksApi(_make_client())
-        response = api.get_project_task_changes(project_id="p1")
+        response = api.get_project_task_changes(project_id="p1", recursively_populate=False)
 
         assert len(response) == 2
         assert all(isinstance(item, TaskChange) for item in response)
@@ -813,7 +813,7 @@ class TestTasksPydantic:
             },
         )
         api = TasksApi(_make_client())
-        response = api.get_project_task_changes(project_id="p1")
+        response = api.get_project_task_changes(project_id="p1", recursively_populate=False)
 
         assert len(response) == 1
         assert response[0].fields is not None
@@ -840,7 +840,7 @@ class TestTasksPydantic:
             },
         )
         api = TasksApi(_make_client())
-        response = api.get_project_task_changes(project_id="p1")
+        response = api.get_project_task_changes(project_id="p1", recursively_populate=False)
 
         assert len(response) == 1
         assert response[0].fields is not None

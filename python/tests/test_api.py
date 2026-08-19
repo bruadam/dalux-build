@@ -268,7 +268,7 @@ class TestTasksApi:
         }
         rsps_lib.add(rsps_lib.GET, f"{BASE_URL}/5.2/projects/p1/tasks", json=page1, status=200)
         rsps_lib.add(rsps_lib.GET, f"{BASE_URL}/5.2/projects/p1/tasks", json=page2, status=200)
-        result = TasksApi(_make_client()).get_project_tasks(project_id="p1")
+        result = TasksApi(_make_client()).get_project_tasks(project_id="p1", recursively_populate=False)
         assert len(result) == 2
         assert isinstance(result[0], Task)
         assert result[0].task_id == "t1"
@@ -301,7 +301,7 @@ class TestTasksApi:
         }
         rsps_lib.add(rsps_lib.GET, f"{BASE_URL}/5.2/projects/p1/tasks", json=page1, status=200)
         rsps_lib.add(rsps_lib.GET, f"{BASE_URL}/5.2/projects/p1/tasks", json=page2, status=200)
-        result = TasksApi(_make_client()).get_project_tasks(project_id="p1")
+        result = TasksApi(_make_client()).get_project_tasks(project_id="p1", recursively_populate=False)
         assert len(result) == 2
         assert all(isinstance(item, Task) for item in result)
         assert len(rsps_lib.calls) == 2
@@ -326,7 +326,7 @@ class TestTasksApi:
         }
         rsps_lib.add(rsps_lib.GET, f"{BASE_URL}/5.2/projects/p1/tasks", json=page1, status=200)
         rsps_lib.add(rsps_lib.GET, f"{BASE_URL}/5.2/projects/p1/tasks", json=page2, status=200)
-        TasksApi(_make_client()).get_project_tasks(verbose=True, project_id="p1")
+        TasksApi(_make_client()).get_project_tasks(verbose=True, project_id="p1", recursively_populate=False)
         out = capsys.readouterr().out
         assert "Retrieved 1 tasks so far, 1 remaining..." in out
         assert "Retrieved 2 tasks so far, 0 remaining..." in out
@@ -353,7 +353,7 @@ class TestTasksApi:
         }
         rsps_lib.add(rsps_lib.GET, f"{BASE_URL}/5.2/projects/p1/tasks", json=page1, status=200)
         rsps_lib.add(rsps_lib.GET, f"{BASE_URL}/5.2/projects/p1/tasks", json=page2, status=200)
-        TasksApi(_make_client()).get_project_tasks(verbose=True, project_id="p1")
+        TasksApi(_make_client()).get_project_tasks(verbose=True, project_id="p1", recursively_populate=False)
         out = capsys.readouterr().out
         assert "Retrieved 1 tasks so far, 1 remaining..." in out
         assert "Retrieved 2 tasks so far, 0 remaining..." in out
@@ -398,7 +398,7 @@ class TestTasksApi:
         rsps_lib.add(rsps_lib.GET, f"{BASE_URL}/5.2/projects/p1/tasks", json=page1, status=200)
         rsps_lib.add(rsps_lib.GET, f"{BASE_URL}/5.2/projects/p1/tasks", json=page2, status=200)
         rsps_lib.add(rsps_lib.GET, f"{BASE_URL}/5.2/projects/p1/tasks", json=page3, status=200)
-        result = TasksApi(_make_client()).get_project_tasks(project_id="p1")
+        result = TasksApi(_make_client()).get_project_tasks(project_id="p1", recursively_populate=False)
         assert [x.task_id for x in result] == ["a", "b", "c"]
         assert len(rsps_lib.calls) == 3
 
@@ -480,7 +480,7 @@ class TestTasksApi:
         rsps_lib.add(
             rsps_lib.GET, f"{BASE_URL}/2.2/projects/p1/tasks/changes", json=page2, status=200
         )
-        result = TasksApi(_make_client()).get_project_task_changes(project_id="p1")
+        result = TasksApi(_make_client()).get_project_task_changes(project_id="p1", recursively_populate=False)
         assert len(result) == 2
         assert all(isinstance(item, TaskChange) for item in result)
         assert result[0].task_id == "t1"

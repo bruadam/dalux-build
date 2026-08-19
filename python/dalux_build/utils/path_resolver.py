@@ -125,6 +125,22 @@ def resolve_folder_id_from_named_path(
         folder_index[(key_parent, folder_name)] = fid
 
     parent_folder_id: str | None = None
+
+    # Smart resolution: if first folder doesn't exist at root, try entering
+    # a root-level folder with the same name as the file area
+    if (
+        folder_names
+        and parent_folder_id is None
+        and file_area_name not in folder_index.get((None, file_area_name), "")
+    ):
+        # Check if there's a root-level folder matching the file area name
+        root_file_area_folder = folder_index.get((None, file_area_name))
+        if root_file_area_folder:
+            # Navigate into the file-area-named folder automatically
+            parent_folder_id = root_file_area_folder
+            if verbose:
+                print(f"Auto-navigating into '{file_area_name}' folder (ID: {parent_folder_id})")
+
     for folder_name in folder_names:
         search_name = folder_name.strip()
         matched_folder_id = folder_index.get((parent_folder_id, search_name))

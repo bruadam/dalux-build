@@ -46,9 +46,11 @@ def resolve_folder_id_from_named_path(
 ) -> tuple[str | None, str | None]:
     """Resolve ``file_area_name/folder/...`` to ``(file_area_id, folder_id)``.
 
-    Supports two formats:
-    - ``Files/Folder1/Folder2`` (with explicit file area name)
-    - ``Folder1/Folder2`` (without file area name, uses default file area if set)
+    Path format:
+    - ``Files/Folder1/Folder2/...`` (file area name must be first segment)
+
+    If a default file area is configured, it must match the file area name in the path,
+    otherwise a ValueError is raised.
     """
     from ..api.folders import FoldersApi, _folder_id, _folder_name, _folder_parent_id
 
@@ -56,13 +58,16 @@ def resolve_folder_id_from_named_path(
         return resolved_paths_cache[path]
 
     path_parts = [part.strip() for part in path.strip("/").split("/") if part.strip()]
-    if len(path_parts) < 1:
+    if len(path_parts) < 2:
         return None, None
 
     api_client._verbose_path_resolution = verbose
 
-    # Try to resolve the first part as a file area name
+    # First segment is always the file area name
     file_area_name = path_parts[0]
+    folder_names = path_parts[1:]
+
+    # Resolve file area by name
     file_area = resolve_file_area_by_name(
         api_client,
         project_id,
@@ -70,34 +75,24 @@ def resolve_folder_id_from_named_path(
         file_areas_cache=file_areas_cache,
     )
 
-    if file_area:
-        # First part is a file area name
-        folder_names = path_parts[1:]
-        if not folder_names:
-            api_client._verbose_path_resolution = False
-            return None, None
-        file_area_id = file_area.file_area_id
-    else:
-        # First part is not a file area name, try using default file area
-        default_file_area_id = api_client.configuration.file_area_id
-        if not default_file_area_id:
-            api_client._verbose_path_resolution = False
-            if verbose:
-                print(f"Could not resolve file area: {file_area_name}")
-                print(
-                    "Tip: Set a default file area with dalux.set_default_file_area() "
-                    "or include the file area name in the path"
-                )
-            return None, None
-
-        # Use default file area for all path parts as folder names
-        folder_names = path_parts
-        file_area_id = default_file_area_id
+    if not file_area:
+        api_client._verbose_path_resolution = False
         if verbose:
-            print(
-                f"Using default file area ({default_file_area_id}) "
-                f"for path: {'/'.join(folder_names)}"
-            )
+            print(f"Could not resolve file area: {file_area_name}")
+        return None, None
+
+    file_area_id = file_area.file_area_id
+
+    # Check compatibility with default file area if set
+    default_file_area_id = api_client.configuration.file_area_id
+    if default_file_area_id and default_file_area_id != file_area_id:
+        api_client._verbose_path_resolution = False
+        raise ValueError(
+            f"Path file area '{file_area_name}' ({file_area_id}) does not match "
+            f"configured default file area ({default_file_area_id}). "
+            f"Either change the path to use the correct file area, or reconfigure "
+            f"the default file area with dalux.set_default_file_area()."
+        )
 
     folders = folders_cache.get(file_area_id) if folders_cache is not None else None
     if folders is None:

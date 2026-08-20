@@ -491,16 +491,13 @@ class FilesApi(AiMixin, DashboardApiMixin):
             resolved_folder_id = folder_id
             validate_folder_id(resolved_folder_id)
 
-        all_files = self.get_all_files(
+        all_files = self.get_files(
             params=params,
             verbose=verbose,
             include_properties=include_properties,
             project_id=project_id,
             file_area_id=resolved_file_area_id,
         )
-        # Cast all_files since it can be list or DataFrame - we need list for filter
-        if not isinstance(all_files, list):
-            return flatten_items_to_dataframe([]) if to_dataframe else []
 
         folder_ids = {resolved_folder_id}
         if subfolders:
@@ -698,7 +695,7 @@ class FilesApi(AiMixin, DashboardApiMixin):
             List of downloaded :class:`File` objects with ``saved_file_path`` and
             optionally ``saved_metadata_path`` populated.
         """
-        files_result = self.get_all_files_in_folder(
+        files_result = self.get_files_in_folder(
             folder_id,
             params=params,
             verbose=verbose,
@@ -707,10 +704,6 @@ class FilesApi(AiMixin, DashboardApiMixin):
             project_id=project_id,
             file_area_id=file_area_id,
         )
-
-        # Ensure we have a list, not a DataFrame
-        if not isinstance(files_result, list):
-            return []
         files = files_result
 
         resolved_filters = filters.model_copy(deep=True) if filters else FileNameFilter()

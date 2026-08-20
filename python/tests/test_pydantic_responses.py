@@ -261,6 +261,20 @@ class TestFilesPydantic:
     @rsps_lib.activate
     def test_get_files_in_folder_includes_descendants_when_requested(self):
         """subfolders=True should include files from nested descendant folders."""
+        # get_files_in_folder enriches user/company references by default
+        # (recursively_populate=True), so these two endpoints are hit before any
+        # folder filtering happens and must be mocked even though this test
+        # only asserts on folder traversal.
+        _reg(
+            rsps_lib.GET,
+            "/1.2/projects/p1/users",
+            body={"items": []},
+        )
+        _reg(
+            rsps_lib.GET,
+            "/3.1/projects/p1/companies",
+            body={"items": []},
+        )
         _reg(
             rsps_lib.GET,
             "/6.1/projects/p1/file_areas/fa1/files",

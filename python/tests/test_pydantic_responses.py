@@ -266,10 +266,18 @@ class TestFilesPydantic:
             "/6.1/projects/p1/file_areas/fa1/files",
             body={
                 "items": [
-                    {"data": {"fileId": "f-root", "folderId": "folder-root", "fileAreaId": "fa1"}},
+                    {
+                        "data": {
+                            "fileId": "f-root",
+                            "fileName": "root.txt",
+                            "folderId": "folder-root",
+                            "fileAreaId": "fa1",
+                        }
+                    },
                     {
                         "data": {
                             "fileId": "f-child",
+                            "fileName": "child.txt",
                             "folderId": "folder-child",
                             "fileAreaId": "fa1",
                         }
@@ -277,6 +285,7 @@ class TestFilesPydantic:
                     {
                         "data": {
                             "fileId": "f-grandchild",
+                            "fileName": "grandchild.txt",
                             "folderId": "folder-grandchild",
                             "fileAreaId": "fa1",
                         }
@@ -284,6 +293,7 @@ class TestFilesPydantic:
                     {
                         "data": {
                             "fileId": "f-other",
+                            "fileName": "other.txt",
                             "folderId": "folder-other",
                             "fileAreaId": "fa1",
                         }

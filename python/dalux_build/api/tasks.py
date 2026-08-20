@@ -1,8 +1,10 @@
 """Tasks API."""
 
-from typing import TYPE_CHECKING, Literal, overload
+import warnings
+from typing import TYPE_CHECKING, Literal, cast, overload
 from urllib.parse import parse_qs, urlparse
 
+from ..ai import AiMixin
 from ..api_client import ApiClient
 from ..dashboards.api import DashboardApiMixin
 from ..json_types import JSONDict, QueryParams
@@ -11,10 +13,8 @@ from ..models import (
     TaskAttachment,
     TaskAttachmentsListResponse,
     TaskChange,
-    TaskChanges,
     TaskListParams,
     TaskResponse,
-    TasksListResponse,
 )
 from ..response_converter import (
     convert_to_list_response,
@@ -23,10 +23,55 @@ from ..response_converter import (
     to_dataframe_or_empty,
 )
 from ..utils.pagination import paginate
+from ..utils.user_mapping import (
+    create_company_mapping,
+    create_user_mapping,
+    enrich_response_with_users,
+    enrich_users_with_companies,
+)
 from ..utils.validation import resolve_project_id
 
 if TYPE_CHECKING:
     import pandas as pd
+
+
+def _extract_and_enrich_created_by_user(
+    task_data: JSONDict,
+    company_mapping: dict[str, object] | None = None,
+) -> JSONDict:
+    """Extract user from createdBy and enrich with company at top level.
+
+    Args:
+        task_data: Raw task data dict.
+        company_mapping: Mapping of company_id to ProjectCompany objects.
+
+    Returns:
+        Task data with createdByUser and company at top level.
+    """
+    result = dict(task_data)
+
+    # Extract user from createdBy and set as createdByUser
+    created_by = task_data.get("createdBy")
+    if isinstance(created_by, dict):
+        user = created_by.get("user")
+        if isinstance(user, dict):
+            user_obj = dict(user)
+
+            # Enrich user with company if available
+            if company_mapping and user_obj.get("company_id"):
+                company_id = user_obj["company_id"]
+                if company_id in company_mapping:
+                    company_obj = company_mapping[company_id]
+                    if hasattr(company_obj, "model_dump"):
+                        company_dict = cast(JSONDict, company_obj.model_dump(by_alias=False))
+                    else:
+                        company_dict = cast(JSONDict, company_obj)
+                    user_obj["company"] = company_dict
+                    result["company"] = company_dict
+
+            result["createdByUser"] = user_obj
+
+    return result
 
 
 def _normalize_task_params(params: QueryParams | TaskListParams | None) -> QueryParams:
@@ -54,10 +99,19 @@ def _normalize_task_params(params: QueryParams | TaskListParams | None) -> Query
     return normalized
 
 
-class TasksApi(DashboardApiMixin):
+class TasksApi(AiMixin, DashboardApiMixin):
     """Methods for tasks, approvals, safety issues, observations and good practices."""
 
     dashboard_resource = "tasks"
+    _resource_name = "task"
+    __all__ = [
+        "get_project_tasks",
+        "get_task",
+        "get_project_task_changes",
+        "get_project_task_attachments",
+        "health",
+        "ask",
+    ]
 
     def __init__(self, api_client: ApiClient) -> None:
         self._client = api_client
@@ -66,90 +120,30 @@ class TasksApi(DashboardApiMixin):
     def get_project_tasks(
         self,
         params: QueryParams | TaskListParams | None = None,
-        full_response: Literal[False] = False,
-        to_dataframe: Literal[False] = False,
-        *,
-        project_id: str | None = None,
-    ) -> list[Task]: ...
-    @overload
-    def get_project_tasks(
-        self,
-        params: QueryParams | TaskListParams | None = None,
-        *,
-        full_response: Literal[True],
-        to_dataframe: Literal[False] = False,
-        project_id: str | None = None,
-    ) -> TasksListResponse | None: ...
-    @overload
-    def get_project_tasks(
-        self,
-        params: QueryParams | TaskListParams | None = None,
-        full_response: bool = ...,
-        *,
-        to_dataframe: Literal[True],
-        project_id: str | None = None,
-    ) -> "pd.DataFrame": ...
-    def get_project_tasks(
-        self,
-        params: QueryParams | TaskListParams | None = None,
-        full_response: bool = False,
-        to_dataframe: bool = False,
-        *,
-        project_id: str | None = None,
-    ) -> "TasksListResponse | list[Task] | pd.DataFrame | None":
-        """GET /5.2/projects/{projectId}/tasks.
-
-        Args:
-            params: Optional query parameters. Pass ``typeId`` as a shorthand for
-                the OData ``$filter`` on task type (see :func:`_normalize_task_params`).
-                You may also pass ``$filter`` directly; other OData query options
-                supported by the API may be included as usual.
-            full_response: If True, return the full TasksListResponse
-                (including metadata and links). If False (default), return
-                just the list of Task items.
-            to_dataframe: If True, return the items flattened into a pandas
-                DataFrame (requires pandas). Takes precedence over full_response.
-            project_id: Project ID. Falls back to the client's configured default.
-
-        Returns:
-            List of Task items, the full TasksListResponse when
-            full_response=True, or a DataFrame when to_dataframe=True.
-        """
-        project_id = resolve_project_id(project_id, self._client.configuration.project_id)
-        response = self._client.get(
-            f"/5.2/projects/{project_id}/tasks",
-            params=_normalize_task_params(params),
-        )
-        result = convert_to_list_response(response, TasksListResponse)
-        if to_dataframe:
-            return to_dataframe_or_empty(result)
-        if full_response:
-            return result
-        return result.items if result is not None else []
-
-    @overload
-    def get_all_project_tasks(
-        self,
-        params: QueryParams | TaskListParams | None = None,
         verbose: bool = False,
         to_dataframe: Literal[False] = False,
+        recursively_populate: bool = True,
         *,
         project_id: str | None = None,
     ) -> list[Task]: ...
+
     @overload
-    def get_all_project_tasks(
+    def get_project_tasks(
         self,
         params: QueryParams | TaskListParams | None = None,
         verbose: bool = False,
         *,
         to_dataframe: Literal[True],
+        recursively_populate: bool = True,
         project_id: str | None = None,
     ) -> "pd.DataFrame": ...
-    def get_all_project_tasks(
+
+    def get_project_tasks(
         self,
         params: QueryParams | TaskListParams | None = None,
         verbose: bool = False,
         to_dataframe: bool = False,
+        recursively_populate: bool = True,
         *,
         project_id: str | None = None,
     ) -> "list[Task] | pd.DataFrame":
@@ -157,7 +151,7 @@ class TasksApi(DashboardApiMixin):
 
         Combines all pages into a single list of items.
 
-        Uses the same control flow as :meth:`FilesApi.get_all_files` when the
+        Uses the same control flow as :meth:`FilesApi.get_files` when the
         response includes ``metadata.totalRemainingItems``: stop when it reaches
         ``0``, otherwise follow ``nextPage``.
 
@@ -174,12 +168,13 @@ class TasksApi(DashboardApiMixin):
         Args:
             params: Optional query parameters (OData). ``typeId`` is expanded to
                 ``$filter=data/type/typeId eq '<typeId>'`` when ``$filter`` is not
-                set (same as :meth:`get_project_tasks`). Pagination ``bookmark`` is
-                applied automatically across pages.
+                set. Pagination ``bookmark`` is applied automatically across pages.
             verbose: If ``True``, print progress using the same pattern as
-                :meth:`FilesApi.get_all_files`, plus the next page URL when present.
+                :meth:`FilesApi.get_files`, plus the next page URL when present.
             to_dataframe: If True, return the items flattened into a pandas
                 DataFrame (requires pandas) instead of a list.
+            recursively_populate: If True, recursively populate user and company
+                objects from their IDs (requires one additional API call to fetch project users).
             project_id: Project ID. Falls back to the client's configured default.
         """
         project_id = resolve_project_id(project_id, self._client.configuration.project_id)
@@ -190,6 +185,22 @@ class TasksApi(DashboardApiMixin):
         # When only totalItems exists, max(...) across pages matches the full list size
         # (first pages carry the largest value); later pages may report a stale non-zero.
         tasks_items_ceiling: int | None = None
+
+        if recursively_populate:
+            from .companies import CompaniesApi
+            from .users import UsersApi
+
+            users_api = UsersApi(self._client)
+            users = users_api.list_project_users(project_id=project_id)
+            user_mapping = create_user_mapping(users)
+
+            # Fetch project companies and create mapping
+            companies_api = CompaniesApi(self._client)
+            companies = companies_api.list_project_companies(project_id=project_id)
+            company_mapping = create_company_mapping(companies)
+        else:
+            user_mapping = None
+            company_mapping = None
 
         while has_next_page:
             raw_response = self._client.get(
@@ -204,9 +215,23 @@ class TasksApi(DashboardApiMixin):
                         item.get("data") if isinstance(item, dict) and "data" in item else item
                     )
                     if isinstance(task_data, dict):
+                        if user_mapping:
+                            task_data = cast(
+                                JSONDict,
+                                enrich_response_with_users(
+                                    task_data,
+                                    user_mapping,
+                                    {"userId": "user"},
+                                ),
+                            )
+                        if company_mapping:
+                            task_data = _extract_and_enrich_created_by_user(
+                                task_data, cast(dict[str, object], company_mapping)
+                            )
                         items.append(Task.model_validate(task_data))
             if items:
                 all_items.extend(items)
+
             meta = response.get("metadata")
             meta = meta if isinstance(meta, dict) else {}
             total_remaining = meta.get("totalRemainingItems")
@@ -263,9 +288,8 @@ class TasksApi(DashboardApiMixin):
             ):
                 has_next_page = False
             else:
-                href = next_link.get("href") if next_link else None
-                if isinstance(href, str):
-                    qs = parse_qs(urlparse(href).query)
+                if isinstance(next_href, str):
+                    qs = parse_qs(urlparse(next_href).query)
                     bookmark = qs.get("bookmark", [None])[0]
                     current_params = {**base_params, "bookmark": bookmark}
                 else:
@@ -273,9 +297,45 @@ class TasksApi(DashboardApiMixin):
 
         if verbose:
             print(f"Done. Total tasks retrieved: {len(all_items)}")
+
         if to_dataframe:
             return flatten_items_to_dataframe(list(all_items))
         return all_items
+
+    def get_all_project_tasks(
+        self,
+        params: QueryParams | TaskListParams | None = None,
+        verbose: bool = False,
+        to_dataframe: bool = False,
+        recursively_populate: bool = True,
+        *,
+        project_id: str | None = None,
+    ) -> "list[Task] | pd.DataFrame":
+        """Retrieve all tasks by following bookmark pagination automatically.
+
+        .. deprecated::
+            Use :meth:`get_project_tasks` instead.
+
+        Args:
+            params: Optional query parameters (OData).
+            verbose: If ``True``, print progress.
+            to_dataframe: If True, return as DataFrame.
+            recursively_populate: If True, populate user objects.
+            project_id: Project ID. Falls back to the client's configured default.
+        """
+        warnings.warn(
+            "get_all_project_tasks() is deprecated. Use get_project_tasks() instead.",
+            DeprecationWarning,
+            stacklevel=2,
+        )
+        result = self.get_project_tasks(
+            params=params,
+            verbose=verbose,
+            to_dataframe=to_dataframe,
+            recursively_populate=recursively_populate,
+            project_id=project_id,
+        )  # type: ignore[call-overload]
+        return cast("list[Task] | pd.DataFrame", result)
 
     def get_task(self, task_id: str, *, project_id: str | None = None) -> TaskResponse | None:
         """GET /3.3/projects/{projectId}/tasks/{taskId}.
@@ -291,84 +351,30 @@ class TasksApi(DashboardApiMixin):
     def get_project_task_changes(
         self,
         params: QueryParams | None = None,
-        full_response: Literal[False] = False,
-        to_dataframe: Literal[False] = False,
-        *,
-        project_id: str | None = None,
-    ) -> list[TaskChange]: ...
-    @overload
-    def get_project_task_changes(
-        self,
-        params: QueryParams | None = None,
-        *,
-        full_response: Literal[True],
-        to_dataframe: Literal[False] = False,
-        project_id: str | None = None,
-    ) -> TaskChanges | None: ...
-    @overload
-    def get_project_task_changes(
-        self,
-        params: QueryParams | None = None,
-        full_response: bool = ...,
-        *,
-        to_dataframe: Literal[True],
-        project_id: str | None = None,
-    ) -> "pd.DataFrame": ...
-    def get_project_task_changes(
-        self,
-        params: QueryParams | None = None,
-        full_response: bool = False,
-        to_dataframe: bool = False,
-        *,
-        project_id: str | None = None,
-    ) -> "TaskChanges | list[TaskChange] | pd.DataFrame | None":
-        """GET /2.2/projects/{projectId}/tasks/changes.
-
-        Args:
-            params: Optional query parameters.
-            full_response: If True, return the full TaskChanges model
-                (including metadata and links). If False (default), return
-                just the list of TaskChange items.
-            to_dataframe: If True, return the items flattened into a pandas
-                DataFrame (requires pandas). Takes precedence over full_response.
-            project_id: Project ID. Falls back to the client's configured default.
-
-        Returns:
-            List of TaskChange items, the full TaskChanges model when
-            full_response=True, or a DataFrame when to_dataframe=True.
-        """
-        project_id = resolve_project_id(project_id, self._client.configuration.project_id)
-        response = self._client.get(f"/2.2/projects/{project_id}/tasks/changes", params=params)
-        result = convert_to_list_response(response, TaskChanges)
-        if to_dataframe:
-            return to_dataframe_or_empty(result)
-        if full_response:
-            return result
-        return result.items if result is not None else []
-
-    @overload
-    def get_all_project_task_changes(
-        self,
-        params: QueryParams | None = None,
         verbose: bool = False,
         to_dataframe: Literal[False] = False,
+        recursively_populate: bool = True,
         *,
         project_id: str | None = None,
     ) -> list[TaskChange]: ...
+
     @overload
-    def get_all_project_task_changes(
+    def get_project_task_changes(
         self,
         params: QueryParams | None = None,
         verbose: bool = False,
         *,
         to_dataframe: Literal[True],
+        recursively_populate: bool = True,
         project_id: str | None = None,
     ) -> "pd.DataFrame": ...
-    def get_all_project_task_changes(
+
+    def get_project_task_changes(
         self,
         params: QueryParams | None = None,
         verbose: bool = False,
         to_dataframe: bool = False,
+        recursively_populate: bool = True,
         *,
         project_id: str | None = None,
     ) -> "list[TaskChange] | pd.DataFrame":
@@ -380,6 +386,8 @@ class TasksApi(DashboardApiMixin):
             verbose: If ``True``, print page-by-page pagination progress.
             to_dataframe: If True, return the items flattened into a pandas
                 DataFrame (requires pandas) instead of a list.
+            recursively_populate: If True, recursively populate user and company
+                objects from their IDs (requires one additional API call to fetch project users).
             project_id: Project ID. Falls back to the client's configured default.
 
         Returns:
@@ -387,6 +395,23 @@ class TasksApi(DashboardApiMixin):
             DataFrame when to_dataframe=True.
         """
         project_id = resolve_project_id(project_id, self._client.configuration.project_id)
+
+        if recursively_populate:
+            from .companies import CompaniesApi
+            from .users import UsersApi
+
+            users_api = UsersApi(self._client)
+            users = users_api.list_project_users(project_id=project_id)
+            user_mapping = create_user_mapping(users)
+
+            # Fetch project companies and create mapping
+            companies_api = CompaniesApi(self._client)
+            companies = companies_api.list_project_companies(project_id=project_id)
+            company_mapping = create_company_mapping(companies)
+        else:
+            user_mapping = None
+            company_mapping = None
+
         raw_items = paginate(
             endpoint=f"/2.2/projects/{project_id}/tasks/changes",
             client=self._client,
@@ -397,10 +422,56 @@ class TasksApi(DashboardApiMixin):
         typed_items: list[TaskChange] = []
         for item in raw_items:
             if isinstance(item, dict):
+                if user_mapping:
+                    item = cast(
+                        JSONDict,
+                        enrich_response_with_users(
+                            item,
+                            user_mapping,
+                            {"userId": "user"},
+                        ),
+                    )
+                if company_mapping and user_mapping:
+                    item = cast(JSONDict, enrich_users_with_companies(item, company_mapping))
                 typed_items.append(TaskChange.model_validate(item))
         if to_dataframe:
             return flatten_items_to_dataframe(list(typed_items))
         return typed_items
+
+    def get_all_project_task_changes(
+        self,
+        params: QueryParams | None = None,
+        verbose: bool = False,
+        to_dataframe: bool = False,
+        recursively_populate: bool = False,
+        *,
+        project_id: str | None = None,
+    ) -> "list[TaskChange] | pd.DataFrame":
+        """Retrieve all task changes by following bookmark pagination.
+
+        .. deprecated::
+            Use :meth:`get_project_task_changes` instead.
+
+        Args:
+            params: Optional query parameters.
+            verbose: If ``True``, print progress.
+            to_dataframe: If True, return as DataFrame.
+            recursively_populate: If True, populate user objects.
+            project_id: Project ID. Falls back to the client's configured default.
+        """
+        warnings.warn(
+            "get_all_project_task_changes() is deprecated. Use get_project_task_changes() instead.",
+            DeprecationWarning,
+            stacklevel=2,
+        )
+        result = self.get_project_task_changes(
+            params=params,
+            verbose=verbose,
+            to_dataframe=to_dataframe,
+            recursively_populate=recursively_populate,
+            project_id=project_id,
+        )  # type: ignore[call-overload]
+        return cast("list[TaskChange] | pd.DataFrame", result)
 
     @overload
     def get_project_task_attachments(
@@ -458,3 +529,25 @@ class TasksApi(DashboardApiMixin):
         if full_response:
             return result
         return result.items if result is not None else []
+
+    def _fetch_all_data(self, **kwargs: object) -> list[object]:
+        """Fetch all tasks using get_project_tasks."""
+        project_id = cast(str | None, kwargs.get("project_id"))
+        result = self.get_project_tasks(
+            project_id=project_id,
+            verbose=False,
+        )
+        return cast(list[object], result)
+
+    def _format_data_for_analysis(self, data: list[object]) -> str:
+        """Format tasks for AI analysis."""
+        import pprint
+
+        formatted_tasks = []
+        for t in data[:50]:  # Limit to 50 tasks for analysis
+            if isinstance(t, Task):
+                formatted_tasks.append(t.model_dump(by_alias=True))
+            elif isinstance(t, dict):
+                formatted_tasks.append(t)
+
+        return pprint.pformat(formatted_tasks)[:8000]

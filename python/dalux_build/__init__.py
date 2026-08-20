@@ -7,10 +7,26 @@ Quickstart::
     dalux = create_client()
 
     projects = dalux.projects.list_projects()
+
+    # AI Analysis (requires: pip install dalux-build[ai])
+    dalux.ai.files.health()
+    dalux.ai.tasks.ask("What tasks are overdue?")
 """
 
 from dataclasses import dataclass
+from typing import TYPE_CHECKING
 
+if TYPE_CHECKING:
+    from .ai.namespace import AINamespace
+
+from .ai import (
+    AiAnalysisResult,
+    AiMixin,
+    AIProviderManager,
+    HealthReport,
+    ProviderConfig,
+    ProviderType,
+)
 from .api import (
     CompaniesApi,
     CompanyCatalogApi,
@@ -72,6 +88,7 @@ class DaluxClient:
     version_sets: VersionSetsApi
     work_packages: WorkPackagesApi
     webhook_server: WebhookServerApi
+    _ai: "AINamespace | None" = None
 
     def set_default_project(self, project_id: str) -> None:
         """Set the default ``project_id`` used by API methods that accept one optionally."""
@@ -80,6 +97,27 @@ class DaluxClient:
     def set_default_file_area(self, file_area_id: str) -> None:
         """Set the default ``file_area_id`` used by API methods that accept one optionally."""
         self.configuration.file_area_id = file_area_id
+
+    @property
+    def ai(self) -> "AINamespace":
+        """Access AI analysis methods through this namespace.
+
+        Requires: pip install dalux-build[ai]
+
+        Usage:
+            dalux.ai.files.health()
+            dalux.ai.tasks.ask("What tasks are overdue?")
+        """
+        if self._ai is None:
+            try:
+                from .ai.namespace import AINamespace
+            except ImportError as e:
+                raise ImportError(
+                    "AI functionality requires additional dependencies. "
+                    "Please run: uv sync --extra ai"
+                ) from e
+            self._ai = AINamespace(self)
+        return self._ai
 
 
 def create_client(
@@ -175,6 +213,13 @@ __all__ = [
     "DashboardStartupError",
     "DashboardTemplateNotFoundError",
     "MissingDashboardDependencies",
+    # AI Analysis
+    "AiMixin",
+    "HealthReport",
+    "AiAnalysisResult",
+    "AIProviderManager",
+    "ProviderType",
+    "ProviderConfig",
     # Utilities
     "DaluxError",
     "NotFoundError",

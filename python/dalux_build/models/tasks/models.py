@@ -4,11 +4,16 @@ from datetime import date, datetime
 
 from pydantic import BaseModel, ConfigDict, Field, JsonValue, field_validator
 
+from ..projects.models import ProjectCompany
+from ..users.models import ProjectUser
+
 
 class Task(BaseModel):
     """Task model."""
 
     task_id: str | None = Field(None, alias="taskId")
+    created_by_user: ProjectUser | None = Field(None, alias="createdByUser")
+    company: ProjectCompany | None = Field(None)
 
     model_config = ConfigDict(populate_by_name=True, extra="allow")
 
@@ -31,6 +36,7 @@ class TaskChangeActor(BaseModel):
     """Flexible nested actor model used by task change fields."""
 
     user_id: str | None = Field(None, alias="userId")
+    user: ProjectUser | None = Field(None)
     role_id: str | None = Field(None, alias="roleId")
     role_name: str | None = Field(None, alias="roleName")
     user_name: str | None = Field(None, alias="userName")

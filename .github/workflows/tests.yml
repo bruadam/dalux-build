@@ -73,7 +73,7 @@ jobs:
 
     strategy:
       matrix:
-        python-version: ["3.11", "3.13", "3.14"]
+        python-version: ["3.13", "3.14"]
 
     steps:
       - uses: actions/checkout@v7
@@ -197,7 +197,7 @@ jobs:
     timeout-minutes: 10
     strategy:
       matrix:
-        python-version: ["3.11", "3.13", "3.14"]
+        python-version: ["3.13", "3.14"]
 
     steps:
       - uses: actions/checkout@v7

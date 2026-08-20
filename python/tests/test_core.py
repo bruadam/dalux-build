@@ -30,9 +30,15 @@ class TestConfiguration:
         assert config.base_url == BASE_URL
 
     def test_raises_when_base_url_missing(self, monkeypatch):
-        # Clear env vars to ensure they don't interfere
-        monkeypatch.delenv("DALUX_BASE_URL", raising=False)
-        monkeypatch.delenv("DALUX_API_KEY", raising=False)
+        # Mock getenv to return None for our env vars to avoid loading from .env
+        def mock_getenv(key, default=None):
+            if key == "DALUX_BASE_URL":
+                return None
+            if key == "DALUX_API_KEY":
+                return None
+            return os.environ.get(key, default)
+
+        monkeypatch.setattr("os.getenv", mock_getenv)
         with pytest.raises(ValueError, match="base_url"):
             Configuration(base_url="", api_key=API_KEY)
 
@@ -140,8 +146,15 @@ class TestValidationUtils:
 
 
 @rsps_lib.activate
-def test_api_client_requires_configuration():
-    with pytest.raises((ValueError, TypeError)):
+def test_api_client_requires_configuration(monkeypatch):
+    # Mock getenv to return None for env vars to avoid loading from .env
+    def mock_getenv(key, default=None):
+        if key in ("DALUX_BASE_URL", "DALUX_API_KEY"):
+            return None
+        return os.environ.get(key, default)
+
+    monkeypatch.setattr("os.getenv", mock_getenv)
+    with pytest.raises(ValueError):
         ApiClient(None)
 
 

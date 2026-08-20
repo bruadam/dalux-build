@@ -5,6 +5,11 @@ from urllib.parse import parse_qs, urlparse
 
 from ..json_types import JSONDict, JSONValue, QueryParams
 
+try:
+    from tqdm import tqdm
+except ImportError:
+    tqdm = None  # type: ignore[assignment, misc]
+
 
 class SupportsGet(Protocol):
     """The subset of ``ApiClient`` that pagination needs."""
@@ -79,7 +84,7 @@ def paginate(
         endpoint: API endpoint URL
         client: API client with get method
         params: Query parameters
-        verbose: Whether to print progress
+        verbose: Whether to print progress with tqdm
         item_accessor: Key to access items in response (default: "items")
 
     Returns:
@@ -90,51 +95,55 @@ def paginate(
     page_count = 0
     seen_bookmarks: set[str] = set()
 
-    while True:
-        page_count += 1
-        response = client.get(endpoint, params=current_params)
+    pbar = None
 
-        if not response or not isinstance(response, dict):
-            break
+    try:
+        while True:
+            page_count += 1
+            response = client.get(endpoint, params=current_params)
 
-        items = response.get(item_accessor, [])
-        item_count = len(items) if isinstance(items, list) else 0
-        if isinstance(items, list):
-            all_items.extend(items)
+            if not response or not isinstance(response, dict):
+                break
 
-        if verbose:
-            metadata = response.get("metadata", {})
-            remaining = metadata.get("totalRemainingItems", 0) if isinstance(metadata, dict) else 0
-            print(
-                f"Page {page_count}: {item_count} items, "
-                f"Total: {len(all_items)}, Remaining: {remaining}"
-            )
+            items = response.get(item_accessor, [])
+            item_count = len(items) if isinstance(items, list) else 0
+            if isinstance(items, list):
+                all_items.extend(items)
 
-        if not has_next_page(response):
-            break
+            # Initialize progress bar after first response with known total
+            if pbar is None and verbose and tqdm is not None:
+                metadata = response.get("metadata", {})
+                total = None
+                if isinstance(metadata, dict):
+                    total_remaining = metadata.get("totalRemainingItems")
+                    if isinstance(total_remaining, (int, float)):
+                        # totalRemainingItems already includes items from this page
+                        total = int(total_remaining)
+                pbar = tqdm(total=total, desc="Fetching pages", unit="item", leave=True)
+                pbar.update(item_count)
+            elif pbar is not None:
+                pbar.update(item_count)
 
-        # Check for duplicate bookmarks to prevent infinite loops
-        next_link = _find_next_page_link(response)
-        if next_link:
-            href = next_link.get("href")
-            if isinstance(href, str):
-                qs = parse_qs(urlparse(href).query)
-                bookmark = qs.get("bookmark", [None])[0]
-                if bookmark:
-                    if bookmark in seen_bookmarks:
-                        if verbose:
-                            print(
-                                f"Detected duplicate bookmark '{bookmark}', "
-                                "stopping pagination to prevent infinite loop"
-                            )
-                        break
-                    seen_bookmarks.add(bookmark)
+            if not has_next_page(response):
+                break
 
-        current_params = get_next_page_params(response, params)
-        if not current_params:
-            break
+            # Check for duplicate bookmarks to prevent infinite loops
+            next_link = _find_next_page_link(response)
+            if next_link:
+                href = next_link.get("href")
+                if isinstance(href, str):
+                    qs = parse_qs(urlparse(href).query)
+                    bookmark = qs.get("bookmark", [None])[0]
+                    if bookmark:
+                        if bookmark in seen_bookmarks:
+                            break
+                        seen_bookmarks.add(bookmark)
 
-    if verbose:
-        print(f"Pagination complete. Total items retrieved: {len(all_items)}")
+            current_params = get_next_page_params(response, params)
+            if not current_params:
+                break
+    finally:
+        if pbar is not None:
+            pbar.close()
 
     return all_items

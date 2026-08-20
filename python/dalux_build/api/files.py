@@ -2,10 +2,12 @@
 
 import json
 import os
-from typing import TYPE_CHECKING, Literal, Protocol, overload
+import warnings
+from typing import TYPE_CHECKING, Literal, Protocol, cast, overload
 
 import requests
 
+from ..ai import AiMixin
 from ..api_client import ApiClient
 from ..dashboards.api import DashboardApiMixin
 from ..json_types import JSONDict, JSONValue, QueryParams
@@ -21,6 +23,12 @@ from ..utils.file_filter import filter_files_by_name
 from ..utils.pagination import paginate
 from ..utils.path_resolver import resolve_folder_id_from_named_path
 from ..utils.search import find_all_by_field, find_by_field
+from ..utils.user_mapping import (
+    create_company_mapping,
+    create_user_mapping,
+    enrich_response_with_users,
+    enrich_users_with_companies,
+)
 from ..utils.validation import resolve_file_area_id, resolve_project_id, validate_folder_id
 
 if TYPE_CHECKING:
@@ -60,10 +68,24 @@ def _file_payload(item: FileLike) -> JSONDict:
     return item
 
 
-class FilesApi(DashboardApiMixin):
+class FilesApi(AiMixin, DashboardApiMixin):
     """Methods for files within a file area."""
 
     dashboard_resource = "files"
+    _resource_name = "file"
+    __all__ = [
+        "get_files",
+        "get_files_in_folder",
+        "get_file",
+        "bulk_download_folder",
+        "bulk_download_files",
+        "download_file_from_link",
+        "select_files_interactive",
+        "get_file_properties_mapping",
+        "get_file_property_mapping_values",
+        "health",
+        "ask",
+    ]
 
     def __init__(self, api_client: ApiClient) -> None:
         self._client = api_client
@@ -162,6 +184,7 @@ class FilesApi(DashboardApiMixin):
         full_response: Literal[False] = False,
         to_dataframe: Literal[False] = False,
         *,
+        include_properties: bool = False,
         project_id: str | None = None,
         file_area_id: str | None = None,
     ) -> list[File]: ...
@@ -172,6 +195,7 @@ class FilesApi(DashboardApiMixin):
         *,
         full_response: Literal[True],
         to_dataframe: Literal[False] = False,
+        include_properties: bool = False,
         project_id: str | None = None,
         file_area_id: str | None = None,
     ) -> FilesListResponse | None: ...
@@ -182,6 +206,7 @@ class FilesApi(DashboardApiMixin):
         full_response: bool = ...,
         *,
         to_dataframe: Literal[True],
+        include_properties: bool = False,
         project_id: str | None = None,
         file_area_id: str | None = None,
     ) -> "pd.DataFrame": ...
@@ -191,14 +216,18 @@ class FilesApi(DashboardApiMixin):
         full_response: bool = False,
         to_dataframe: bool = False,
         *,
+        include_properties: bool = False,
         project_id: str | None = None,
         file_area_id: str | None = None,
     ) -> "FilesListResponse | list[File] | pd.DataFrame | None":
         """GET /6.1/projects/{projectId}/file_areas/{fileAreaId}/files.
 
+        .. deprecated::
+            Use :meth:`get_files` instead. This method only returns
+            the first page of results.
+
         See ``docs/official-api-docs/Dalux Build API.yaml`` (operationId: listFiles).
-        Pass ``includeProperties=True`` in *params* to return each file's
-        properties array. The files endpoint does not support OData ``$filter``.
+        The files endpoint does not support OData ``$filter``.
 
         Args:
             params: Optional query parameters.
@@ -207,6 +236,8 @@ class FilesApi(DashboardApiMixin):
                 just the list of File items.
             to_dataframe: If True, return the items flattened into a pandas
                 DataFrame (requires pandas). Takes precedence over full_response.
+            include_properties: If True, include each file's properties array
+                in the response.
             project_id: Project ID. Falls back to the client's configured default.
             file_area_id: File area ID. Falls back to the client's configured default.
 
@@ -214,11 +245,22 @@ class FilesApi(DashboardApiMixin):
             List of File items, the full FilesListResponse when
             full_response=True, or a DataFrame when to_dataframe=True.
         """
+        warnings.warn(
+            "list_files() is deprecated and only returns the first page of results. "
+            "Use get_files() instead to fetch all files with pagination.",
+            DeprecationWarning,
+            stacklevel=2,
+        )
         project_id = resolve_project_id(project_id, self._client.configuration.project_id)
         file_area_id = resolve_file_area_id(file_area_id, self._client.configuration.file_area_id)
+
+        query_params = params.copy() if params else {}
+        if include_properties:
+            query_params["includeProperties"] = True
+
         response = self._client.get(
             f"/6.1/projects/{project_id}/file_areas/{file_area_id}/files",
-            params=params,
+            params=query_params if query_params else None,
         )
         result = convert_to_list_response(response, FilesListResponse)
         if to_dataframe:
@@ -228,31 +270,39 @@ class FilesApi(DashboardApiMixin):
         return result.items if result is not None else []
 
     @overload
-    def get_all_files(
+    def get_files(
         self,
         params: QueryParams | None = None,
         verbose: bool = False,
         to_dataframe: Literal[False] = False,
+        recursively_populate: bool = True,
         *,
+        include_properties: bool = True,
         project_id: str | None = None,
         file_area_id: str | None = None,
     ) -> list[FileLike]: ...
+
     @overload
-    def get_all_files(
+    def get_files(
         self,
         params: QueryParams | None = None,
         verbose: bool = False,
         *,
         to_dataframe: Literal[True],
+        recursively_populate: bool = True,
+        include_properties: bool = True,
         project_id: str | None = None,
         file_area_id: str | None = None,
     ) -> "pd.DataFrame": ...
-    def get_all_files(
+
+    def get_files(
         self,
         params: QueryParams | None = None,
         verbose: bool = False,
         to_dataframe: bool = False,
+        recursively_populate: bool = True,
         *,
+        include_properties: bool = True,
         project_id: str | None = None,
         file_area_id: str | None = None,
     ) -> "list[FileLike] | pd.DataFrame":
@@ -263,6 +313,11 @@ class FilesApi(DashboardApiMixin):
             verbose: If True, print progress information.
             to_dataframe: If True, return the items flattened into a pandas
                 DataFrame (requires pandas) instead of a list.
+            recursively_populate: If True, recursively enrich all user_id and
+                company_id fields with ProjectUser and ProjectCompany objects
+                (requires additional API calls to fetch users and companies).
+            include_properties: If True, include each file's properties array
+                in the response.
             project_id: Project ID. Falls back to the client's configured default.
             file_area_id: File area ID. Falls back to the client's configured default.
 
@@ -274,15 +329,59 @@ class FilesApi(DashboardApiMixin):
         project_id = resolve_project_id(project_id, self._client.configuration.project_id)
         file_area_id = resolve_file_area_id(file_area_id, self._client.configuration.file_area_id)
 
+        user_mapping = None
+        company_mapping = None
+
+        if recursively_populate:
+            from .companies import CompaniesApi
+            from .users import UsersApi
+
+            users_api = UsersApi(self._client)
+            users = users_api.list_project_users(project_id=project_id)
+            user_mapping = create_user_mapping(users)
+
+            companies_api = CompaniesApi(self._client)
+            companies = companies_api.list_project_companies(project_id=project_id)
+            company_mapping = create_company_mapping(companies)
+
+        query_params = params.copy() if params else {}
+        if include_properties:
+            query_params["includeProperties"] = True
+
         endpoint = f"/6.1/projects/{project_id}/file_areas/{file_area_id}/files"
-        self._print_endpoint("GET", endpoint, params=params, verbose=verbose)
-        raw_items = paginate(endpoint, self._client, params, verbose)
+        params_arg = query_params if query_params else None
+        self._print_endpoint("GET", endpoint, params=params_arg, verbose=verbose)
+        raw_items = paginate(endpoint, self._client, params_arg, verbose)
 
         # Convert raw items to File objects
         files: list[FileLike] = []
         for item in raw_items:
             if isinstance(item, dict) and "data" in item:
-                file_data = item["data"]
+                file_data: JSONDict = item["data"] if isinstance(item["data"], dict) else {}
+                if user_mapping:
+                    file_data = cast(
+                        JSONDict,
+                        enrich_response_with_users(
+                            file_data,
+                            user_mapping,
+                            {
+                                "uploadedByUserId": "uploaded_by_user",
+                                "lastModifiedByUserId": "last_modified_by_user",
+                            },
+                        ),
+                    )
+                if company_mapping:
+                    if user_mapping:
+                        file_data = cast(
+                            JSONDict, enrich_users_with_companies(file_data, company_mapping)
+                        )
+                    else:
+                        file_data = cast(
+                            JSONDict,
+                            enrich_response_with_users(
+                                file_data, company_mapping, {"companyId": "company"}
+                            ),
+                        )
                 try:
                     file_obj = File.model_validate(file_data)
                     files.append(file_obj)
@@ -298,36 +397,39 @@ class FilesApi(DashboardApiMixin):
         return files
 
     @overload
-    def get_all_files_in_folder(
+    def get_files_in_folder(
         self,
         folder_id: str | None = None,
         params: QueryParams | None = None,
         verbose: bool = False,
         to_dataframe: Literal[False] = False,
         *,
+        include_properties: bool = True,
         path: str | None = None,
         project_id: str | None = None,
         file_area_id: str | None = None,
     ) -> list[FileLike]: ...
     @overload
-    def get_all_files_in_folder(
+    def get_files_in_folder(
         self,
         folder_id: str | None = None,
         params: QueryParams | None = None,
         verbose: bool = False,
         *,
         to_dataframe: Literal[True],
+        include_properties: bool = True,
         path: str | None = None,
         project_id: str | None = None,
         file_area_id: str | None = None,
     ) -> "pd.DataFrame": ...
-    def get_all_files_in_folder(
+    def get_files_in_folder(
         self,
         folder_id: str | None = None,
         params: QueryParams | None = None,
         verbose: bool = False,
         to_dataframe: bool = False,
         *,
+        include_properties: bool = True,
         path: str | None = None,
         project_id: str | None = None,
         file_area_id: str | None = None,
@@ -345,6 +447,8 @@ class FilesApi(DashboardApiMixin):
             verbose: If True, print progress information.
             to_dataframe: If True, return the items flattened into a pandas
                 DataFrame (requires pandas) instead of a list.
+            include_properties: If True, include each file's properties array
+                in the response.
             path: A full path starting with the file area name, such as
                 ``"Files/4_Design/C07_Geometry/C07.05_BIM"``. Alternative to
                 *folder_id* + *file_area_id*.
@@ -386,9 +490,14 @@ class FilesApi(DashboardApiMixin):
         all_files = self.get_all_files(
             params=params,
             verbose=verbose,
+            include_properties=include_properties,
             project_id=project_id,
             file_area_id=resolved_file_area_id,
         )
+        # Cast all_files since it can be list or DataFrame - we need list for filter
+        if not isinstance(all_files, list):
+            return flatten_items_to_dataframe([]) if to_dataframe else []
+
         filtered = find_all_by_field(
             all_files, "folderId", resolved_folder_id, accessor=lambda x: x
         )
@@ -397,6 +506,91 @@ class FilesApi(DashboardApiMixin):
         if to_dataframe:
             return flatten_items_to_dataframe(list(filtered))
         return filtered
+
+    def get_all_files(
+        self,
+        params: QueryParams | None = None,
+        verbose: bool = False,
+        to_dataframe: bool = False,
+        recursively_populate: bool = True,
+        *,
+        include_properties: bool = True,
+        project_id: str | None = None,
+        file_area_id: str | None = None,
+    ) -> "list[FileLike] | pd.DataFrame":
+        """Retrieve all files by following bookmark pagination automatically.
+
+        .. deprecated::
+            Use :meth:`get_files` instead.
+
+        Args:
+            params: Optional query parameters.
+            verbose: If True, print progress.
+            to_dataframe: If True, return as DataFrame.
+            recursively_populate: If True, populate user/company objects.
+            include_properties: If True, include file properties.
+            project_id: Project ID. Falls back to the client's configured default.
+            file_area_id: File area ID. Falls back to the client's configured default.
+        """
+        warnings.warn(
+            "get_all_files() is deprecated. Use get_files() instead.",
+            DeprecationWarning,
+            stacklevel=2,
+        )
+        result = self.get_files(
+            params=params,
+            verbose=verbose,
+            to_dataframe=to_dataframe,
+            recursively_populate=recursively_populate,
+            include_properties=include_properties,
+            project_id=project_id,
+            file_area_id=file_area_id,
+        )  # type: ignore[call-overload]
+        return cast("list[FileLike] | pd.DataFrame", result)
+
+    def get_all_files_in_folder(
+        self,
+        folder_id: str | None = None,
+        params: QueryParams | None = None,
+        verbose: bool = False,
+        to_dataframe: bool = False,
+        *,
+        include_properties: bool = False,
+        path: str | None = None,
+        project_id: str | None = None,
+        file_area_id: str | None = None,
+    ) -> "list[FileLike] | pd.DataFrame":
+        """Retrieve all files in a folder by following bookmark pagination automatically.
+
+        .. deprecated::
+            Use :meth:`get_files_in_folder` instead.
+
+        Args:
+            folder_id: The folder ID to fetch files from.
+            params: Optional query parameters.
+            verbose: If True, print progress.
+            to_dataframe: If True, return as DataFrame.
+            include_properties: If True, include file properties.
+            path: Optional file path to resolve folder.
+            project_id: Project ID. Falls back to the client's configured default.
+            file_area_id: File area ID. Falls back to the client's configured default.
+        """
+        warnings.warn(
+            "get_all_files_in_folder() is deprecated. Use get_files_in_folder() instead.",
+            DeprecationWarning,
+            stacklevel=2,
+        )
+        result = self.get_files_in_folder(
+            folder_id=folder_id,
+            params=params,
+            verbose=verbose,
+            to_dataframe=to_dataframe,
+            include_properties=include_properties,
+            path=path,
+            project_id=project_id,
+            file_area_id=file_area_id,
+        )  # type: ignore[call-overload,misc]
+        return cast("list[FileLike] | pd.DataFrame", result)
 
     def _extract_file_name(self, file_item: FileLike) -> str:
         """Extract a file name from either a File model or raw API item."""
@@ -436,6 +630,7 @@ class FilesApi(DashboardApiMixin):
         params: QueryParams | None = None,
         verbose: bool = False,
         *,
+        include_properties: bool = False,
         path: str | None = None,
         project_id: str | None = None,
         file_area_id: str | None = None,
@@ -460,6 +655,8 @@ class FilesApi(DashboardApiMixin):
                 fileName matching.
             params: Optional additional query parameters passed to the API.
             verbose: If True, print progress information.
+            include_properties: If True, include each file's properties array
+                in the response.
             path: A full folder path starting with the file area name, such as
                 ``"Files/4_Design/C07_Geometry/C07.05_BIM"``. Alternative to
                 *folder_id* + *file_area_id*.
@@ -472,14 +669,20 @@ class FilesApi(DashboardApiMixin):
             List of downloaded :class:`File` objects with ``saved_file_path`` and
             optionally ``saved_metadata_path`` populated.
         """
-        files = self.get_all_files_in_folder(
+        files_result = self.get_all_files_in_folder(
             folder_id,
             params=params,
             verbose=verbose,
+            include_properties=include_properties,
             path=path,
             project_id=project_id,
             file_area_id=file_area_id,
         )
+
+        # Ensure we have a list, not a DataFrame
+        if not isinstance(files_result, list):
+            return []
+        files = files_result
 
         resolved_filters = filters.model_copy(deep=True) if filters else FileNameFilter()
 
@@ -527,6 +730,7 @@ class FilesApi(DashboardApiMixin):
         params: QueryParams | None = None,
         verbose: bool = False,
         *,
+        include_properties: bool = False,
         project_id: str | None = None,
     ) -> list[File]:
         """Download a list of files by IDs or full paths.
@@ -546,6 +750,8 @@ class FilesApi(DashboardApiMixin):
                 Re-running only downloads revisions not already present locally.
             params: Optional additional query parameters used for path-based resolution.
             verbose: If True, print progress per file.
+            include_properties: If True, include each file's properties array
+                in the response.
             project_id: Project ID. Falls back to the client's configured default.
 
         Returns:
@@ -589,12 +795,23 @@ class FilesApi(DashboardApiMixin):
                         )
                     continue
                 if resolved_file_area_id not in all_files_cache:
-                    all_files_cache[resolved_file_area_id] = self.get_all_files(
+                    all_files_result = self.get_all_files(
                         params=params,
                         verbose=verbose,
+                        include_properties=include_properties,
                         project_id=project_id,
                         file_area_id=resolved_file_area_id,
                     )
+                    # Ensure we store a list, not a DataFrame
+                    if isinstance(all_files_result, list):
+                        all_files_cache[resolved_file_area_id] = all_files_result
+                    else:
+                        if verbose:
+                            print(
+                                f"  [{i}/{total}] Skipping {normalized_item!r} "
+                                f"(Could not fetch files)"
+                            )
+                        continue
                 folder_files = find_all_by_field(
                     all_files_cache[resolved_file_area_id],
                     "folderId",
@@ -661,7 +878,9 @@ class FilesApi(DashboardApiMixin):
         save_path: str | None = None,
         params: QueryParams | None = None,
         verbose: bool = False,
+        recursively_populate: bool = False,
         *,
+        include_properties: bool = False,
         path: str | None = None,
         project_id: str | None = None,
         file_area_id: str | None = None,
@@ -681,6 +900,10 @@ class FilesApi(DashboardApiMixin):
             save_path: Optional directory to save the file (default: current directory).
             params: Optional additional query parameters used for path-based resolution.
             verbose: If True, print progress information for path-based resolution.
+            recursively_populate: If True, recursively enrich all user_id and
+                company_id fields with ProjectUser and ProjectCompany objects.
+            include_properties: If True, include the file's properties array
+                in the response.
             path: A full path starting with the file area name, e.g.
                 ``"Files/folder/.../file.ext"``. Alternative to *file_id* +
                 *file_area_id*.
@@ -711,37 +934,84 @@ class FilesApi(DashboardApiMixin):
                 return not_found_message
 
             candidate_file_name = path_parts[-1]
-            files = self.get_all_files_in_folder(
+            files_result = self.get_all_files_in_folder(
                 folder_id,
                 params=params,
                 verbose=verbose,
+                include_properties=include_properties,
                 project_id=project_id,
                 file_area_id=resolved_file_area_id,
             )
+            # Ensure we have a list, not a DataFrame
+            if not isinstance(files_result, list):
+                return not_found_message
+            files = files_result
             file_match = find_by_field(files, "file_name", candidate_file_name)
             if not file_match:
                 return not_found_message
 
-            if download and isinstance(file_match, File) and file_match.download_link:
-                result: JSONDict = file_match.model_dump()
+            # file_match is FileLike (File | JSONDict)
+            file_obj: File | None = None
+            if isinstance(file_match, File):
+                file_obj = file_match
+            elif isinstance(file_match, dict):
+                try:
+                    file_obj = File.model_validate(file_match)
+                except Exception:
+                    pass
+
+            if download and file_obj and file_obj.download_link:
+                result: JSONDict = file_obj.model_dump()
                 result["downloaded_file_path"] = self._download_file_from_link(
-                    file_match.download_link, file_match.file_name, save_path, verbose=verbose
+                    file_obj.download_link, file_obj.file_name, save_path, verbose=verbose
                 )
                 return result
-            return file_match
+            return file_obj if file_obj else file_match
 
         if file_id is None:
             raise ValueError("either 'file_id' or 'path' must be provided")
 
         file_area_id = resolve_file_area_id(file_area_id, self._client.configuration.file_area_id)
+
+        query_params = params.copy() if params else {}
+        if include_properties:
+            query_params["includeProperties"] = True
+
         self._print_endpoint(
             "GET",
             f"/5.0/projects/{project_id}/file_areas/{file_area_id}/files/{file_id}",
+            params=query_params if query_params else None,
             verbose=verbose,
         )
         response = self._client.get(
-            f"/5.0/projects/{project_id}/file_areas/{file_area_id}/files/{file_id}"
+            f"/5.0/projects/{project_id}/file_areas/{file_area_id}/files/{file_id}",
+            params=query_params if query_params else None,
         )
+
+        if recursively_populate and isinstance(response, dict):
+            from .companies import CompaniesApi
+            from .users import UsersApi
+
+            users_api = UsersApi(self._client)
+            users = users_api.list_project_users(project_id=project_id)
+            user_mapping = create_user_mapping(users)
+            response = cast(
+                JSONDict,
+                enrich_response_with_users(
+                    response,
+                    user_mapping,
+                    {
+                        "uploadedByUserId": "uploaded_by_user",
+                        "lastModifiedByUserId": "last_modified_by_user",
+                    },
+                ),
+            )
+
+            companies_api = CompaniesApi(self._client)
+            companies = companies_api.list_project_companies(project_id=project_id)
+            company_mapping = create_company_mapping(companies)
+            response = cast(JSONDict, enrich_users_with_companies(response, company_mapping))
+
         file_info = convert_to_model(response, FileResponse)
 
         if download and file_info:
@@ -1041,3 +1311,27 @@ class FilesApi(DashboardApiMixin):
             f"/1.0/projects/{project_id}/file_areas/{file_area_id}"
             f"/files/properties/1.0/mappings/{file_property_id}/values"
         )
+
+    def _fetch_all_data(self, **kwargs: object) -> list[object]:
+        """Fetch all files using get_all_files."""
+        project_id = cast(str | None, kwargs.get("project_id"))
+        file_area_id = cast(str | None, kwargs.get("file_area_id"))
+        result = self.get_files(
+            project_id=project_id,
+            file_area_id=file_area_id,
+            verbose=False,
+        )
+        return cast(list[object], result)
+
+    def _format_data_for_analysis(self, data: list[object]) -> str:
+        """Format files for AI analysis."""
+        import pprint
+
+        formatted_files = []
+        for f in data[:50]:  # Limit to 50 files for analysis
+            if isinstance(f, File):
+                formatted_files.append(f.model_dump(by_alias=True))
+            elif isinstance(f, dict):
+                formatted_files.append(f)
+
+        return pprint.pformat(formatted_files)[:8000]

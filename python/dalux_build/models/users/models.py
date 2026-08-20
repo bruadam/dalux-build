@@ -2,6 +2,8 @@
 
 from pydantic import BaseModel, ConfigDict, EmailStr, Field
 
+from ..projects.models import ProjectCompany
+
 
 class User(BaseModel):
     """User model."""
@@ -19,5 +21,6 @@ class ProjectUser(User):
     """Project user model."""
 
     company_id: str | None = Field(None, alias="companyId")
+    company: ProjectCompany | None = Field(None)
 
     model_config = ConfigDict(populate_by_name=True)

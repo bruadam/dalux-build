@@ -31,6 +31,8 @@ The returned `DaluxClient` exposes one attribute per API resource group
 [python/README.md#api-reference](https://github.com/bruadam/dalux-build/blob/main/python/README.md#api-reference)
 for every method and path.
 
+> **Note:** The Python client recently refactored pagination methods to make pagination the default behavior with cleaner names (e.g., `get_files()` instead of `get_all_files()`). See the [Migration Guide](python-api-migration-v2.html) for details. Old method names are still supported with deprecation warnings for backward compatibility.
+
 ## Client-level defaults
 
 Most methods take `project_id` (and `file_area_id`) as keyword-only args.

@@ -8,6 +8,8 @@ nav_order: 11
 Tutorials for the Python client live in a separate repository:
 [bruadam/dalux-build-tuto](https://github.com/bruadam/dalux-build-tuto).
 
+> **Note:** Tutorials are being updated to reflect the new pagination method names (e.g., `get_files()` instead of `get_all_files()`). See the [Python API Migration Guide](python-api-migration-v2.html) for details on the changes.
+
 Five hours of content, one Jupyter notebook per hour:
 
 - [Hour 1: Dalux Client](https://github.com/bruadam/dalux-build-tuto/blob/main/tutorials/hour_1_setup_and_projects.ipynb)

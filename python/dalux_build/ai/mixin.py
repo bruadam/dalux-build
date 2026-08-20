@@ -134,7 +134,7 @@ class AiMixin:
             f'  "issues": [\n'
             f'    {{"item_identifier": "id or name", "issue": "description of the '
             f'problem", "severity": "low|medium|high"}}\n'
-            f'  ],\n'
+            f"  ],\n"
             f'  "summary": "brief overall health assessment"\n'
             f"}}\n\n"
             f"Focus on:\n"
@@ -207,9 +207,7 @@ Provide a direct, concise answer to the question."""
 
         Subclasses should override this to call their specific list methods.
         """
-        raise NotImplementedError(
-            f"{self.__class__.__name__} must implement _fetch_all_data()"
-        )
+        raise NotImplementedError(f"{self.__class__.__name__} must implement _fetch_all_data()")
 
     def _format_data_for_analysis(self, data: list[Any]) -> str:
         """Format data for AI analysis.

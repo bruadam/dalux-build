@@ -242,11 +242,18 @@ class File(BaseModel):
 
             # Extract markdown text from all pages
             extracted_text = "\n\n".join(page.markdown for page in ocr_response.pages)
-            print(f"✓ Text extracted from {len(ocr_response.pages)} pages ({len(extracted_text)} chars)")  # noqa: E501
+            print(  # noqa: E501
+                f"✓ Text extracted from {len(ocr_response.pages)} pages "
+                f"({len(extracted_text)} chars)"
+            )
 
             # Extract images if requested
             if include_image_base64:
-                page_images = [page.image for page in ocr_response.pages if hasattr(page, 'image') and page.image]  # noqa: E501
+                page_images = [
+                    page.image
+                    for page in ocr_response.pages
+                    if hasattr(page, "image") and page.image
+                ]  # noqa: E501
                 if page_images:
                     print(f"✓ Extracted {len(page_images)} page images")
 
@@ -279,14 +286,16 @@ class File(BaseModel):
                 ]
                 # Add page images
                 for _i, img_b64 in enumerate(page_images):
-                    content.append({
-                        "type": "image",
-                        "source": {
-                            "type": "base64",
-                            "media_type": "image/png",
-                            "data": img_b64,
-                        },
-                    })
+                    content.append(
+                        {
+                            "type": "image",
+                            "source": {
+                                "type": "base64",
+                                "media_type": "image/png",
+                                "data": img_b64,
+                            },
+                        }
+                    )
             elif extracted_text and include_image_base64:
                 # Extracted text available but no images from OCR
                 content = [

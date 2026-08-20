@@ -6,11 +6,6 @@ from urllib.parse import parse_qs, urlparse
 
 from ..ai import AiMixin
 from ..api_client import ApiClient
-
-try:
-    from tqdm import tqdm
-except ImportError:
-    tqdm = None  # type: ignore[assignment, misc]
 from ..dashboards.api import DashboardApiMixin
 from ..json_types import JSONDict, QueryParams
 from ..models import (
@@ -208,96 +203,99 @@ class TasksApi(AiMixin, DashboardApiMixin):
             user_mapping = None
             company_mapping = None
 
-        pbar = None
+        while has_next_page:
+            raw_response = self._client.get(
+                f"/5.2/projects/{project_id}/tasks", params=current_params
+            )
+            response: JSONDict = raw_response if isinstance(raw_response, dict) else {}
+            raw_items = response.get("items")
+            items: list[Task] = []
+            if isinstance(raw_items, list):
+                for item in raw_items:
+                    task_data = (
+                        item.get("data") if isinstance(item, dict) and "data" in item else item
+                    )
+                    if isinstance(task_data, dict):
+                        if user_mapping:
+                            task_data = enrich_response_with_users(
+                                task_data,
+                                user_mapping,
+                                {"userId": "user"},
+                            )
+                        if company_mapping:
+                            task_data = _extract_and_enrich_created_by_user(
+                                task_data, company_mapping
+                            )
+                        items.append(Task.model_validate(task_data))
+            if items:
+                all_items.extend(items)
 
-        try:
-            while has_next_page:
-                raw_response = self._client.get(
-                    f"/5.2/projects/{project_id}/tasks", params=current_params
-                )
-                response: JSONDict = raw_response if isinstance(raw_response, dict) else {}
-                raw_items = response.get("items")
-                items: list[Task] = []
-                if isinstance(raw_items, list):
-                    for item in raw_items:
-                        task_data = (
-                            item.get("data") if isinstance(item, dict) and "data" in item else item
-                        )
-                        if isinstance(task_data, dict):
-                            if user_mapping:
-                                task_data = enrich_response_with_users(
-                                    task_data,
-                                    user_mapping,
-                                    {"userId": "user"},
-                                )
-                            if company_mapping:
-                                task_data = _extract_and_enrich_created_by_user(
-                                    task_data, company_mapping
-                                )
-                            items.append(Task.model_validate(task_data))
-                if items:
-                    all_items.extend(items)
+            meta = response.get("metadata")
+            meta = meta if isinstance(meta, dict) else {}
+            total_remaining = meta.get("totalRemainingItems")
+            total_items = meta.get("totalItems")
+            if "totalRemainingItems" in meta and isinstance(total_remaining, (int, float, str)):
+                remaining = int(total_remaining)
+                use_files_remaining_stop = True
+            elif "totalItems" in meta and isinstance(total_items, (int, float, str)):
+                ti = int(total_items)
+                tasks_items_ceiling = max(tasks_items_ceiling or 0, ti)
+                remaining = ti
+                use_files_remaining_stop = False
+            else:
+                remaining = 0
+                use_files_remaining_stop = True
 
-                meta = response.get("metadata")
-                meta = meta if isinstance(meta, dict) else {}
-                total_remaining = meta.get("totalRemainingItems")
-                total_items = meta.get("totalItems")
-                if "totalRemainingItems" in meta and isinstance(total_remaining, (int, float, str)):
-                    remaining = int(total_remaining)
-                    use_files_remaining_stop = True
-                elif "totalItems" in meta and isinstance(total_items, (int, float, str)):
-                    ti = int(total_items)
-                    tasks_items_ceiling = max(tasks_items_ceiling or 0, ti)
-                    remaining = ti
-                    use_files_remaining_stop = False
+            links = response.get("links")
+            next_link = next(
+                (
+                    link
+                    for link in (links if isinstance(links, list) else [])
+                    if isinstance(link, dict) and link.get("rel") == "nextPage"
+                ),
+                None,
+            )
+            next_href = next_link.get("href") if next_link else None
+
+            if verbose:
+                next_part = f" next: {next_href}" if next_href else " next: (none)"
+                if use_files_remaining_stop:
+                    print(
+                        f"Retrieved {len(all_items)} tasks so far, "
+                        f"{remaining} remaining...{next_part}"
+                    )
+                elif tasks_items_ceiling is not None:
+                    rem_v = max(0, tasks_items_ceiling - len(all_items))
+                    print(
+                        f"Retrieved {len(all_items)} tasks so far, {rem_v} remaining...{next_part}"
+                    )
                 else:
-                    remaining = 0
-                    use_files_remaining_stop = True
+                    print(
+                        f"Retrieved {len(all_items)} tasks so far, "
+                        f"{remaining} remaining...{next_part}"
+                    )
 
-                # Initialize progress bar after first response with known total
-                if pbar is None and verbose and tqdm is not None:
-                    total = None
-                    if use_files_remaining_stop:
-                        # totalRemainingItems already includes items from this page
-                        total = remaining
-                    elif tasks_items_ceiling is not None:
-                        total = tasks_items_ceiling
-                    pbar = tqdm(total=total, desc="Fetching tasks", unit="task", leave=True)
-                    pbar.update(len(items))
-                elif pbar is not None:
-                    pbar.update(len(items))
-
-                links = response.get("links")
-                next_link = next(
-                    (
-                        link
-                        for link in (links if isinstance(links, list) else [])
-                        if isinstance(link, dict) and link.get("rel") == "nextPage"
-                    ),
-                    None,
-                )
-
-                if not items:
-                    has_next_page = False
-                elif use_files_remaining_stop and remaining == 0:
-                    has_next_page = False
-                elif (
-                    not use_files_remaining_stop
-                    and tasks_items_ceiling is not None
-                    and len(all_items) >= tasks_items_ceiling
-                ):
-                    has_next_page = False
+            if not items:
+                has_next_page = False
+            elif use_files_remaining_stop and remaining == 0:
+                has_next_page = False
+            elif (
+                not use_files_remaining_stop
+                and tasks_items_ceiling is not None
+                and len(all_items) >= tasks_items_ceiling
+            ):
+                has_next_page = False
+            else:
+                if isinstance(next_href, str):
+                    qs = parse_qs(urlparse(next_href).query)
+                    bookmark = qs.get("bookmark", [None])[0]
+                    current_params = {**base_params, "bookmark": bookmark}
                 else:
-                    href = next_link.get("href") if next_link else None
-                    if isinstance(href, str):
-                        qs = parse_qs(urlparse(href).query)
-                        bookmark = qs.get("bookmark", [None])[0]
-                        current_params = {**base_params, "bookmark": bookmark}
-                    else:
-                        has_next_page = False
-        finally:
-            if pbar is not None:
-                pbar.close()
+                    has_next_page = False
+
+        if verbose:
+            print(f"Done. Total tasks retrieved: {len(all_items)}")
+
         if to_dataframe:
             return flatten_items_to_dataframe(list(all_items))
         return all_items

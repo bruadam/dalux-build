@@ -184,7 +184,7 @@ def create_client(
 
 
 # Version information
-__version__ = "2.1.4"
+__version__ = "2.2.0"
 
 __all__ = [
     "create_client",

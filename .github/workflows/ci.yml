@@ -84,3 +84,20 @@ jobs:
           fi
           echo "::error::javascript/ or python/ changed without a changeset. Run 'npx changeset' (or 'npx changeset add --empty' if this change doesn't need a release). See CONTRIBUTING.md."
           exit 1
+
+  # `changeset-check` above only proves a changeset *exists*; it says nothing
+  # about whether it names a real package. A changeset naming a non-workspace
+  # package passes every PR check and then aborts `changeset version` on push
+  # to main, silently blocking the release (see scripts/validate-changesets.mjs).
+  # Runs on push as well as PRs, since changesets can land on main directly.
+  changeset-validate:
+    name: Changesets name valid packages
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+      # Uses only Node builtins, so no `npm ci` needed.
+      - run: node scripts/validate-changesets.mjs

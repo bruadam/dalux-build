@@ -60,7 +60,26 @@ jobs:
           cache: npm
           cache-dependency-path: package-lock.json
       - run: npm ci
-      - run: npm publish --workspace=javascript --dry-run --access public
+
+      # `npm publish --dry-run` still validates the target version against the
+      # registry, so it fails with "cannot publish over the previously
+      # published versions" on every push to main between releases (the version
+      # on main is already on npm until the next Version Packages PR lands).
+      # Run the full publish dry run only when this version is genuinely
+      # unpublished; otherwise fall back to `npm pack --dry-run`, which does the
+      # same packaging/manifest validation without the registry version check.
+      # Mirrors the already-published guard in release.yml's PyPI job.
+      - name: Dry-run npm release
+        run: |
+          set -euo pipefail
+          NAME=$(node -p "require('./javascript/package.json').name")
+          VERSION=$(node -p "require('./javascript/package.json').version")
+          if npm view "${NAME}@${VERSION}" version >/dev/null 2>&1; then
+            echo "${NAME}@${VERSION} is already published; validating packaging only."
+            npm pack --workspace=javascript --dry-run
+          else
+            npm publish --workspace=javascript --dry-run --access public
+          fi
 
   test-python:
     if: inputs.run-python

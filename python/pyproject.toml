@@ -37,6 +37,8 @@ ai = [
     "anthropic>=0.28.0",
     "mistralai>=0.0.11",
     "openai>=1.3.0",
+    "pdf2image>=1.17.0",
+    "pillow>=11.0.0",
 ]
 dev = [
     "build>=1.2",
@@ -138,6 +140,10 @@ module = "openai"
 ignore_missing_imports = true
 
 [[tool.mypy.overrides]]
+module = "pdf2image"
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
 module = "croniter"
 ignore_missing_imports = true
 
@@ -148,3 +154,13 @@ ignore_missing_imports = true
 [[tool.mypy.overrides]]
 module = "plotly.*"
 ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+# AI provider integration deals with multiple LLM providers with different
+# type signatures, making strict typing impractical
+module = "dalux_build.ai.providers"
+warn_unused_ignores = false
+
+[[tool.mypy.overrides]]
+module = "dalux_build.models.files.models"
+warn_unused_ignores = false

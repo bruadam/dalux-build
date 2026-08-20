@@ -114,3 +114,17 @@ ignore_missing_imports = true
 [[tool.mypy.overrides]]
 module = "plotly.*"
 ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+module = "pdf2image"
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+# AI provider integration deals with multiple LLM providers with different
+# type signatures, making strict typing impractical
+module = "dalux_build.ai.providers"
+warn_unused_ignores = false
+
+[[tool.mypy.overrides]]
+module = "dalux_build.models.files.models"
+warn_unused_ignores = false

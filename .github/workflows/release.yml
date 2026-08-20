@@ -154,12 +154,16 @@ jobs:
 
   publish-python:
     name: Publish Python package
+    # Runs independently of whether the npm publish in `release` succeeded,
+    # skipped, or failed (e.g. because that version was already published to
+    # npm on an earlier run) - a Python-only change should never be blocked
+    # by npm. Duplicate publishes are prevented below by the PyPI
+    # already-published check instead.
     needs: [changes, test, release]
     if: >-
       always() &&
       needs.changes.outputs.python == 'true' &&
-      needs.test.result == 'success' &&
-      (needs.release.outputs.published == 'true' || github.event_name == 'workflow_dispatch')
+      needs.test.result == 'success'
     runs-on: ubuntu-latest
     timeout-minutes: 15
     permissions:

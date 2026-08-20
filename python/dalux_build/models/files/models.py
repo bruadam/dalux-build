@@ -2,14 +2,14 @@
 
 import datetime
 from datetime import date
-from typing import TYPE_CHECKING, Literal, TypedDict
+from typing import TYPE_CHECKING, Any, Literal, TypedDict
 
 from pydantic import BaseModel, ConfigDict, Field
 
 from ..users.models import ProjectUser
 
 if TYPE_CHECKING:
-    pass
+    from ...ai.providers import AIProviderManager
 
 
 class TextContentBlock(TypedDict):
@@ -171,6 +171,9 @@ class File(BaseModel):
         Downloads the file and sends it to Claude (via AI provider system) for analysis.
         Uses the configured AI provider (Anthropic, Mistral, OpenAI, OpenRouter).
 
+        For drawing files, converts PDF to PNG images for visual interpretation.
+        For other files, uses OCR text extraction or multimodal analysis.
+
         Args:
             question: The question to ask about the file content.
             api_key: Optional API key for Dalux authentication. If not provided, reads from
@@ -236,6 +239,13 @@ class File(BaseModel):
         except ValueError as e:
             raise ImportError(f"AI provider not configured: {e}") from e
 
+        # Route based on file type
+        is_drawing = self.file_type == "drawing"
+
+        # For drawing files, convert PDFs to PNG for visual analysis
+        if is_drawing and file_ext == "pdf":
+            return self._analyze_drawing_pdf(file_content, question, provider_config, api_key)
+
         # Handle PDFs with OCR if using Mistral
         extracted_text = None
         page_images = []
@@ -287,11 +297,11 @@ class File(BaseModel):
                     "Anthropic package required. Install with: pip install anthropic"
                 ) from e
 
-            client = Anthropic(api_key=provider_config.api_key)
+            client = Anthropic(api_key=provider_config.api_key)  # type: ignore[assignment]
 
             if extracted_text and not include_image_base64:
                 # Use extracted text from OCR only
-                content: list[object] = [
+                content: list[Any] = [
                     {
                         "type": "text",
                         "text": f"File: {self.file_name}\n\nExtracted content:\n\n{extracted_text}\n\nQuestion: {question}",  # noqa: E501
@@ -362,4 +372,88 @@ class File(BaseModel):
                     f"Size: {file_size_kb:.1f} KB\n\n"
                     f"{question}"
                 )
+            return provider_config.call(prompt, max_tokens=2048)
+
+    def _analyze_drawing_pdf(
+        self, file_content: bytes, question: str, provider_config: "AIProviderManager", api_key: str
+    ) -> str:
+        """Analyze drawing PDFs by converting to PNG images for visual interpretation.
+
+        Args:
+            file_content: The PDF file content bytes.
+            question: The question to ask about the drawing.
+            provider_config: Configured AI provider.
+            api_key: Dalux API key (unused in this method, kept for consistency).
+
+        Returns:
+            AI analysis of the drawing.
+
+        Raises:
+            ImportError: If pdf2image or Anthropic is not installed.
+        """
+        import base64
+        import io
+
+        from ...ai.providers import ProviderType
+
+        try:
+            from pdf2image import convert_from_bytes
+        except ImportError as e:
+            raise ImportError(
+                "pdf2image required for drawing analysis. Install with: "
+                "pip install pdf2image pillow"
+            ) from e
+
+        print("🎨 Converting drawing PDF to images for visual analysis...")
+        pil_images = convert_from_bytes(file_content)
+        print(f"✓ Converted {len(pil_images)} page(s) to images")
+
+        if provider_config.provider == ProviderType.ANTHROPIC:
+            try:
+                from anthropic import Anthropic
+            except ImportError as e:
+                raise ImportError(
+                    "Anthropic package required. Install with: pip install anthropic"
+                ) from e
+
+            client = Anthropic(api_key=provider_config.api_key)
+
+            # Convert PIL images to base64 PNG
+            content: list[Any] = [
+                {
+                    "type": "text",
+                    "text": f"File: {self.file_name} (drawing/schematic)\n\n{question}",
+                }
+            ]
+
+            for img_pil in pil_images:
+                img_bytes = io.BytesIO()
+                img_pil.save(img_bytes, format="PNG")
+                img_b64 = base64.standard_b64encode(img_bytes.getvalue()).decode("utf-8")
+                content.append(
+                    {
+                        "type": "image",
+                        "source": {
+                            "type": "base64",
+                            "media_type": "image/png",
+                            "data": img_b64,
+                        },
+                    }
+                )
+
+            response = client.messages.create(
+                model=provider_config.model,
+                max_tokens=2048,
+                messages=[{"role": "user", "content": content}],
+            )
+
+            if response.content and hasattr(response.content[0], "text"):
+                return response.content[0].text  # type: ignore[no-any-return]
+            return ""
+        else:
+            # Fallback: use provider's call method for other providers
+            prompt = (
+                f"File: {self.file_name} (drawing/schematic)\n\n"
+                f"This is a drawing file. Please analyze and answer: {question}"
+            )
             return provider_config.call(prompt, max_tokens=2048)

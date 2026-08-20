@@ -259,6 +259,90 @@ class TestFilesPydantic:
     """Verify FilesApi returns Pydantic models."""
 
     @rsps_lib.activate
+    def test_get_files_in_folder_includes_descendants_when_requested(self):
+        """subfolders=True should include files from nested descendant folders."""
+        _reg(
+            rsps_lib.GET,
+            "/6.1/projects/p1/file_areas/fa1/files",
+            body={
+                "items": [
+                    {"data": {"fileId": "f-root", "folderId": "folder-root", "fileAreaId": "fa1"}},
+                    {
+                        "data": {
+                            "fileId": "f-child",
+                            "folderId": "folder-child",
+                            "fileAreaId": "fa1",
+                        }
+                    },
+                    {
+                        "data": {
+                            "fileId": "f-grandchild",
+                            "folderId": "folder-grandchild",
+                            "fileAreaId": "fa1",
+                        }
+                    },
+                    {
+                        "data": {
+                            "fileId": "f-other",
+                            "folderId": "folder-other",
+                            "fileAreaId": "fa1",
+                        }
+                    },
+                ]
+            },
+        )
+        _reg(
+            rsps_lib.GET,
+            "/5.1/projects/p1/file_areas/fa1/folders",
+            body={
+                "items": [
+                    {
+                        "data": {
+                            "folderId": "folder-root",
+                            "folderName": "Root",
+                            "parentFolderId": "fa1",
+                        }
+                    },
+                    {
+                        "data": {
+                            "folderId": "folder-child",
+                            "folderName": "Child",
+                            "parentFolderId": "folder-root",
+                        }
+                    },
+                    {
+                        "data": {
+                            "folderId": "folder-grandchild",
+                            "folderName": "Grandchild",
+                            "parentFolderId": "folder-child",
+                        }
+                    },
+                    {
+                        "data": {
+                            "folderId": "folder-other",
+                            "folderName": "Other",
+                            "parentFolderId": "fa1",
+                        }
+                    },
+                ]
+            },
+        )
+        api = FilesApi(_make_client())
+
+        direct = api.get_files_in_folder(
+            folder_id="folder-root", project_id="p1", file_area_id="fa1"
+        )
+        recursive = api.get_files_in_folder(
+            folder_id="folder-root",
+            project_id="p1",
+            file_area_id="fa1",
+            subfolders=True,
+        )
+
+        assert [file.file_id for file in direct] == ["f-root"]
+        assert [file.file_id for file in recursive] == ["f-root", "f-child", "f-grandchild"]
+
+    @rsps_lib.activate
     def test_get_files_to_dataframe_flattens_nested_fields(self):
         """get_files(to_dataframe=True) should return a flattened DataFrame."""
         pd = pytest.importorskip("pandas")

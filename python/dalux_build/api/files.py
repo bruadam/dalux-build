@@ -408,6 +408,7 @@ class FilesApi(AiMixin, DashboardApiMixin):
         path: str | None = None,
         project_id: str | None = None,
         file_area_id: str | None = None,
+        subfolders: bool = False,
     ) -> list[FileLike]: ...
     @overload
     def get_files_in_folder(
@@ -421,6 +422,7 @@ class FilesApi(AiMixin, DashboardApiMixin):
         path: str | None = None,
         project_id: str | None = None,
         file_area_id: str | None = None,
+        subfolders: bool = False,
     ) -> "pd.DataFrame": ...
     def get_files_in_folder(
         self,
@@ -433,6 +435,7 @@ class FilesApi(AiMixin, DashboardApiMixin):
         path: str | None = None,
         project_id: str | None = None,
         file_area_id: str | None = None,
+        subfolders: bool = False,
     ) -> "list[FileLike] | pd.DataFrame":
         """Retrieve all files for a folder using either a folder ID or a full path.
 
@@ -452,6 +455,7 @@ class FilesApi(AiMixin, DashboardApiMixin):
             path: A full path starting with the file area name, such as
                 ``"Files/4_Design/C07_Geometry/C07.05_BIM"``. Alternative to
                 *folder_id* + *file_area_id*.
+            subfolders: If True, include files in all descendant folders.
             project_id: Project ID. Falls back to the client's configured default.
             file_area_id: File area ID. Falls back to the client's configured
                 default. Not used, and not backfilled from the client default,
@@ -498,9 +502,34 @@ class FilesApi(AiMixin, DashboardApiMixin):
         if not isinstance(all_files, list):
             return flatten_items_to_dataframe([]) if to_dataframe else []
 
-        filtered = find_all_by_field(
-            all_files, "folderId", resolved_folder_id, accessor=lambda x: x
-        )
+        folder_ids = {resolved_folder_id}
+        if subfolders:
+            from .folders import FoldersApi, _folder_id, _folder_parent_id
+
+            folders = FoldersApi(self._client).get_folders(
+                project_id=project_id,
+                file_area_id=resolved_file_area_id,
+            )
+            parent_to_children: dict[str, set[str]] = {}
+            for folder in folders:
+                child_id = _folder_id(folder)
+                parent_id = _folder_parent_id(folder)
+                if isinstance(child_id, str) and isinstance(parent_id, str):
+                    parent_to_children.setdefault(parent_id, set()).add(child_id)
+
+            pending = [resolved_folder_id]
+            while pending:
+                parent_id = pending.pop()
+                for child_id in parent_to_children.get(parent_id, set()):
+                    if child_id not in folder_ids:
+                        folder_ids.add(child_id)
+                        pending.append(child_id)
+
+        filtered = [
+            file_item
+            for file_item in all_files
+            if _file_payload(file_item).get("folderId") in folder_ids
+        ]
         if verbose:
             print(f"Files matching folder {resolved_folder_id!r}: {len(filtered)}")
         if to_dataframe:

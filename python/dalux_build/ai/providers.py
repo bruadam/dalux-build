@@ -123,7 +123,9 @@ class AIProviderManager:
             max_tokens=max_tokens,
             messages=[{"role": "user", "content": prompt}],
         )
-        return response.content[0].text if response.content else ""
+        if response.content and hasattr(response.content[0], "text"):
+            return response.content[0].text  # type: ignore
+        return ""
 
     def _call_anthropic_stream(self, prompt: str, max_tokens: int) -> str:
         """Call Anthropic Claude API (with streaming)."""
@@ -158,12 +160,12 @@ class AIProviderManager:
                 "The 'mistralai' package is required. Install with: pip install mistralai"
             ) from e
 
-        client = Mistral(api_key=self.api_key)
+        client = Mistral(api_key=self.api_key)  # type: ignore
         response = client.chat.complete(
             model=self.model,
-            messages=[{"role": "user", "content": prompt}],
+            messages=[{"role": "user", "content": prompt}],  # type: ignore
         )
-        return response.choices[0].message.content if response.choices else ""
+        return response.choices[0].message.content if response.choices else ""  # type: ignore
 
     def _call_mistral_stream(self, prompt: str, max_tokens: int) -> str:
         """Call Mistral API (with streaming)."""
@@ -180,7 +182,7 @@ class AIProviderManager:
         print("   Stream: ", end="", flush=True)
         with client.chat.stream(
             model=self.model,
-            messages=[{"role": "user", "content": prompt}],
+            messages=[{"role": "user", "content": prompt}],  # type: ignore
         ) as stream:
             for chunk in stream:
                 if chunk.choices and chunk.choices[0].delta.content:

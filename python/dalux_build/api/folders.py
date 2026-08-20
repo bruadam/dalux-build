@@ -2,7 +2,7 @@
 
 import warnings
 from concurrent.futures import ThreadPoolExecutor
-from typing import TYPE_CHECKING, Any, Literal, TypedDict, overload
+from typing import TYPE_CHECKING, Literal, TypedDict, cast, overload
 
 from ..ai import AiMixin
 from ..api_client import ApiClient
@@ -264,13 +264,14 @@ class FoldersApi(AiMixin, DashboardApiMixin):
             DeprecationWarning,
             stacklevel=2,
         )
-        return self.get_folders(
+        result = self.get_folders(
             params=params,
             verbose=verbose,
             to_dataframe=to_dataframe,
             project_id=project_id,
             file_area_id=file_area_id,
         )  # type: ignore[call-overload]
+        return cast("list[FolderLike] | pd.DataFrame", result)
 
     def get_folder(
         self,
@@ -593,15 +594,18 @@ class FoldersApi(AiMixin, DashboardApiMixin):
 
         return root
 
-    def _fetch_all_data(self, **kwargs: Any) -> list[FolderLike]:  # noqa: ANN401
+    def _fetch_all_data(self, **kwargs: object) -> list[object]:
         """Fetch all folders using get_folders."""
-        return self.get_folders(
-            project_id=kwargs.get("project_id"),
-            file_area_id=kwargs.get("file_area_id"),
+        project_id = cast(str | None, kwargs.get("project_id"))
+        file_area_id = cast(str | None, kwargs.get("file_area_id"))
+        result = self.get_folders(
+            project_id=project_id,
+            file_area_id=file_area_id,
             verbose=False,
         )
+        return cast(list[object], result)
 
-    def _format_data_for_analysis(self, data: list[Any]) -> str:
+    def _format_data_for_analysis(self, data: list[object]) -> str:
         """Format folders for AI analysis."""
         import pprint
 

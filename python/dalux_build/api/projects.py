@@ -1,7 +1,7 @@
 """Projects API."""
 
 import warnings
-from typing import TYPE_CHECKING, Any, Literal, overload
+from typing import TYPE_CHECKING, Literal, cast, overload
 
 from ..ai import AiMixin
 from ..api_client import ApiClient
@@ -112,7 +112,8 @@ class ProjectsApi(AiMixin, DashboardApiMixin):
             DeprecationWarning,
             stacklevel=2,
         )
-        return self.get_projects(params=params, verbose=verbose, to_dataframe=to_dataframe)  # type: ignore[call-overload]
+        result = self.get_projects(params=params, verbose=verbose, to_dataframe=to_dataframe)  # type: ignore[call-overload]
+        return cast("list[Project] | pd.DataFrame", result)
 
     @overload
     def list_projects(
@@ -257,11 +258,12 @@ class ProjectsApi(AiMixin, DashboardApiMixin):
         # Use generic search utility - search by the Pydantic field name "project_name"
         return find_by_field(items, "project_name", project_name)
 
-    def _fetch_all_data(self, **kwargs: Any) -> list[Project]:  # noqa: ANN401
+    def _fetch_all_data(self, **kwargs: object) -> list[object]:
         """Fetch all projects using get_projects."""
-        return self.get_projects(verbose=False)
+        result = self.get_projects(verbose=False)
+        return cast(list[object], result)
 
-    def _format_data_for_analysis(self, data: list[Any]) -> str:
+    def _format_data_for_analysis(self, data: list[object]) -> str:
         """Format projects for Claude analysis."""
         import pprint
 

@@ -3,7 +3,7 @@
 import json
 import os
 import warnings
-from typing import TYPE_CHECKING, Any, Literal, Protocol, overload
+from typing import TYPE_CHECKING, Literal, Protocol, cast, overload
 
 import requests
 
@@ -357,22 +357,30 @@ class FilesApi(AiMixin, DashboardApiMixin):
         files: list[FileLike] = []
         for item in raw_items:
             if isinstance(item, dict) and "data" in item:
-                file_data = item["data"]
+                file_data: JSONDict = item["data"] if isinstance(item["data"], dict) else {}
                 if user_mapping:
-                    file_data = enrich_response_with_users(
-                        file_data,
-                        user_mapping,
-                        {
-                            "uploadedByUserId": "uploaded_by_user",
-                            "lastModifiedByUserId": "last_modified_by_user",
-                        },
+                    file_data = cast(
+                        JSONDict,
+                        enrich_response_with_users(
+                            file_data,
+                            user_mapping,
+                            {
+                                "uploadedByUserId": "uploaded_by_user",
+                                "lastModifiedByUserId": "last_modified_by_user",
+                            },
+                        ),
                     )
                 if company_mapping:
                     if user_mapping:
-                        file_data = enrich_users_with_companies(file_data, company_mapping)
+                        file_data = cast(
+                            JSONDict, enrich_users_with_companies(file_data, company_mapping)
+                        )
                     else:
-                        file_data = enrich_response_with_users(
-                            file_data, company_mapping, {"companyId": "company"}
+                        file_data = cast(
+                            JSONDict,
+                            enrich_response_with_users(
+                                file_data, company_mapping, {"companyId": "company"}
+                            ),
                         )
                 try:
                     file_obj = File.model_validate(file_data)
@@ -486,6 +494,10 @@ class FilesApi(AiMixin, DashboardApiMixin):
             project_id=project_id,
             file_area_id=resolved_file_area_id,
         )
+        # Cast all_files since it can be list or DataFrame - we need list for filter
+        if not isinstance(all_files, list):
+            return flatten_items_to_dataframe([]) if to_dataframe else []
+
         filtered = find_all_by_field(
             all_files, "folderId", resolved_folder_id, accessor=lambda x: x
         )
@@ -525,7 +537,7 @@ class FilesApi(AiMixin, DashboardApiMixin):
             DeprecationWarning,
             stacklevel=2,
         )
-        return self.get_files(
+        result = self.get_files(
             params=params,
             verbose=verbose,
             to_dataframe=to_dataframe,
@@ -534,6 +546,7 @@ class FilesApi(AiMixin, DashboardApiMixin):
             project_id=project_id,
             file_area_id=file_area_id,
         )  # type: ignore[call-overload]
+        return cast("list[FileLike] | pd.DataFrame", result)
 
     def get_all_files_in_folder(
         self,
@@ -567,7 +580,7 @@ class FilesApi(AiMixin, DashboardApiMixin):
             DeprecationWarning,
             stacklevel=2,
         )
-        return self.get_files_in_folder(
+        result = self.get_files_in_folder(
             folder_id=folder_id,
             params=params,
             verbose=verbose,
@@ -577,6 +590,7 @@ class FilesApi(AiMixin, DashboardApiMixin):
             project_id=project_id,
             file_area_id=file_area_id,
         )  # type: ignore[call-overload,misc]
+        return cast("list[FileLike] | pd.DataFrame", result)
 
     def _extract_file_name(self, file_item: FileLike) -> str:
         """Extract a file name from either a File model or raw API item."""
@@ -655,7 +669,7 @@ class FilesApi(AiMixin, DashboardApiMixin):
             List of downloaded :class:`File` objects with ``saved_file_path`` and
             optionally ``saved_metadata_path`` populated.
         """
-        files = self.get_all_files_in_folder(
+        files_result = self.get_all_files_in_folder(
             folder_id,
             params=params,
             verbose=verbose,
@@ -664,6 +678,11 @@ class FilesApi(AiMixin, DashboardApiMixin):
             project_id=project_id,
             file_area_id=file_area_id,
         )
+
+        # Ensure we have a list, not a DataFrame
+        if not isinstance(files_result, list):
+            return []
+        files = files_result
 
         resolved_filters = filters.model_copy(deep=True) if filters else FileNameFilter()
 
@@ -776,13 +795,23 @@ class FilesApi(AiMixin, DashboardApiMixin):
                         )
                     continue
                 if resolved_file_area_id not in all_files_cache:
-                    all_files_cache[resolved_file_area_id] = self.get_all_files(
+                    all_files_result = self.get_all_files(
                         params=params,
                         verbose=verbose,
                         include_properties=include_properties,
                         project_id=project_id,
                         file_area_id=resolved_file_area_id,
                     )
+                    # Ensure we store a list, not a DataFrame
+                    if isinstance(all_files_result, list):
+                        all_files_cache[resolved_file_area_id] = all_files_result
+                    else:
+                        if verbose:
+                            print(
+                                f"  [{i}/{total}] Skipping {normalized_item!r} "
+                                f"(Could not fetch files)"
+                            )
+                        continue
                 folder_files = find_all_by_field(
                     all_files_cache[resolved_file_area_id],
                     "folderId",
@@ -905,7 +934,7 @@ class FilesApi(AiMixin, DashboardApiMixin):
                 return not_found_message
 
             candidate_file_name = path_parts[-1]
-            files = self.get_all_files_in_folder(
+            files_result = self.get_all_files_in_folder(
                 folder_id,
                 params=params,
                 verbose=verbose,
@@ -913,17 +942,31 @@ class FilesApi(AiMixin, DashboardApiMixin):
                 project_id=project_id,
                 file_area_id=resolved_file_area_id,
             )
+            # Ensure we have a list, not a DataFrame
+            if not isinstance(files_result, list):
+                return not_found_message
+            files = files_result
             file_match = find_by_field(files, "file_name", candidate_file_name)
             if not file_match:
                 return not_found_message
 
-            if download and isinstance(file_match, File) and file_match.download_link:
-                result: JSONDict = file_match.model_dump()
+            # file_match is FileLike (File | JSONDict)
+            file_obj: File | None = None
+            if isinstance(file_match, File):
+                file_obj = file_match
+            elif isinstance(file_match, dict):
+                try:
+                    file_obj = File.model_validate(file_match)
+                except Exception:
+                    pass
+
+            if download and file_obj and file_obj.download_link:
+                result: JSONDict = file_obj.model_dump()
                 result["downloaded_file_path"] = self._download_file_from_link(
-                    file_match.download_link, file_match.file_name, save_path, verbose=verbose
+                    file_obj.download_link, file_obj.file_name, save_path, verbose=verbose
                 )
                 return result
-            return file_match
+            return file_obj if file_obj else file_match
 
         if file_id is None:
             raise ValueError("either 'file_id' or 'path' must be provided")
@@ -952,19 +995,22 @@ class FilesApi(AiMixin, DashboardApiMixin):
             users_api = UsersApi(self._client)
             users = users_api.list_project_users(project_id=project_id)
             user_mapping = create_user_mapping(users)
-            response = enrich_response_with_users(
-                response,
-                user_mapping,
-                {
-                    "uploadedByUserId": "uploaded_by_user",
-                    "lastModifiedByUserId": "last_modified_by_user",
-                },
+            response = cast(
+                JSONDict,
+                enrich_response_with_users(
+                    response,
+                    user_mapping,
+                    {
+                        "uploadedByUserId": "uploaded_by_user",
+                        "lastModifiedByUserId": "last_modified_by_user",
+                    },
+                ),
             )
 
             companies_api = CompaniesApi(self._client)
             companies = companies_api.list_project_companies(project_id=project_id)
             company_mapping = create_company_mapping(companies)
-            response = enrich_users_with_companies(response, company_mapping)
+            response = cast(JSONDict, enrich_users_with_companies(response, company_mapping))
 
         file_info = convert_to_model(response, FileResponse)
 
@@ -1266,15 +1312,18 @@ class FilesApi(AiMixin, DashboardApiMixin):
             f"/files/properties/1.0/mappings/{file_property_id}/values"
         )
 
-    def _fetch_all_data(self, **kwargs: Any) -> list[FileLike]:  # noqa: ANN401
+    def _fetch_all_data(self, **kwargs: object) -> list[object]:
         """Fetch all files using get_all_files."""
-        return self.get_files(
-            project_id=kwargs.get("project_id"),
-            file_area_id=kwargs.get("file_area_id"),
+        project_id = cast(str | None, kwargs.get("project_id"))
+        file_area_id = cast(str | None, kwargs.get("file_area_id"))
+        result = self.get_files(
+            project_id=project_id,
+            file_area_id=file_area_id,
             verbose=False,
         )
+        return cast(list[object], result)
 
-    def _format_data_for_analysis(self, data: list[Any]) -> str:
+    def _format_data_for_analysis(self, data: list[object]) -> str:
         """Format files for AI analysis."""
         import pprint
 

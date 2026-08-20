@@ -78,14 +78,7 @@ warn_unreachable = true
 exclude = ["build/", "dist/"]
 
 [[tool.mypy.overrides]]
-module = "tests.*"
-disallow_any_explicit = false
-disallow_untyped_defs = false
-
-[[tool.mypy.overrides]]
-# dalux-build is reached here via mypy_path (see above), so its own
-# per-module override for the pydantic BaseModel/dataclass_transform false
-# positive (see python/pyproject.toml) needs to be duplicated here too.
+# Pydantic BaseModel subclasses trigger false positive for disallow_any_explicit
 module = "dalux_build.models.*"
 disallow_any_explicit = false
 
@@ -94,5 +87,30 @@ module = "dalux_build.webhook_server.models"
 disallow_any_explicit = false
 
 [[tool.mypy.overrides]]
+# Optional dependencies without type stubs
+module = "anthropic"
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+module = "mistralai"
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+module = "mistralai.client"
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+module = "openai"
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
 module = "croniter"
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+module = "holidays"
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+module = "plotly.*"
 ignore_missing_imports = true

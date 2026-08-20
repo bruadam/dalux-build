@@ -1,6 +1,7 @@
 """Utilities for mapping ID fields to objects in API responses."""
 
-from typing import Any, TypeVar
+from collections.abc import Mapping
+from typing import TypeVar
 
 from ..models import ProjectCompany, ProjectUser
 
@@ -33,9 +34,9 @@ def create_company_mapping(companies: list[ProjectCompany]) -> dict[str, Project
 
 
 def enrich_users_with_companies(
-    response: Any,  # noqa: ANN401
-    company_mapping: dict[str, ProjectCompany],
-) -> Any:  # noqa: ANN401
+    response: object,
+    company_mapping: Mapping[str, ProjectCompany],
+) -> object:
     """Enrich user dicts within a response by adding company objects.
 
     Recursively traverses the response dict and enriches user dicts by
@@ -73,10 +74,10 @@ def enrich_users_with_companies(
 
 
 def enrich_response_with_users(
-    response: Any,  # noqa: ANN401
-    mapping: dict[str, Any],  # noqa: ANN401
-    field_mappings: dict[str, str],
-) -> Any:  # noqa: ANN401
+    response: object,
+    mapping: Mapping[str, object],
+    field_mappings: Mapping[str, str],
+) -> object:
     """Enrich raw API response by adding object dicts alongside ID fields.
 
     Recursively traverses the response structure and adds object dicts from

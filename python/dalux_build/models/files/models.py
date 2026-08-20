@@ -2,14 +2,35 @@
 
 import datetime
 from datetime import date
-from typing import TYPE_CHECKING, Any, Literal
+from typing import TYPE_CHECKING, Literal, TypedDict
 
-from pydantic import BaseModel, ConfigDict, Field, JsonValue
+from pydantic import BaseModel, ConfigDict, Field
 
 from ..users.models import ProjectUser
 
 if TYPE_CHECKING:
     pass
+
+
+class TextContentBlock(TypedDict):
+    """Text content block for message content."""
+
+    type: str
+    text: str
+
+
+class ImageContentBlock(TypedDict):
+    """Image content block for message content."""
+
+    type: str
+    source: dict[str, str]
+
+
+class DocumentContentBlock(TypedDict):
+    """Document content block for message content."""
+
+    type: str
+    source: dict[str, str]
 
 
 class Reference(BaseModel):
@@ -63,7 +84,7 @@ class FilePropertyField(BaseModel):
 
     key: str
     name: str
-    values: list[JsonValue] | None = None
+    values: list[object] | None = None
 
     model_config = ConfigDict(populate_by_name=True)
 
@@ -270,7 +291,7 @@ class File(BaseModel):
 
             if extracted_text and not include_image_base64:
                 # Use extracted text from OCR only
-                content: list[dict[str, Any]] = [
+                content: list[object] = [
                     {
                         "type": "text",
                         "text": f"File: {self.file_name}\n\nExtracted content:\n\n{extracted_text}\n\nQuestion: {question}",  # noqa: E501

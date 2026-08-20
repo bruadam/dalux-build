@@ -1,7 +1,6 @@
 """AI provider configuration from environment variables."""
 
 import os
-from typing import Any
 
 from .providers import AIProviderManager, ProviderType
 
@@ -151,7 +150,7 @@ class ProviderConfig:
         return AIProviderManager(provider=provider, model=model, api_key=api_key)
 
     @classmethod
-    def list_configured_providers(cls) -> dict[str, dict[str, Any]]:
+    def list_configured_providers(cls) -> dict[str, dict[str, object]]:
         """List all configured providers with their details.
 
         Returns:

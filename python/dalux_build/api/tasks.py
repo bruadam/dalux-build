@@ -1,7 +1,7 @@
 """Tasks API."""
 
 import warnings
-from typing import TYPE_CHECKING, Any, Literal, overload
+from typing import TYPE_CHECKING, Literal, cast, overload
 from urllib.parse import parse_qs, urlparse
 
 from ..ai import AiMixin
@@ -37,7 +37,7 @@ if TYPE_CHECKING:
 
 def _extract_and_enrich_created_by_user(
     task_data: JSONDict,
-    company_mapping: dict[str, Any] | None = None,
+    company_mapping: dict[str, object] | None = None,
 ) -> JSONDict:
     """Extract user from createdBy and enrich with company at top level.
 
@@ -62,11 +62,10 @@ def _extract_and_enrich_created_by_user(
                 company_id = user_obj["company_id"]
                 if company_id in company_mapping:
                     company_obj = company_mapping[company_id]
-                    company_dict = (
-                        company_obj.model_dump(by_alias=False)
-                        if hasattr(company_obj, "model_dump")
-                        else company_obj
-                    )
+                    if hasattr(company_obj, "model_dump"):
+                        company_dict = cast(JSONDict, company_obj.model_dump(by_alias=False))
+                    else:
+                        company_dict = cast(JSONDict, company_obj)
                     user_obj["company"] = company_dict
                     result["company"] = company_dict
 
@@ -217,14 +216,17 @@ class TasksApi(AiMixin, DashboardApiMixin):
                     )
                     if isinstance(task_data, dict):
                         if user_mapping:
-                            task_data = enrich_response_with_users(
-                                task_data,
-                                user_mapping,
-                                {"userId": "user"},
+                            task_data = cast(
+                                JSONDict,
+                                enrich_response_with_users(
+                                    task_data,
+                                    user_mapping,
+                                    {"userId": "user"},
+                                ),
                             )
                         if company_mapping:
                             task_data = _extract_and_enrich_created_by_user(
-                                task_data, company_mapping
+                                task_data, cast(dict[str, object], company_mapping)
                             )
                         items.append(Task.model_validate(task_data))
             if items:
@@ -326,13 +328,14 @@ class TasksApi(AiMixin, DashboardApiMixin):
             DeprecationWarning,
             stacklevel=2,
         )
-        return self.get_project_tasks(
+        result = self.get_project_tasks(
             params=params,
             verbose=verbose,
             to_dataframe=to_dataframe,
             recursively_populate=recursively_populate,
             project_id=project_id,
         )  # type: ignore[call-overload]
+        return cast("list[Task] | pd.DataFrame", result)
 
     def get_task(self, task_id: str, *, project_id: str | None = None) -> TaskResponse | None:
         """GET /3.3/projects/{projectId}/tasks/{taskId}.
@@ -420,13 +423,16 @@ class TasksApi(AiMixin, DashboardApiMixin):
         for item in raw_items:
             if isinstance(item, dict):
                 if user_mapping:
-                    item = enrich_response_with_users(
-                        item,
-                        user_mapping,
-                        {"userId": "user"},
+                    item = cast(
+                        JSONDict,
+                        enrich_response_with_users(
+                            item,
+                            user_mapping,
+                            {"userId": "user"},
+                        ),
                     )
                 if company_mapping and user_mapping:
-                    item = enrich_users_with_companies(item, company_mapping)
+                    item = cast(JSONDict, enrich_users_with_companies(item, company_mapping))
                 typed_items.append(TaskChange.model_validate(item))
         if to_dataframe:
             return flatten_items_to_dataframe(list(typed_items))
@@ -458,13 +464,14 @@ class TasksApi(AiMixin, DashboardApiMixin):
             DeprecationWarning,
             stacklevel=2,
         )
-        return self.get_project_task_changes(
+        result = self.get_project_task_changes(
             params=params,
             verbose=verbose,
             to_dataframe=to_dataframe,
             recursively_populate=recursively_populate,
             project_id=project_id,
         )  # type: ignore[call-overload]
+        return cast("list[TaskChange] | pd.DataFrame", result)
 
     @overload
     def get_project_task_attachments(
@@ -523,14 +530,16 @@ class TasksApi(AiMixin, DashboardApiMixin):
             return result
         return result.items if result is not None else []
 
-    def _fetch_all_data(self, **kwargs: Any) -> list[Task]:  # noqa: ANN401
+    def _fetch_all_data(self, **kwargs: object) -> list[object]:
         """Fetch all tasks using get_project_tasks."""
-        return self.get_project_tasks(
-            project_id=kwargs.get("project_id"),
+        project_id = cast(str | None, kwargs.get("project_id"))
+        result = self.get_project_tasks(
+            project_id=project_id,
             verbose=False,
         )
+        return cast(list[object], result)
 
-    def _format_data_for_analysis(self, data: list[Any]) -> str:
+    def _format_data_for_analysis(self, data: list[object]) -> str:
         """Format tasks for AI analysis."""
         import pprint
 

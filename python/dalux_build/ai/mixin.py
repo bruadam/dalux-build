@@ -1,11 +1,14 @@
 """Mixin providing AI analysis capabilities to any API endpoint."""
 
 import json
-from typing import Any
+from typing import TYPE_CHECKING
 
 from .config import ProviderConfig
 from .models import HealthReport
 from .providers import AIProviderManager, ProviderType
+
+if TYPE_CHECKING:
+    pass
 
 
 class AiMixin:
@@ -98,7 +101,7 @@ class AiMixin:
             print(f"Error: {error}")
         print("=" * 70 + "\n")
 
-    def health(self, data: list[Any] | None = None, **kwargs: Any) -> HealthReport:  # noqa: ANN401
+    def health(self, data: list[object] | None = None, **kwargs: object) -> HealthReport:
         """Analyze data health/quality using an AI model.
 
         If data is not provided, uses the API's list function to fetch all items.
@@ -116,7 +119,11 @@ class AiMixin:
             ValueError: If no data is found.
         """
         if data is None:
-            data = self._fetch_all_data(**kwargs)
+            data_list: list[object] = self._fetch_all_data(**kwargs)
+            if isinstance(data_list, list):
+                data = data_list
+            else:
+                raise ValueError(f"No {self._resource_name} found to analyze")
 
         if not data:
             raise ValueError(f"No {self._resource_name} found to analyze")
@@ -164,7 +171,7 @@ class AiMixin:
             summary=analysis.get("summary"),
         )
 
-    def ask(self, question: str, data: list[Any] | None = None, **kwargs: Any) -> str:  # noqa: ANN401
+    def ask(self, question: str, data: list[object] | None = None, **kwargs: object) -> str:
         """Ask an AI model a question about the endpoint's data.
 
         If data is not provided, uses the API's list function to fetch all items.
@@ -183,7 +190,11 @@ class AiMixin:
             ValueError: If no data is found.
         """
         if data is None:
-            data = self._fetch_all_data(**kwargs)
+            data_list: list[object] = self._fetch_all_data(**kwargs)
+            if isinstance(data_list, list):
+                data = data_list
+            else:
+                raise ValueError(f"No {self._resource_name} found to analyze")
 
         if not data:
             raise ValueError(f"No {self._resource_name} found to analyze")
@@ -202,14 +213,14 @@ Provide a direct, concise answer to the question."""
 
         return provider.call(prompt, max_tokens=2048)
 
-    def _fetch_all_data(self, **kwargs: Any) -> list[Any]:  # noqa: ANN401
+    def _fetch_all_data(self, **kwargs: object) -> list[object]:
         """Fetch all data using the endpoint's list function.
 
         Subclasses should override this to call their specific list methods.
         """
         raise NotImplementedError(f"{self.__class__.__name__} must implement _fetch_all_data()")
 
-    def _format_data_for_analysis(self, data: list[Any]) -> str:
+    def _format_data_for_analysis(self, data: list[object]) -> str:
         """Format data for AI analysis.
 
         Converts list of items to a readable string representation.

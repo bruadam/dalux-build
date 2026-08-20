@@ -1,14 +1,17 @@
 """AI namespace providing analysis methods through dalux.ai.* interface."""
 
-from typing import Any
+from typing import TYPE_CHECKING
 
 from .mixin import AiMixin
+
+if TYPE_CHECKING:
+    from dalux_build import DaluxClient
 
 
 class AIEndpointProxy(AiMixin):
     """Proxy for an API endpoint that adds AI analysis methods."""
 
-    def __init__(self, endpoint: Any, resource_name: str) -> None:  # noqa: ANN401
+    def __init__(self, endpoint: object, resource_name: str) -> None:
         """Initialize proxy for an endpoint.
 
         Args:
@@ -18,7 +21,7 @@ class AIEndpointProxy(AiMixin):
         self._endpoint = endpoint
         self._resource_name = resource_name
 
-    def _fetch_all_data(self, **kwargs: Any) -> list[Any]:  # noqa: ANN401
+    def _fetch_all_data(self, **kwargs: object) -> list[object]:
         """Fetch all data from the wrapped endpoint."""
         # Map resource types to their endpoint methods
         method_map = {
@@ -33,17 +36,22 @@ class AIEndpointProxy(AiMixin):
         if method is None:
             return []
 
-        return method(**kwargs)
+        result = method(**kwargs)
+        if isinstance(result, list):
+            return result
+        return []
 
-    def _format_data_for_analysis(self, data: list[Any]) -> str:
+    def _format_data_for_analysis(self, data: list[object]) -> str:
         """Format data for AI analysis."""
         # Delegate to endpoint's formatting if available
         if hasattr(self._endpoint, "_format_data_for_analysis"):
-            return self._endpoint._format_data_for_analysis(data)
+            result = self._endpoint._format_data_for_analysis(data)
+            if isinstance(result, str):
+                return result
         # Fallback to default
         return super()._format_data_for_analysis(data)
 
-    def __getattr__(self, name: str) -> Any:  # noqa: ANN401
+    def __getattr__(self, name: str) -> object:
         """Delegate unknown attributes to the wrapped endpoint."""
         return getattr(self._endpoint, name)
 
@@ -57,17 +65,23 @@ class AINamespace:
         dalux.ai.tasks.ask("What tasks are overdue?")
     """
 
-    def __init__(self, client: Any) -> None:  # noqa: ANN401
+    _client: "DaluxClient"
+    _files_proxy: AIEndpointProxy | None
+    _folders_proxy: AIEndpointProxy | None
+    _tasks_proxy: AIEndpointProxy | None
+    _projects_proxy: AIEndpointProxy | None
+
+    def __init__(self, client: "DaluxClient") -> None:
         """Initialize AI namespace.
 
         Args:
             client: The DaluxClient instance.
         """
         self._client = client
-        self._files_proxy: AIEndpointProxy | None = None
-        self._folders_proxy: AIEndpointProxy | None = None
-        self._tasks_proxy: AIEndpointProxy | None = None
-        self._projects_proxy: AIEndpointProxy | None = None
+        self._files_proxy = None
+        self._folders_proxy = None
+        self._tasks_proxy = None
+        self._projects_proxy = None
 
     @property
     def files(self) -> AIEndpointProxy:

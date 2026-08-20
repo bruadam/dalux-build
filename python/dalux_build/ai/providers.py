@@ -1,8 +1,7 @@
 """AI provider configuration supporting multiple LLM providers."""
 
+from dataclasses import dataclass
 from enum import Enum
-
-from pydantic import BaseModel
 
 
 class ProviderType(str, Enum):
@@ -14,14 +13,13 @@ class ProviderType(str, Enum):
     OPENROUTER = "openrouter"
 
 
-class ProviderConfig(BaseModel):
+@dataclass
+class ProviderConfig:
     """Configuration for an AI model provider."""
 
     provider: ProviderType
     model: str
     api_key: str | None = None
-
-    model_config = {"populate_by_name": True}
 
 
 class AIProviderManager:

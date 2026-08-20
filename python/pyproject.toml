@@ -114,12 +114,9 @@ disallow_any_explicit = false
 disallow_untyped_defs = false
 
 [[tool.mypy.overrides]]
-# Every pydantic BaseModel subclass trips disallow_any_explicit here: pydantic
-# v2 marks BaseModel with @dataclass_transform, and mypy synthesizes a
-# "__mypy-replace" member for it that (per mypy, not our code) contains an
-# explicit Any — reproducible even for a bare `class X(BaseModel): ...` with
-# no Any anywhere in sight. ruff's ANN401 (still enabled, see [tool.ruff.lint])
-# is the real "no explicit Any" gate for this package.
+# Pydantic BaseModel subclasses trigger disallow_any_explicit errors due to
+# mypy synthesizing __mypy-replace member with explicit Any (@dataclass_transform).
+# This is a known Pydantic v2 + mypy strict mode limitation.
 module = "dalux_build.models.*"
 disallow_any_explicit = false
 
@@ -128,5 +125,26 @@ module = "dalux_build.webhook_server.models"
 disallow_any_explicit = false
 
 [[tool.mypy.overrides]]
+# Optional dependencies without type stubs
+module = "anthropic"
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+module = "mistralai.*"
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+module = "openai"
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
 module = "croniter"
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+module = "holidays"
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+module = "plotly.*"
 ignore_missing_imports = true

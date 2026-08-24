@@ -17,6 +17,6 @@
   "license": "MIT",
   "devDependencies": {
     "@changesets/changelog-github": "^0.7.0",
-    "@changesets/cli": "^3.0.0"
+    "@changesets/cli": "^3.0.1"
   }
 }

@@ -27,6 +27,9 @@ dependencies = [
     "python-dotenv>=1.2.2",
 ]
 
+[project.scripts]
+dalux-skills = "dalux_build.ai.skills_cli:main"
+
 [project.urls]
 Homepage = "https://github.com/bruadam/dalux-build"
 Repository = "https://github.com/bruadam/dalux-build"
@@ -56,6 +59,8 @@ dev = [
     "types-tqdm>=4.70.0.20260731",
     "streamlit>=1.61.1",
     "plotly>=6.9.0",
+    "platformdirs>=4",
+    "PyYAML>=6",
 ]
 dashboard = [
     "streamlit>=1.61.1",
@@ -68,13 +73,30 @@ webhook = [
     "cryptography>=42",
     "croniter>=2",
 ]
+rag = [
+    "deepagents>=0.1",
+    "langgraph-cli[inmem]>=0.2",
+    "langchain[openai]>=0.3",
+    "langchain-openrouter>=0.2.8",
+    "langchain-mistralai>=0.2",
+    "langchain-chroma>=0.2",
+    "langchain-community>=0.3",
+    "langchain-text-splitters>=0.3",
+    "langchain-huggingface>=0.1",
+    "sentence-transformers>=3",
+    "chromadb>=0.5",
+    "pypdf>=5",
+    "platformdirs>=4",
+    "PyYAML>=6",
+    "firecrawl-py>=1",
+]
 
 [tool.setuptools.packages.find]
 where = ["."]
 include = ["dalux_build*"]
 
 [tool.setuptools.package-data]
-dalux_build = ["py.typed"]
+dalux_build = ["py.typed", "ai/agent/skills/*/SKILL.md"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
@@ -164,3 +186,86 @@ warn_unused_ignores = false
 [[tool.mypy.overrides]]
 module = "dalux_build.models.files.models"
 warn_unused_ignores = false
+
+[[tool.mypy.overrides]]
+module = "deepagents.*"
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+module = "langchain.*"
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+module = "langchain_core.*"
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+module = "langchain_openai.*"
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+module = "langchain_openrouter.*"
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+module = "langchain_mistralai.*"
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+module = "langchain_chroma.*"
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+module = "langchain_community.*"
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+module = "langchain_text_splitters.*"
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+module = "langchain_huggingface.*"
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+module = "chromadb.*"
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+module = "sentence_transformers.*"
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+module = "pypdf.*"
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+module = "yaml"
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+module = "firecrawl.*"
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+# RAG/deepagents integration deals with loosely-typed upstream packages,
+# same rationale as the ai.providers override above.
+module = "dalux_build.ai.agent.*"
+warn_unused_ignores = false
+
+[[tool.mypy.overrides]]
+module = "dalux_build.ai.rag.*"
+warn_unused_ignores = false
+
+[[tool.mypy.overrides]]
+module = "dalux_build.ai.reference.*"
+warn_unused_ignores = false
+
+[[tool.mypy.overrides]]
+# langchain_core's @tool decorator has no type stubs (ignore_missing_imports
+# above), which makes mypy treat it as returning Any; strict mode's
+# disallow_any_decorated/disallow_untyped_decorators would otherwise flag
+# every @tool-decorated function in this module.
+module = "dalux_build.ai.agent.graph"
+disallow_any_decorated = false
+disallow_untyped_decorators = false

@@ -55,7 +55,9 @@
       "Bash(python -m ruff check .)",
       "Bash(python -m mypy dalux_build/ --ignore-missing-imports)",
       "Bash(python -m mypy . --ignore-missing-imports)",
-      "Bash(python -m pytest tests/ --tb=no -q)"
+      "Bash(python -m pytest tests/ --tb=no -q)",
+      "Bash(node -p \"require\\('./javascript/package.json'\\).name + '@' + require\\('./javascript/package.json'\\).version\")",
+      "Bash(echo \"exit=$?\")"
     ],
     "additionalDirectories": [
       "/tmp"

@@ -1,6 +1,5 @@
 ---
 "dalux-build-api": minor
-"dalux-build": minor
 ---
 
 Add local RAG chat agent capabilities to the Python client.

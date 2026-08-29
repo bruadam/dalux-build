@@ -353,13 +353,15 @@ class File(BaseModel):
                     },
                 ]
 
-            response = client.messages.create(
+            message = client.messages.create(
                 model=provider_config.model,
                 max_tokens=2048,
                 messages=[{"role": "user", "content": content}],
             )
 
-            return response.content[0].text if response.content else ""
+            if message.content and hasattr(message.content[0], "text"):
+                return message.content[0].text  # type: ignore[no-any-return]
+            return ""
         else:
             # For other providers, use extracted text or file metadata
             if extracted_text:

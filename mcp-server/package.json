@@ -1,0 +1,44 @@
+{
+  "name": "dalux-build-mcp",
+  "version": "0.1.0",
+  "private": true,
+  "description": "MCP server exposing read-only Dalux Build API access (and document search) as tools",
+  "main": "dist/index.js",
+  "bin": {
+    "dalux-mcp": "dist/cli.js"
+  },
+  "files": [
+    "dist",
+    "README.md"
+  ],
+  "scripts": {
+    "build": "tsup",
+    "typecheck": "tsc --noEmit",
+    "dev": "tsx src/cli.ts",
+    "test": "jest --coverage"
+  },
+  "license": "MIT",
+  "dependencies": {
+    "@modelcontextprotocol/node": "^2.0.0",
+    "@modelcontextprotocol/server": "^2.0.0",
+    "dalux-build-api": "*",
+    "pdf-parse": "^2.4.5",
+    "zod": "^4.4.3"
+  },
+  "devDependencies": {
+    "@types/jest": "^30.0.0",
+    "@types/node": "^22.0.0",
+    "jest": "^30.4.2",
+    "ts-jest": "^29.2.5",
+    "tsup": "^8.3.5",
+    "tsx": "^4.19.2",
+    "typescript": "^5.7.2"
+  },
+  "jest": {
+    "testEnvironment": "node",
+    "preset": "ts-jest",
+    "testMatch": [
+      "**/test/**/*.test.ts"
+    ]
+  }
+}

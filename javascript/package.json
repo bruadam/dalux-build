@@ -2,21 +2,32 @@
   "name": "dalux-build-api",
   "version": "2.3.0",
   "description": "Node.js client for the Dalux Build API",
-  "main": "src/index.js",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
   "exports": {
-    ".": "./src/index.js",
-    "./browser": "./src/browser.js",
-    "./next": "./src/next.js"
+    ".": {
+      "types": "./dist/index.d.ts",
+      "require": "./dist/index.js"
+    },
+    "./browser": {
+      "types": "./dist/browser.d.ts",
+      "require": "./dist/browser.js"
+    },
+    "./next": {
+      "types": "./dist/next.d.ts",
+      "require": "./dist/next.js"
+    }
   },
   "files": [
-    "src",
+    "dist",
     "README.md"
   ],
   "scripts": {
+    "build": "tsup",
+    "typecheck": "tsc --noEmit",
     "test": "jest --coverage",
-    "build": "npm pack",
-    "pack:check": "npm pack --dry-run",
-    "release:check": "npm test && npm run pack:check"
+    "pack:check": "npm run build && npm pack --dry-run",
+    "release:check": "npm run typecheck && npm test && npm run pack:check"
   },
   "keywords": [
     "dalux",
@@ -44,10 +55,19 @@
     "zod": "^4.4.3"
   },
   "devDependencies": {
+    "@types/jest": "^30.0.0",
+    "@types/node": "^22.0.0",
     "axios-mock-adapter": "^2.1.0",
-    "jest": "^30.4.2"
+    "jest": "^30.4.2",
+    "ts-jest": "^29.2.5",
+    "tsup": "^8.3.5",
+    "typescript": "^5.7.2"
   },
   "jest": {
-    "testEnvironment": "node"
+    "testEnvironment": "node",
+    "preset": "ts-jest",
+    "testMatch": [
+      "**/test/**/*.test.ts"
+    ]
   }
 }

@@ -13,7 +13,9 @@ this module only opens the already-persisted Chroma collection.
 
 from __future__ import annotations
 
+import asyncio
 import os
+from pathlib import Path
 from typing import Protocol
 
 from deepagents import create_deep_agent
@@ -191,6 +193,57 @@ def _build_web_search_tools() -> list[object]:
     return [web_search_tool]
 
 
+def _resolve_mcp_server_entrypoint() -> Path | None:
+    """Locate the built dalux-mcp CLI (mcp-server/dist/cli.js).
+
+    Looks next to this monorepo checkout by default (python/dalux_build/ai/agent/graph.py
+    -> repo root is 4 parents up); override with DALUX_MCP_SERVER_PATH when
+    running outside that layout. Returns None (not an error) if the server
+    hasn't been built — same "skip silently, agent still works" convention
+    as the other optional tool groups below.
+    """
+    override = os.environ.get("DALUX_MCP_SERVER_PATH")
+    if override:
+        path = Path(override)
+        return path if path.exists() else None
+    repo_root = Path(__file__).resolve().parents[4]
+    candidate = repo_root / "mcp-server" / "dist" / "cli.js"
+    return candidate if candidate.exists() else None
+
+
+def _build_dalux_api_tools() -> list[object]:
+    """Read-only Dalux API tools (files/folders/tasks/projects/...), loaded
+    from the TypeScript MCP server (see mcp-server/) over stdio.
+
+    Complements search_dalux_documents (unstructured retrieval over indexed
+    PDFs) with structured access to live project data. MCP's stdio transport
+    is plain JSON-RPC over stdin/stdout, so this works regardless of the
+    server being written in a different language than the agent.
+    """
+    entrypoint = _resolve_mcp_server_entrypoint()
+    if entrypoint is None:
+        return []
+
+    try:
+        from langchain_mcp_adapters.client import MultiServerMCPClient
+
+        client = MultiServerMCPClient(
+            {
+                "dalux-api": {
+                    "transport": "stdio",
+                    "command": "node",
+                    "args": [str(entrypoint), "--transport", "stdio"],
+                    "env": dict(os.environ),
+                }
+            }
+        )
+        return asyncio.run(client.get_tools())
+    except Exception as exc:  # noqa: BLE001 - optional tool group, must not crash the agent
+        if bool(os.environ.get("DALUX_AGENT_VERBOSE")):
+            print(f"Skipping Dalux API MCP tools: {exc}")
+        return []
+
+
 def _build_chat_model() -> object:
     provider = os.environ.get("DALUX_AGENT_PROVIDER", "openrouter")
     if provider not in _PROVIDER_MODELS:
@@ -211,7 +264,12 @@ if _verbose:
 
 graph = create_deep_agent(
     model=_build_chat_model(),
-    tools=[_build_retriever_tool(), *_build_reference_tools(), *_build_web_search_tools()],
+    tools=[
+        _build_retriever_tool(),
+        *_build_reference_tools(),
+        *_build_web_search_tools(),
+        *_build_dalux_api_tools(),
+    ],
     system_prompt=_build_system_prompt(os.environ.get("DALUX_AGENT_SKILL")),
     skills=[str(SKILLS_DIR)],
     subagents=build_specialist_subagents(),

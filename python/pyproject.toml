@@ -89,6 +89,7 @@ rag = [
     "platformdirs>=4",
     "PyYAML>=6",
     "firecrawl-py>=1",
+    "langchain-mcp-adapters>=0.1",
 ]
 
 [tool.setuptools.packages.find]

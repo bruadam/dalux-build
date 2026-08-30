@@ -3,7 +3,8 @@
   "private": true,
   "description": "Monorepo for the Dalux Build API clients (Node.js, Python) and webhook server. See javascript/, python/, and webhook-server/.",
   "workspaces": [
-    "javascript"
+    "javascript",
+    "mcp-server"
   ],
   "scripts": {
     "changeset": "changeset",

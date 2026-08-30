@@ -5,6 +5,10 @@
 !webhook-server/**
 !javascript/
 !javascript/**
+!mcp-server/
+!mcp-server/**
+!package.json
+!package-lock.json
 python/.venv
 python/**/__pycache__
 python/.pytest_cache
@@ -23,5 +27,9 @@ webhook-server/data
 webhook-server/*.sqlite3
 javascript/node_modules
 javascript/coverage
+javascript/dist
+mcp-server/node_modules
+mcp-server/dist
+node_modules
 webhook-server/ui/node_modules
 webhook-server/ui/.next

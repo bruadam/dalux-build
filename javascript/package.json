@@ -51,7 +51,7 @@
     "access": "public"
   },
   "dependencies": {
-    "axios": "^1.7.7",
+    "axios": "^1.20.0",
     "zod": "^4.4.3"
   },
   "devDependencies": {

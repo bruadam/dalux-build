@@ -1,6 +1,7 @@
 import { z } from 'zod';
 import type { DaluxClient } from 'dalux-build-api';
-import { paginateForLlm, type PaginatedForLlm } from '../serialize';
+import { collectAllDaluxItems } from '../daluxPagination';
+import { fullListForLlm, type PaginatedForLlm } from '../serialize';
 
 // ---------- list_work_packages ----------
 
@@ -13,8 +14,8 @@ export async function listWorkPackages(
   client: DaluxClient,
   args: ListWorkPackagesInput,
 ): Promise<PaginatedForLlm<unknown>> {
-  const response = await client.workPackages.listWorkPackages(args.projectId);
-  return paginateForLlm(response?.items ?? []);
+  const items = await collectAllDaluxItems((params) => client.workPackages.listWorkPackages(args.projectId, params));
+  return fullListForLlm(items);
 }
 
 // ---------- list_version_sets ----------
@@ -28,6 +29,6 @@ export async function listVersionSets(
   client: DaluxClient,
   args: ListVersionSetsInput,
 ): Promise<PaginatedForLlm<unknown>> {
-  const response = await client.versionSets.getVersionSets(args.projectId);
-  return paginateForLlm(response?.items ?? []);
+  const items = await collectAllDaluxItems((params) => client.versionSets.getVersionSets(args.projectId, params));
+  return fullListForLlm(items);
 }

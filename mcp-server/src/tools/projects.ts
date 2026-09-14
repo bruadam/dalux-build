@@ -1,6 +1,7 @@
 import { z } from 'zod';
 import type { DaluxClient } from 'dalux-build-api';
-import { paginateForLlm, type PaginatedForLlm } from '../serialize';
+import { collectAllDaluxItems } from '../daluxPagination';
+import { fullListForLlm, type PaginatedForLlm } from '../serialize';
 
 // ---------- list_projects ----------
 
@@ -17,8 +18,8 @@ export async function listProjects(
   client: DaluxClient,
   args: ListProjectsInput,
 ): Promise<PaginatedForLlm<unknown>> {
-  const response = await client.projects.listProjects(args);
-  return paginateForLlm(response?.items ?? []);
+  const items = await collectAllDaluxItems((params) => client.projects.listProjects(params), args);
+  return fullListForLlm(items);
 }
 
 // ---------- get_project ----------

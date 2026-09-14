@@ -5,6 +5,15 @@ export interface PaginatedForLlm<T> {
   truncated: boolean;
 }
 
+export function fullListForLlm<T>(items: readonly T[]): PaginatedForLlm<T> {
+  return {
+    items: [...items],
+    totalCount: items.length,
+    returnedCount: items.length,
+    truncated: false,
+  };
+}
+
 export interface PaginationParams {
   /** Max items to return (default 50, capped at 200). */
   limit?: number;

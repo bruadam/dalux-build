@@ -1,6 +1,7 @@
 import { z } from 'zod';
 import type { DaluxClient } from 'dalux-build-api';
-import { paginateForLlm, type PaginatedForLlm } from '../serialize';
+import { collectAllDaluxItems } from '../daluxPagination';
+import { fullListForLlm, type PaginatedForLlm } from '../serialize';
 
 // ---------- list_file_areas ----------
 
@@ -10,8 +11,8 @@ export const listFileAreasInput = z.object({
 export type ListFileAreasInput = z.infer<typeof listFileAreasInput>;
 
 export async function listFileAreas(client: DaluxClient, args: ListFileAreasInput) {
-  const response = await client.fileAreas.getFileAreas(args.projectId);
-  return { items: response?.items ?? [] };
+  const items = await collectAllDaluxItems((params) => client.fileAreas.getFileAreas(args.projectId, params));
+  return { items };
 }
 
 // ---------- get_file_area ----------
@@ -39,7 +40,7 @@ export async function listFolders(
   args: ListFoldersInput,
 ): Promise<PaginatedForLlm<unknown>> {
   const folders = await client.folders.getAllFolders(args.projectId, args.fileAreaId);
-  return paginateForLlm(folders);
+  return fullListForLlm(folders);
 }
 
 // ---------- get_folder ----------
@@ -97,7 +98,7 @@ export async function listFilesInFolder(
   args: ListFilesInFolderInput,
 ): Promise<PaginatedForLlm<unknown>> {
   const files = await client.files.getAllFilesInFolder(args.projectId, args.fileAreaId, args.folderId);
-  return paginateForLlm(files);
+  return fullListForLlm(files);
 }
 
 // ---------- list_files ----------
@@ -113,7 +114,7 @@ export async function listFiles(
   args: ListFilesInput,
 ): Promise<PaginatedForLlm<unknown>> {
   const files = await client.files.getAllFiles(args.projectId, args.fileAreaId);
-  return paginateForLlm(files);
+  return fullListForLlm(files);
 }
 
 // ---------- get_file ----------

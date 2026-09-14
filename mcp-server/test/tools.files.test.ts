@@ -12,11 +12,11 @@ describe('tools/files', () => {
 
     const result = await files.listFileAreas(client, { projectId: 'p1' });
 
-    expect(getFileAreas).toHaveBeenCalledWith('p1');
+    expect(getFileAreas).toHaveBeenCalledWith('p1', {});
     expect(result).toEqual({ items: [{ fileAreaId: 'fa1' }] });
   });
 
-  it('listFolders applies default MCP paging to the getAllFolders result', async () => {
+  it('listFolders returns all folders from Dalux pagination', async () => {
     const allFolders = Array.from({ length: 75 }, (_, i) => ({ folderId: `f${i}` }));
     const getAllFolders = jest.fn().mockResolvedValue(allFolders);
     const client = fakeClient({ folders: { getAllFolders } });
@@ -24,9 +24,10 @@ describe('tools/files', () => {
     const result = await files.listFolders(client, { projectId: 'p1', fileAreaId: 'fa1' });
 
     expect(getAllFolders).toHaveBeenCalledWith('p1', 'fa1');
-    expect(result.items).toHaveLength(50);
+    expect(result.items).toHaveLength(75);
     expect(result.totalCount).toBe(75);
-    expect(result.truncated).toBe(true);
+    expect(result.returnedCount).toBe(75);
+    expect(result.truncated).toBe(false);
   });
 
   it('getFolderByPath forwards to FoldersApi.getFolderByPath', async () => {

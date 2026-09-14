@@ -126,7 +126,7 @@ This is fully additive: deployments that never set `PUBLIC_URL` behave exactly a
 
 **Scheduling**: `list_work_packages`, `list_version_sets`
 
-Every list tool reports `totalCount`/`truncated` and returns an LLM-safe first page (default max 50 items). Most list tools use underlying `dalux-build-api` helpers that page through full result sets; `list_project_tasks` is optimized to stop once the first LLM page is gathered, which keeps large-project responses fast.
+List tools report `totalCount`/`truncated` and follow Dalux pagination to completion, returning all matching items. There is no extra MCP-side list cap.
 
 ### `download_file` / `search_pdf_content`
 

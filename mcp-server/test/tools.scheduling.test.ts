@@ -6,24 +6,26 @@ function fakeClient(overrides: Partial<Record<string, unknown>>): DaluxClient {
 }
 
 describe('tools/scheduling', () => {
-  it('listWorkPackages unwraps the items envelope and paginates', async () => {
+  it('listWorkPackages unwraps the items envelope and returns all Dalux pages', async () => {
     const listWorkPackages = jest.fn().mockResolvedValue({ items: [{ workPackageId: 'wp1' }] });
     const client = fakeClient({ workPackages: { listWorkPackages } });
 
     const result = await scheduling.listWorkPackages(client, { projectId: 'p1' });
 
-    expect(listWorkPackages).toHaveBeenCalledWith('p1');
+    expect(listWorkPackages).toHaveBeenCalledWith('p1', {});
     expect(result.items).toEqual([{ workPackageId: 'wp1' }]);
+    expect(result.truncated).toBe(false);
   });
 
-  it('listVersionSets unwraps the items envelope and paginates', async () => {
+  it('listVersionSets unwraps the items envelope and returns all Dalux pages', async () => {
     const getVersionSets = jest.fn().mockResolvedValue({ items: [{ versionSetId: 'vs1' }] });
     const client = fakeClient({ versionSets: { getVersionSets } });
 
     const result = await scheduling.listVersionSets(client, { projectId: 'p1' });
 
-    expect(getVersionSets).toHaveBeenCalledWith('p1');
+    expect(getVersionSets).toHaveBeenCalledWith('p1', {});
     expect(result.items).toEqual([{ versionSetId: 'vs1' }]);
+    expect(result.truncated).toBe(false);
   });
 
   it('tolerates a missing items envelope', async () => {

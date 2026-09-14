@@ -6,7 +6,7 @@ function fakeClient(overrides: Partial<Record<string, unknown>>): DaluxClient {
 }
 
 describe('tools/quality', () => {
-  it('listTestPlans paginates the getAllTestPlans result', async () => {
+  it('listTestPlans returns all Dalux-paginated items', async () => {
     const testPlans = Array.from({ length: 3 }, (_, i) => ({ testPlanId: `tp${i}` }));
     const getAllTestPlans = jest.fn().mockResolvedValue(testPlans);
     const client = fakeClient({ testPlans: { getAllTestPlans } });
@@ -15,9 +15,11 @@ describe('tools/quality', () => {
 
     expect(getAllTestPlans).toHaveBeenCalledWith('p1');
     expect(result.items).toHaveLength(3);
+    expect(result.returnedCount).toBe(3);
+    expect(result.truncated).toBe(false);
   });
 
-  it('listTestPlanRegistrations paginates the getAllTestPlanRegistrations result', async () => {
+  it('listTestPlanRegistrations returns all Dalux-paginated items', async () => {
     const registrations = [{ registrationId: 'r1' }];
     const getAllTestPlanRegistrations = jest.fn().mockResolvedValue(registrations);
     const client = fakeClient({ testPlans: { getAllTestPlanRegistrations } });
@@ -26,9 +28,10 @@ describe('tools/quality', () => {
 
     expect(getAllTestPlanRegistrations).toHaveBeenCalledWith('p1');
     expect(result.items).toEqual(registrations);
+    expect(result.truncated).toBe(false);
   });
 
-  it('listInspectionPlans paginates the getAllInspectionPlans result', async () => {
+  it('listInspectionPlans returns all Dalux-paginated items', async () => {
     const inspectionPlans = [{ inspectionPlanId: 'ip1' }];
     const getAllInspectionPlans = jest.fn().mockResolvedValue(inspectionPlans);
     const client = fakeClient({ inspectionPlans: { getAllInspectionPlans } });
@@ -37,5 +40,6 @@ describe('tools/quality', () => {
 
     expect(getAllInspectionPlans).toHaveBeenCalledWith('p1');
     expect(result.items).toEqual(inspectionPlans);
+    expect(result.truncated).toBe(false);
   });
 });

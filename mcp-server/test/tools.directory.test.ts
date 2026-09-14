@@ -6,13 +6,13 @@ function fakeClient(overrides: Partial<Record<string, unknown>>): DaluxClient {
 }
 
 describe('tools/directory', () => {
-  it('listProjectUsers unwraps the items envelope and applies default MCP paging', async () => {
+  it('listProjectUsers unwraps the items envelope and returns all Dalux pages', async () => {
     const listProjectUsers = jest.fn().mockResolvedValue({ items: [{ userId: 'u1' }, { userId: 'u2' }] });
     const client = fakeClient({ users: { listProjectUsers } });
 
     const result = await directory.listProjectUsers(client, { projectId: 'p1' });
 
-    expect(listProjectUsers).toHaveBeenCalledWith('p1');
+    expect(listProjectUsers).toHaveBeenCalledWith('p1', {});
     expect(result.items).toEqual([{ userId: 'u1' }, { userId: 'u2' }]);
     expect(result.truncated).toBe(false);
   });
@@ -27,13 +27,13 @@ describe('tools/directory', () => {
     expect(result).toEqual({ userId: 'u1' });
   });
 
-  it('listProjectCompanies unwraps the items envelope and paginates', async () => {
+  it('listProjectCompanies unwraps the items envelope and returns all Dalux pages', async () => {
     const listProjectCompanies = jest.fn().mockResolvedValue({ items: [{ companyId: 'c1' }] });
     const client = fakeClient({ companies: { listProjectCompanies } });
 
     const result = await directory.listProjectCompanies(client, { projectId: 'p1' });
 
-    expect(listProjectCompanies).toHaveBeenCalledWith('p1');
+    expect(listProjectCompanies).toHaveBeenCalledWith('p1', {});
     expect(result.items).toEqual([{ companyId: 'c1' }]);
   });
 });

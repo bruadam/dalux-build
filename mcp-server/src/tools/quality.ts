@@ -1,6 +1,6 @@
 import { z } from 'zod';
 import type { DaluxClient } from 'dalux-build-api';
-import { paginateForLlm, type PaginatedForLlm } from '../serialize';
+import { fullListForLlm, type PaginatedForLlm } from '../serialize';
 
 // ---------- list_test_plans ----------
 
@@ -14,7 +14,7 @@ export async function listTestPlans(
   args: ListTestPlansInput,
 ): Promise<PaginatedForLlm<unknown>> {
   const testPlans = await client.testPlans.getAllTestPlans(args.projectId);
-  return paginateForLlm(testPlans);
+  return fullListForLlm(testPlans);
 }
 
 // ---------- list_test_plan_registrations ----------
@@ -29,7 +29,7 @@ export async function listTestPlanRegistrations(
   args: ListTestPlanRegistrationsInput,
 ): Promise<PaginatedForLlm<unknown>> {
   const registrations = await client.testPlans.getAllTestPlanRegistrations(args.projectId);
-  return paginateForLlm(registrations);
+  return fullListForLlm(registrations);
 }
 
 // ---------- list_inspection_plans ----------
@@ -44,5 +44,5 @@ export async function listInspectionPlans(
   args: ListInspectionPlansInput,
 ): Promise<PaginatedForLlm<unknown>> {
   const inspectionPlans = await client.inspectionPlans.getAllInspectionPlans(args.projectId);
-  return paginateForLlm(inspectionPlans);
+  return fullListForLlm(inspectionPlans);
 }

@@ -1,6 +1,7 @@
 import { z } from 'zod';
 import type { DaluxClient } from 'dalux-build-api';
-import { paginateForLlm, type PaginatedForLlm } from '../serialize';
+import { collectAllDaluxItems } from '../daluxPagination';
+import { fullListForLlm, type PaginatedForLlm } from '../serialize';
 
 // ---------- list_project_tasks ----------
 
@@ -22,9 +23,8 @@ export type ListProjectTasksInput = z.infer<typeof listProjectTasksInput>;
  * Retrieves tasks, approvals, safety issues, safety observations and good
  * practices on a project.
  *
- * Fetches bookmark pages incrementally and stops once enough items have
- * been gathered for the first MCP page (50 items), which keeps calls
- * responsive on large projects.
+ * Uses Dalux-side bookmark pagination to completion via getAllProjectTasks,
+ * so the MCP endpoint itself does not apply additional list pagination.
  *
  * The `filter`/`select`/`orderby` input properties are named without the `$`
  * that OData expects — a literal `$filter` property name fails Anthropic's
@@ -38,56 +38,13 @@ export async function listProjectTasks(
   args: ListProjectTasksInput,
 ): Promise<PaginatedForLlm<unknown>> {
   const { projectId, filter, select, orderby, ...rest } = args;
-  const requiredCount = 50;
 
   const params: Record<string, unknown> = { ...rest };
   if (filter !== undefined) params.$filter = filter;
   if (select !== undefined) params.$select = select;
   if (orderby !== undefined) params.$orderby = orderby;
-
-  const items: unknown[] = [];
-  const seenBookmarks = new Set<string>();
-  let bookmark: string | undefined;
-  let totalItemsFromMetadata: number | undefined;
-  let hasMore = false;
-
-  while (items.length < requiredCount) {
-    const pageParams = bookmark ? { ...params, bookmark } : params;
-    const response = await client.tasks.getProjectTasks(projectId, pageParams);
-    const pageItems = response?.items ?? [];
-    items.push(...pageItems);
-
-    if (typeof response?.metadata?.totalItems === 'number') {
-      totalItemsFromMetadata = response.metadata.totalItems;
-    }
-
-    const nextHref = response?.links?.find((link) => link.rel === 'nextPage')?.href;
-    const nextBookmark = nextHref ? new URL(nextHref).searchParams.get('bookmark') ?? undefined : undefined;
-    const remaining = response?.metadata?.totalRemainingItems;
-    const noMore =
-      pageItems.length === 0 ||
-      !nextBookmark ||
-      (typeof remaining === 'number' && remaining <= 0) ||
-      seenBookmarks.has(nextBookmark);
-
-    if (noMore) {
-      hasMore = false;
-      break;
-    }
-
-    hasMore = true;
-    seenBookmarks.add(nextBookmark);
-    bookmark = nextBookmark;
-  }
-
-  const page = items.slice(0, requiredCount);
-  const totalCount = totalItemsFromMetadata ?? (hasMore ? Math.max(items.length, page.length + 1) : items.length);
-  return {
-    items: page,
-    totalCount,
-    returnedCount: page.length,
-    truncated: page.length < totalCount,
-  };
+  const items = await client.tasks.getAllProjectTasks(projectId, params);
+  return fullListForLlm(items);
 }
 
 // ---------- get_task ----------
@@ -128,7 +85,7 @@ export async function listTaskChanges(
 ): Promise<PaginatedForLlm<unknown>> {
   const { projectId, ...params } = args;
   const changes = await client.tasks.getAllProjectTaskChanges(projectId, params);
-  return paginateForLlm(changes);
+  return fullListForLlm(changes);
 }
 
 // ---------- list_task_attachments ----------
@@ -148,6 +105,8 @@ export async function listTaskAttachments(
   args: ListTaskAttachmentsInput,
 ): Promise<PaginatedForLlm<unknown>> {
   const { projectId, ...params } = args;
-  const response = await client.tasks.getProjectTaskAttachments(projectId, params);
-  return paginateForLlm(response?.items ?? []);
+  const items = await collectAllDaluxItems((pageParams) =>
+    client.tasks.getProjectTaskAttachments(projectId, { ...params, ...pageParams }),
+  );
+  return fullListForLlm(items);
 }

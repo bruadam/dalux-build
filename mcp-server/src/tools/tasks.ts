@@ -43,7 +43,9 @@ export async function listProjectTasks(
   if (filter !== undefined) params.$filter = filter;
   if (select !== undefined) params.$select = select;
   if (orderby !== undefined) params.$orderby = orderby;
-  const items = await client.tasks.getAllProjectTasks(projectId, params);
+  const items = await collectAllDaluxItems((pageParams) =>
+    client.tasks.getProjectTasks(projectId, { ...params, ...pageParams }),
+  );
   return fullListForLlm(items);
 }
 
@@ -84,8 +86,10 @@ export async function listTaskChanges(
   args: ListTaskChangesInput,
 ): Promise<PaginatedForLlm<unknown>> {
   const { projectId, ...params } = args;
-  const changes = await client.tasks.getAllProjectTaskChanges(projectId, params);
-  return fullListForLlm(changes);
+  const items = await collectAllDaluxItems((pageParams) =>
+    client.tasks.getProjectTaskChanges(projectId, { ...params, ...pageParams }),
+  );
+  return fullListForLlm(items);
 }
 
 // ---------- list_task_attachments ----------

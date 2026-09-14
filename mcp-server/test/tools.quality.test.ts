@@ -7,38 +7,37 @@ function fakeClient(overrides: Partial<Record<string, unknown>>): DaluxClient {
 
 describe('tools/quality', () => {
   it('listTestPlans returns all Dalux-paginated items', async () => {
-    const testPlans = Array.from({ length: 3 }, (_, i) => ({ testPlanId: `tp${i}` }));
-    const getAllTestPlans = jest.fn().mockResolvedValue(testPlans);
-    const client = fakeClient({ testPlans: { getAllTestPlans } });
+    const listTestPlans = jest.fn().mockResolvedValue({ items: [{ testPlanId: 'tp1' }, { testPlanId: 'tp2' }] });
+    const client = fakeClient({ testPlans: { listTestPlans } });
 
     const result = await quality.listTestPlans(client, { projectId: 'p1' });
 
-    expect(getAllTestPlans).toHaveBeenCalledWith('p1');
-    expect(result.items).toHaveLength(3);
-    expect(result.returnedCount).toBe(3);
+    expect(listTestPlans).toHaveBeenCalledWith('p1', {}, true);
+    expect(result.items).toHaveLength(2);
+    expect(result.returnedCount).toBe(2);
     expect(result.truncated).toBe(false);
   });
 
   it('listTestPlanRegistrations returns all Dalux-paginated items', async () => {
     const registrations = [{ registrationId: 'r1' }];
-    const getAllTestPlanRegistrations = jest.fn().mockResolvedValue(registrations);
-    const client = fakeClient({ testPlans: { getAllTestPlanRegistrations } });
+    const listTestPlanRegistrations = jest.fn().mockResolvedValue({ items: registrations });
+    const client = fakeClient({ testPlans: { listTestPlanRegistrations } });
 
     const result = await quality.listTestPlanRegistrations(client, { projectId: 'p1' });
 
-    expect(getAllTestPlanRegistrations).toHaveBeenCalledWith('p1');
+    expect(listTestPlanRegistrations).toHaveBeenCalledWith('p1', {}, true);
     expect(result.items).toEqual(registrations);
     expect(result.truncated).toBe(false);
   });
 
   it('listInspectionPlans returns all Dalux-paginated items', async () => {
     const inspectionPlans = [{ inspectionPlanId: 'ip1' }];
-    const getAllInspectionPlans = jest.fn().mockResolvedValue(inspectionPlans);
-    const client = fakeClient({ inspectionPlans: { getAllInspectionPlans } });
+    const listInspectionPlans = jest.fn().mockResolvedValue({ items: inspectionPlans });
+    const client = fakeClient({ inspectionPlans: { listInspectionPlans } });
 
     const result = await quality.listInspectionPlans(client, { projectId: 'p1' });
 
-    expect(getAllInspectionPlans).toHaveBeenCalledWith('p1');
+    expect(listInspectionPlans).toHaveBeenCalledWith('p1', {}, true);
     expect(result.items).toEqual(inspectionPlans);
     expect(result.truncated).toBe(false);
   });

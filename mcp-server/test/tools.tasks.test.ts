@@ -7,25 +7,24 @@ function fakeClient(overrides: Partial<Record<string, unknown>>): DaluxClient {
 
 describe('tools/tasks', () => {
   it('listProjectTasks forwards filters and returns all Dalux-paginated items', async () => {
-    const allTasks = Array.from({ length: 220 }, (_, i) => ({ taskId: `t${i}` }));
-    const getAllProjectTasks = jest.fn().mockResolvedValue(allTasks);
-    const client = fakeClient({ tasks: { getAllProjectTasks } });
+    const getProjectTasks = jest.fn().mockResolvedValue({ items: [{ taskId: 't1' }, { taskId: 't2' }] });
+    const client = fakeClient({ tasks: { getProjectTasks } });
 
     const result = await tasks.listProjectTasks(client, {
       projectId: 'p1',
       typeId: 'ty1',
     });
 
-    expect(getAllProjectTasks).toHaveBeenCalledWith('p1', { typeId: 'ty1' });
-    expect(result.items).toHaveLength(220);
-    expect(result.totalCount).toBe(220);
-    expect(result.returnedCount).toBe(220);
+    expect(getProjectTasks).toHaveBeenCalledWith('p1', { typeId: 'ty1' });
+    expect(result.items).toHaveLength(2);
+    expect(result.totalCount).toBe(2);
+    expect(result.returnedCount).toBe(2);
     expect(result.truncated).toBe(false);
   });
 
   it('listProjectTasks translates filter/select/orderby to their OData $-prefixed names', async () => {
-    const getAllProjectTasks = jest.fn().mockResolvedValue([]);
-    const client = fakeClient({ tasks: { getAllProjectTasks } });
+    const getProjectTasks = jest.fn().mockResolvedValue({ items: [] });
+    const client = fakeClient({ tasks: { getProjectTasks } });
 
     await tasks.listProjectTasks(client, {
       projectId: 'p1',
@@ -34,7 +33,7 @@ describe('tools/tasks', () => {
       orderby: 'taskId desc',
     });
 
-    expect(getAllProjectTasks).toHaveBeenCalledWith('p1', {
+    expect(getProjectTasks).toHaveBeenCalledWith('p1', {
       $filter: "data/type/typeId eq 'x'",
       $select: 'taskId,title',
       $orderby: 'taskId desc',
@@ -52,15 +51,14 @@ describe('tools/tasks', () => {
   });
 
   it('listTaskChanges returns all Dalux-paginated items', async () => {
-    const changes = Array.from({ length: 3 }, (_, i) => ({ changeId: `c${i}` }));
-    const getAllProjectTaskChanges = jest.fn().mockResolvedValue(changes);
-    const client = fakeClient({ tasks: { getAllProjectTaskChanges } });
+    const getProjectTaskChanges = jest.fn().mockResolvedValue({ items: [{ changeId: 'c1' }, { changeId: 'c2' }] });
+    const client = fakeClient({ tasks: { getProjectTaskChanges } });
 
     const result = await tasks.listTaskChanges(client, { projectId: 'p1', updatedAfter: '2026-01-01' });
 
-    expect(getAllProjectTaskChanges).toHaveBeenCalledWith('p1', { updatedAfter: '2026-01-01' });
-    expect(result.items).toHaveLength(3);
-    expect(result.returnedCount).toBe(3);
+    expect(getProjectTaskChanges).toHaveBeenCalledWith('p1', { updatedAfter: '2026-01-01' });
+    expect(result.items).toHaveLength(2);
+    expect(result.returnedCount).toBe(2);
     expect(result.truncated).toBe(false);
   });
 

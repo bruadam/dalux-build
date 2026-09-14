@@ -39,8 +39,10 @@ export async function listFolders(
   client: DaluxClient,
   args: ListFoldersInput,
 ): Promise<PaginatedForLlm<unknown>> {
-  const folders = await client.folders.getAllFolders(args.projectId, args.fileAreaId);
-  return fullListForLlm(folders);
+  const items = await collectAllDaluxItems((params) =>
+    client.folders.listFolders(args.projectId, args.fileAreaId, params),
+  );
+  return fullListForLlm(items);
 }
 
 // ---------- get_folder ----------
@@ -97,8 +99,12 @@ export async function listFilesInFolder(
   client: DaluxClient,
   args: ListFilesInFolderInput,
 ): Promise<PaginatedForLlm<unknown>> {
-  const files = await client.files.getAllFilesInFolder(args.projectId, args.fileAreaId, args.folderId);
-  return fullListForLlm(files);
+  const items = await collectAllDaluxItems((params) => client.files.listFiles(args.projectId, args.fileAreaId, params));
+  const inFolder = items.filter((file) => {
+    const record = file as Record<string, unknown>;
+    return record.folderId === args.folderId;
+  });
+  return fullListForLlm(inFolder);
 }
 
 // ---------- list_files ----------
@@ -113,8 +119,8 @@ export async function listFiles(
   client: DaluxClient,
   args: ListFilesInput,
 ): Promise<PaginatedForLlm<unknown>> {
-  const files = await client.files.getAllFiles(args.projectId, args.fileAreaId);
-  return fullListForLlm(files);
+  const items = await collectAllDaluxItems((params) => client.files.listFiles(args.projectId, args.fileAreaId, params));
+  return fullListForLlm(items);
 }
 
 // ---------- get_file ----------

@@ -17,16 +17,27 @@ describe('tools/files', () => {
   });
 
   it('listFolders returns all folders from Dalux pagination', async () => {
-    const allFolders = Array.from({ length: 75 }, (_, i) => ({ folderId: `f${i}` }));
-    const getAllFolders = jest.fn().mockResolvedValue(allFolders);
-    const client = fakeClient({ folders: { getAllFolders } });
+    const listFolders = jest
+      .fn()
+      .mockResolvedValueOnce({
+        items: [{ folderId: 'f1' }],
+        metadata: { totalRemainingItems: 1 },
+        links: [{ rel: 'nextPage', href: 'https://example.invalid/folders?bookmark=b1' }],
+      })
+      .mockResolvedValueOnce({
+        items: [{ folderId: 'f2' }],
+        metadata: { totalRemainingItems: 0 },
+        links: [],
+      });
+    const client = fakeClient({ folders: { listFolders } });
 
     const result = await files.listFolders(client, { projectId: 'p1', fileAreaId: 'fa1' });
 
-    expect(getAllFolders).toHaveBeenCalledWith('p1', 'fa1');
-    expect(result.items).toHaveLength(75);
-    expect(result.totalCount).toBe(75);
-    expect(result.returnedCount).toBe(75);
+    expect(listFolders).toHaveBeenNthCalledWith(1, 'p1', 'fa1', {});
+    expect(listFolders).toHaveBeenNthCalledWith(2, 'p1', 'fa1', { bookmark: 'b1' });
+    expect(result.items).toHaveLength(2);
+    expect(result.totalCount).toBe(2);
+    expect(result.returnedCount).toBe(2);
     expect(result.truncated).toBe(false);
   });
 
@@ -40,10 +51,23 @@ describe('tools/files', () => {
     expect(result).toBeNull();
   });
 
-  it('listFilesInFolder paginates getAllFilesInFolder', async () => {
-    const allFiles = Array.from({ length: 5 }, (_, i) => ({ fileId: `file${i}` }));
-    const getAllFilesInFolder = jest.fn().mockResolvedValue(allFiles);
-    const client = fakeClient({ files: { getAllFilesInFolder } });
+  it('listFilesInFolder follows Dalux pages and filters to folder', async () => {
+    const listFiles = jest
+      .fn()
+      .mockResolvedValueOnce({
+        items: [
+          { fileId: 'file1', folderId: 'fo1' },
+          { fileId: 'file2', folderId: 'other' },
+        ],
+        metadata: { totalRemainingItems: 1 },
+        links: [{ rel: 'nextPage', href: 'https://example.invalid/files?bookmark=b1' }],
+      })
+      .mockResolvedValueOnce({
+        items: [{ fileId: 'file3', folderId: 'fo1' }],
+        metadata: { totalRemainingItems: 0 },
+        links: [],
+      });
+    const client = fakeClient({ files: { listFiles } });
 
     const result = await files.listFilesInFolder(client, {
       projectId: 'p1',
@@ -51,8 +75,9 @@ describe('tools/files', () => {
       folderId: 'fo1',
     });
 
-    expect(getAllFilesInFolder).toHaveBeenCalledWith('p1', 'fa1', 'fo1');
-    expect(result.items).toHaveLength(5);
+    expect(listFiles).toHaveBeenNthCalledWith(1, 'p1', 'fa1', {});
+    expect(listFiles).toHaveBeenNthCalledWith(2, 'p1', 'fa1', { bookmark: 'b1' });
+    expect(result.items).toHaveLength(2);
     expect(result.truncated).toBe(false);
   });
 

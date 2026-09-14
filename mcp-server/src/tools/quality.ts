@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import type { DaluxClient } from 'dalux-build-api';
+import { collectAllDaluxItems } from '../daluxPagination';
 import { fullListForLlm, type PaginatedForLlm } from '../serialize';
 
 // ---------- list_test_plans ----------
@@ -13,8 +14,11 @@ export async function listTestPlans(
   client: DaluxClient,
   args: ListTestPlansInput,
 ): Promise<PaginatedForLlm<unknown>> {
-  const testPlans = await client.testPlans.getAllTestPlans(args.projectId);
-  return fullListForLlm(testPlans);
+  const items = await collectAllDaluxItems(async (params) => {
+    const response = await client.testPlans.listTestPlans(args.projectId, params, true);
+    return Array.isArray(response) ? { items: response } : response;
+  });
+  return fullListForLlm(items);
 }
 
 // ---------- list_test_plan_registrations ----------
@@ -28,8 +32,11 @@ export async function listTestPlanRegistrations(
   client: DaluxClient,
   args: ListTestPlanRegistrationsInput,
 ): Promise<PaginatedForLlm<unknown>> {
-  const registrations = await client.testPlans.getAllTestPlanRegistrations(args.projectId);
-  return fullListForLlm(registrations);
+  const items = await collectAllDaluxItems(async (params) => {
+    const response = await client.testPlans.listTestPlanRegistrations(args.projectId, params, true);
+    return Array.isArray(response) ? { items: response } : response;
+  });
+  return fullListForLlm(items);
 }
 
 // ---------- list_inspection_plans ----------
@@ -43,6 +50,9 @@ export async function listInspectionPlans(
   client: DaluxClient,
   args: ListInspectionPlansInput,
 ): Promise<PaginatedForLlm<unknown>> {
-  const inspectionPlans = await client.inspectionPlans.getAllInspectionPlans(args.projectId);
-  return fullListForLlm(inspectionPlans);
+  const items = await collectAllDaluxItems(async (params) => {
+    const response = await client.inspectionPlans.listInspectionPlans(args.projectId, params, true);
+    return Array.isArray(response) ? { items: response } : response;
+  });
+  return fullListForLlm(items);
 }

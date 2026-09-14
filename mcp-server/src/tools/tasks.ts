@@ -2,11 +2,6 @@ import { z } from 'zod';
 import type { DaluxClient } from 'dalux-build-api';
 import { paginateForLlm, type PaginatedForLlm } from '../serialize';
 
-const paginationFields = {
-  limit: z.number().int().min(1).max(200).optional().describe('Max items to return (default 50, max 200).'),
-  offset: z.number().int().min(0).optional().describe('Number of items to skip (for paging through results).'),
-};
-
 // ---------- list_project_tasks ----------
 
 export const listProjectTasksInput = z.object({
@@ -20,14 +15,16 @@ export const listProjectTasksInput = z.object({
   filter: z.string().optional().describe('Raw OData $filter expression. Takes precedence over typeId.'),
   select: z.string().optional().describe('OData $select expression to limit which fields are returned.'),
   orderby: z.string().optional().describe('OData $orderby expression.'),
-  ...paginationFields,
 });
 export type ListProjectTasksInput = z.infer<typeof listProjectTasksInput>;
 
 /**
  * Retrieves tasks, approvals, safety issues, safety observations and good
- * practices on a project, following bookmark pagination to completion
- * server-side before applying the LLM-safe page in paginateForLlm.
+ * practices on a project.
+ *
+ * Fetches bookmark pages incrementally and stops once enough items have
+ * been gathered for the first MCP page (50 items), which keeps calls
+ * responsive on large projects.
  *
  * The `filter`/`select`/`orderby` input properties are named without the `$`
  * that OData expects — a literal `$filter` property name fails Anthropic's
@@ -40,13 +37,57 @@ export async function listProjectTasks(
   client: DaluxClient,
   args: ListProjectTasksInput,
 ): Promise<PaginatedForLlm<unknown>> {
-  const { projectId, limit, offset, filter, select, orderby, ...rest } = args;
+  const { projectId, filter, select, orderby, ...rest } = args;
+  const requiredCount = 50;
+
   const params: Record<string, unknown> = { ...rest };
   if (filter !== undefined) params.$filter = filter;
   if (select !== undefined) params.$select = select;
   if (orderby !== undefined) params.$orderby = orderby;
-  const tasks = await client.tasks.getAllProjectTasks(projectId, params);
-  return paginateForLlm(tasks, args);
+
+  const items: unknown[] = [];
+  const seenBookmarks = new Set<string>();
+  let bookmark: string | undefined;
+  let totalItemsFromMetadata: number | undefined;
+  let hasMore = false;
+
+  while (items.length < requiredCount) {
+    const pageParams = bookmark ? { ...params, bookmark } : params;
+    const response = await client.tasks.getProjectTasks(projectId, pageParams);
+    const pageItems = response?.items ?? [];
+    items.push(...pageItems);
+
+    if (typeof response?.metadata?.totalItems === 'number') {
+      totalItemsFromMetadata = response.metadata.totalItems;
+    }
+
+    const nextHref = response?.links?.find((link) => link.rel === 'nextPage')?.href;
+    const nextBookmark = nextHref ? new URL(nextHref).searchParams.get('bookmark') ?? undefined : undefined;
+    const remaining = response?.metadata?.totalRemainingItems;
+    const noMore =
+      pageItems.length === 0 ||
+      !nextBookmark ||
+      (typeof remaining === 'number' && remaining <= 0) ||
+      seenBookmarks.has(nextBookmark);
+
+    if (noMore) {
+      hasMore = false;
+      break;
+    }
+
+    hasMore = true;
+    seenBookmarks.add(nextBookmark);
+    bookmark = nextBookmark;
+  }
+
+  const page = items.slice(0, requiredCount);
+  const totalCount = totalItemsFromMetadata ?? (hasMore ? Math.max(items.length, page.length + 1) : items.length);
+  return {
+    items: page,
+    totalCount,
+    returnedCount: page.length,
+    truncated: page.length < totalCount,
+  };
 }
 
 // ---------- get_task ----------
@@ -73,7 +114,6 @@ export const listTaskChangesInput = z.object({
     .string()
     .optional()
     .describe('ISO 8601 timestamp; only return task changes recorded after this time.'),
-  ...paginationFields,
 });
 export type ListTaskChangesInput = z.infer<typeof listTaskChangesInput>;
 
@@ -86,9 +126,9 @@ export async function listTaskChanges(
   client: DaluxClient,
   args: ListTaskChangesInput,
 ): Promise<PaginatedForLlm<unknown>> {
-  const { projectId, limit, offset, ...params } = args;
+  const { projectId, ...params } = args;
   const changes = await client.tasks.getAllProjectTaskChanges(projectId, params);
-  return paginateForLlm(changes, args);
+  return paginateForLlm(changes);
 }
 
 // ---------- list_task_attachments ----------
@@ -99,7 +139,6 @@ export const listTaskAttachmentsInput = z.object({
     .string()
     .optional()
     .describe('ISO 8601 timestamp; only return task attachments updated after this time.'),
-  ...paginationFields,
 });
 export type ListTaskAttachmentsInput = z.infer<typeof listTaskAttachmentsInput>;
 
@@ -108,7 +147,7 @@ export async function listTaskAttachments(
   client: DaluxClient,
   args: ListTaskAttachmentsInput,
 ): Promise<PaginatedForLlm<unknown>> {
-  const { projectId, limit, offset, ...params } = args;
+  const { projectId, ...params } = args;
   const response = await client.tasks.getProjectTaskAttachments(projectId, params);
-  return paginateForLlm(response?.items ?? [], args);
+  return paginateForLlm(response?.items ?? []);
 }

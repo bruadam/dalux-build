@@ -6,15 +6,15 @@ function fakeClient(overrides: Partial<Record<string, unknown>>): DaluxClient {
 }
 
 describe('tools/projects', () => {
-  it('listProjects unwraps the items envelope and paginates', async () => {
+  it('listProjects unwraps the items envelope and applies default MCP paging', async () => {
     const allProjects = Array.from({ length: 55 }, (_, i) => ({ projectId: `p${i}` }));
     const listProjects = jest.fn().mockResolvedValue({ items: allProjects });
     const client = fakeClient({ projects: { listProjects } });
 
-    const result = await projects.listProjects(client, { updatedAfter: '2026-01-01', limit: 20 });
+    const result = await projects.listProjects(client, { updatedAfter: '2026-01-01' });
 
     expect(listProjects).toHaveBeenCalledWith({ updatedAfter: '2026-01-01' });
-    expect(result.items).toHaveLength(20);
+    expect(result.items).toHaveLength(50);
     expect(result.totalCount).toBe(55);
     expect(result.truncated).toBe(true);
   });

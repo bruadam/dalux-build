@@ -6,26 +6,32 @@ function fakeClient(overrides: Partial<Record<string, unknown>>): DaluxClient {
 }
 
 describe('tools/tasks', () => {
-  it('listProjectTasks forwards filters and paginates the getAllProjectTasks result', async () => {
-    const allTasks = Array.from({ length: 60 }, (_, i) => ({ taskId: `t${i}` }));
-    const getAllProjectTasks = jest.fn().mockResolvedValue(allTasks);
-    const client = fakeClient({ tasks: { getAllProjectTasks } });
+  it('listProjectTasks forwards filters and returns the default 50-item MCP page', async () => {
+    const firstPage = {
+      items: Array.from({ length: 100 }, (_, i) => ({ taskId: `t${i}` })),
+      metadata: { totalItems: 220, totalRemainingItems: 120 },
+      links: [{ rel: 'nextPage', href: 'https://example.invalid/tasks?bookmark=b1' }],
+    };
+    const getProjectTasks = jest
+      .fn()
+      .mockResolvedValueOnce(firstPage);
+    const client = fakeClient({ tasks: { getProjectTasks } });
 
     const result = await tasks.listProjectTasks(client, {
       projectId: 'p1',
       typeId: 'ty1',
-      limit: 10,
     });
 
-    expect(getAllProjectTasks).toHaveBeenCalledWith('p1', { typeId: 'ty1' });
-    expect(result.items).toHaveLength(10);
-    expect(result.totalCount).toBe(60);
+    expect(getProjectTasks).toHaveBeenCalledWith('p1', { typeId: 'ty1' });
+    expect(getProjectTasks).toHaveBeenCalledTimes(1);
+    expect(result.items).toHaveLength(50);
+    expect(result.totalCount).toBe(220);
     expect(result.truncated).toBe(true);
   });
 
   it('listProjectTasks translates filter/select/orderby to their OData $-prefixed names', async () => {
-    const getAllProjectTasks = jest.fn().mockResolvedValue([]);
-    const client = fakeClient({ tasks: { getAllProjectTasks } });
+    const getProjectTasks = jest.fn().mockResolvedValue({ items: [], links: [], metadata: { totalItems: 0 } });
+    const client = fakeClient({ tasks: { getProjectTasks } });
 
     await tasks.listProjectTasks(client, {
       projectId: 'p1',
@@ -34,11 +40,33 @@ describe('tools/tasks', () => {
       orderby: 'taskId desc',
     });
 
-    expect(getAllProjectTasks).toHaveBeenCalledWith('p1', {
+    expect(getProjectTasks).toHaveBeenCalledWith('p1', {
       $filter: "data/type/typeId eq 'x'",
       $select: 'taskId,title',
       $orderby: 'taskId desc',
     });
+  });
+
+  it('listProjectTasks avoids infinite loops when nextPage repeats a bookmark', async () => {
+    const getProjectTasks = jest
+      .fn()
+      .mockResolvedValueOnce({
+        items: [{ taskId: 't1' }],
+        metadata: { totalItems: 100, totalRemainingItems: 99 },
+        links: [{ rel: 'nextPage', href: 'https://example.invalid/tasks?bookmark=repeat' }],
+      })
+      .mockResolvedValueOnce({
+        items: [{ taskId: 't2' }],
+        metadata: { totalItems: 100, totalRemainingItems: 98 },
+        links: [{ rel: 'nextPage', href: 'https://example.invalid/tasks?bookmark=repeat' }],
+      });
+    const client = fakeClient({ tasks: { getProjectTasks } });
+
+    const result = await tasks.listProjectTasks(client, { projectId: 'p1' });
+
+    expect(getProjectTasks).toHaveBeenCalledTimes(2);
+    expect(result.items).toEqual([{ taskId: 't1' }, { taskId: 't2' }]);
+    expect(result.totalCount).toBe(100);
   });
 
   it('getTask forwards to TasksApi.getTask', async () => {

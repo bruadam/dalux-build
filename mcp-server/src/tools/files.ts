@@ -2,11 +2,6 @@ import { z } from 'zod';
 import type { DaluxClient } from 'dalux-build-api';
 import { paginateForLlm, type PaginatedForLlm } from '../serialize';
 
-const paginationFields = {
-  limit: z.number().int().min(1).max(200).optional().describe('Max items to return (default 50, max 200).'),
-  offset: z.number().int().min(0).optional().describe('Number of items to skip (for paging through results).'),
-};
-
 // ---------- list_file_areas ----------
 
 export const listFileAreasInput = z.object({
@@ -36,7 +31,6 @@ export async function getFileArea(client: DaluxClient, args: GetFileAreaInput) {
 export const listFoldersInput = z.object({
   projectId: z.string().describe('The Dalux project ID.'),
   fileAreaId: z.string().describe('The file area ID.'),
-  ...paginationFields,
 });
 export type ListFoldersInput = z.infer<typeof listFoldersInput>;
 
@@ -45,7 +39,7 @@ export async function listFolders(
   args: ListFoldersInput,
 ): Promise<PaginatedForLlm<unknown>> {
   const folders = await client.folders.getAllFolders(args.projectId, args.fileAreaId);
-  return paginateForLlm(folders, args);
+  return paginateForLlm(folders);
 }
 
 // ---------- get_folder ----------
@@ -95,7 +89,6 @@ export const listFilesInFolderInput = z.object({
   projectId: z.string().describe('The Dalux project ID.'),
   fileAreaId: z.string().describe('The file area ID.'),
   folderId: z.string().describe('The folder ID.'),
-  ...paginationFields,
 });
 export type ListFilesInFolderInput = z.infer<typeof listFilesInFolderInput>;
 
@@ -104,7 +97,7 @@ export async function listFilesInFolder(
   args: ListFilesInFolderInput,
 ): Promise<PaginatedForLlm<unknown>> {
   const files = await client.files.getAllFilesInFolder(args.projectId, args.fileAreaId, args.folderId);
-  return paginateForLlm(files, args);
+  return paginateForLlm(files);
 }
 
 // ---------- list_files ----------
@@ -112,7 +105,6 @@ export async function listFilesInFolder(
 export const listFilesInput = z.object({
   projectId: z.string().describe('The Dalux project ID.'),
   fileAreaId: z.string().describe('The file area ID.'),
-  ...paginationFields,
 });
 export type ListFilesInput = z.infer<typeof listFilesInput>;
 
@@ -121,7 +113,7 @@ export async function listFiles(
   args: ListFilesInput,
 ): Promise<PaginatedForLlm<unknown>> {
   const files = await client.files.getAllFiles(args.projectId, args.fileAreaId);
-  return paginateForLlm(files, args);
+  return paginateForLlm(files);
 }
 
 // ---------- get_file ----------

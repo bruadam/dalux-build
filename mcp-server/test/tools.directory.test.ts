@@ -6,15 +6,15 @@ function fakeClient(overrides: Partial<Record<string, unknown>>): DaluxClient {
 }
 
 describe('tools/directory', () => {
-  it('listProjectUsers unwraps the items envelope and paginates', async () => {
+  it('listProjectUsers unwraps the items envelope and applies default MCP paging', async () => {
     const listProjectUsers = jest.fn().mockResolvedValue({ items: [{ userId: 'u1' }, { userId: 'u2' }] });
     const client = fakeClient({ users: { listProjectUsers } });
 
-    const result = await directory.listProjectUsers(client, { projectId: 'p1', limit: 1 });
+    const result = await directory.listProjectUsers(client, { projectId: 'p1' });
 
     expect(listProjectUsers).toHaveBeenCalledWith('p1');
-    expect(result.items).toEqual([{ userId: 'u1' }]);
-    expect(result.truncated).toBe(true);
+    expect(result.items).toEqual([{ userId: 'u1' }, { userId: 'u2' }]);
+    expect(result.truncated).toBe(false);
   });
 
   it('getUser forwards to UsersApi.getProjectUser', async () => {

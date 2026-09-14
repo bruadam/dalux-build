@@ -126,7 +126,7 @@ This is fully additive: deployments that never set `PUBLIC_URL` behave exactly a
 
 **Scheduling**: `list_work_packages`, `list_version_sets`
 
-Every list tool accepts `limit`/`offset` (default `limit=50`, max `200`) and reports `totalCount`/`truncated` so a caller knows when to narrow its query rather than blindly paginate — the underlying `dalux-build-api` methods already page through the full result set, which can be thousands of items.
+Every list tool reports `totalCount`/`truncated` and returns an LLM-safe first page (default max 50 items). Most list tools use underlying `dalux-build-api` helpers that page through full result sets; `list_project_tasks` is optimized to stop once the first LLM page is gathered, which keeps large-project responses fast.
 
 ### `download_file` / `search_pdf_content`
 

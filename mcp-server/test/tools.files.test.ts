@@ -16,15 +16,15 @@ describe('tools/files', () => {
     expect(result).toEqual({ items: [{ fileAreaId: 'fa1' }] });
   });
 
-  it('listFolders paginates the getAllFolders result', async () => {
+  it('listFolders applies default MCP paging to the getAllFolders result', async () => {
     const allFolders = Array.from({ length: 75 }, (_, i) => ({ folderId: `f${i}` }));
     const getAllFolders = jest.fn().mockResolvedValue(allFolders);
     const client = fakeClient({ folders: { getAllFolders } });
 
-    const result = await files.listFolders(client, { projectId: 'p1', fileAreaId: 'fa1', limit: 10 });
+    const result = await files.listFolders(client, { projectId: 'p1', fileAreaId: 'fa1' });
 
     expect(getAllFolders).toHaveBeenCalledWith('p1', 'fa1');
-    expect(result.items).toHaveLength(10);
+    expect(result.items).toHaveLength(50);
     expect(result.totalCount).toBe(75);
     expect(result.truncated).toBe(true);
   });

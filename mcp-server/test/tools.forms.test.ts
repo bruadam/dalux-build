@@ -6,16 +6,16 @@ function fakeClient(overrides: Partial<Record<string, unknown>>): DaluxClient {
 }
 
 describe('tools/forms', () => {
-  it('listForms unwraps the items envelope and paginates', async () => {
+  it('listForms unwraps the items envelope and applies default MCP paging', async () => {
     const getProjectForms = jest.fn().mockResolvedValue({ items: [{ formId: 'f1' }, { formId: 'f2' }] });
     const client = fakeClient({ forms: { getProjectForms } });
 
-    const result = await forms.listForms(client, { projectId: 'p1', limit: 1 });
+    const result = await forms.listForms(client, { projectId: 'p1' });
 
     expect(getProjectForms).toHaveBeenCalledWith('p1');
-    expect(result.items).toEqual([{ formId: 'f1' }]);
+    expect(result.items).toEqual([{ formId: 'f1' }, { formId: 'f2' }]);
     expect(result.totalCount).toBe(2);
-    expect(result.truncated).toBe(true);
+    expect(result.truncated).toBe(false);
   });
 
   it('getForm forwards to FormsApi.getForm', async () => {

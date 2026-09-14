@@ -2,11 +2,6 @@ import { z } from 'zod';
 import type { DaluxClient } from 'dalux-build-api';
 import { paginateForLlm, type PaginatedForLlm } from '../serialize';
 
-const paginationFields = {
-  limit: z.number().int().min(1).max(200).optional().describe('Max items to return (default 50, max 200).'),
-  offset: z.number().int().min(0).optional().describe('Number of items to skip (for paging through results).'),
-};
-
 // ---------- list_projects ----------
 
 export const listProjectsInput = z.object({
@@ -14,7 +9,6 @@ export const listProjectsInput = z.object({
     .string()
     .optional()
     .describe('ISO 8601 timestamp; only return projects updated after this time.'),
-  ...paginationFields,
 });
 export type ListProjectsInput = z.infer<typeof listProjectsInput>;
 
@@ -23,9 +17,8 @@ export async function listProjects(
   client: DaluxClient,
   args: ListProjectsInput,
 ): Promise<PaginatedForLlm<unknown>> {
-  const { limit, offset, ...params } = args;
-  const response = await client.projects.listProjects(params);
-  return paginateForLlm(response?.items ?? [], args);
+  const response = await client.projects.listProjects(args);
+  return paginateForLlm(response?.items ?? []);
 }
 
 // ---------- get_project ----------

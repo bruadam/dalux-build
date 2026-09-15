@@ -126,6 +126,8 @@ This is fully additive: deployments that never set `PUBLIC_URL` behave exactly a
 
 **Scheduling**: `list_work_packages`, `list_version_sets`
 
+**3D viewer**: `view_model_3d` (renders an interactive MCP App in supporting hosts — see below; requires `PUBLIC_URL`)
+
 List tools report `totalCount`/`truncated` and follow Dalux pagination to completion, returning all matching items. There is no extra MCP-side list cap.
 
 ### `download_file` / `search_pdf_content`
@@ -133,6 +135,14 @@ List tools report `totalCount`/`truncated` and follow Dalux pagination to comple
 `download_file` downloads a file into a local cache directory (`$TMPDIR/dalux-mcp/files/<fileId>/`) and returns the local path — not raw bytes, which would blow an LLM's context for anything but a tiny file.
 
 `search_pdf_content` downloads (or reuses the cache), extracts text page-by-page, chunks it, and ranks chunks against a natural-language query — using OpenAI embeddings for real semantic search if `OPENAI_API_KEY` is set, otherwise a keyword-overlap fallback that needs no extra config. This is a lightweight, **single-file** complement to the corpus-wide, multi-document RAG agent in the Python package (`python/dalux_build/ai/`) — not a replacement for it.
+
+### `view_model_3d` (3D IFC viewer)
+
+`view_model_3d` renders an interactive 3D view of an `.ifc` file inline in the conversation, using [MCP Apps](https://github.com/modelcontextprotocol/ext-apps) (`ui://` resources, stable since 2026-01-26) and the [ifclite](https://ifclite.dev/) embed viewer (`@ifc-lite/embed-sdk`). Supporting hosts — currently Claude.ai and Claude Desktop — render the tool's `ui://dalux-build/ifc-viewer` resource in a sandboxed iframe; the viewer inside it streams the model from a short-lived signed URL served by this same server.
+
+This only works on the **HTTP transport with `PUBLIC_URL` set** (see [OAuth](#oauth-claudeai--chatgpt-custom-connectors) above) — the embed viewer needs a real `https://` URL it can fetch cross-origin, which stdio can't offer. Without `PUBLIC_URL`, the tool still appears in `tools/list` (so its presence doesn't depend on how the server happens to be deployed) but returns a message explaining to use `download_file` instead, rather than erroring.
+
+Mechanics, if you're curious: calling the tool issues a random, in-memory, 15-minute ticket (`src/modelLinks.ts`) bound to the request's Dalux credentials and file, and returns `https://<PUBLIC_URL>/models/<ticket>` as `modelUrl` in `structuredContent`. `GET /models/<ticket>` (handled in `http.ts`, ahead of the localhost Host/Origin checks that guard the main `/mcp` endpoint, since this route carries its own auth and is fetched cross-origin from `embed.ifclite.com` by design) resolves the ticket, downloads (or reuses the cache for) the file, and streams it back with CORS scoped to `https://embed.ifclite.com` and `Range` support. The Dalux API key itself never reaches the browser. Selecting an element in the viewer reports its IFC properties back to the model via `ui/update-model-context`.
 
 ## Docker
 

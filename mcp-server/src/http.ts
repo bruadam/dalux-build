@@ -1,5 +1,8 @@
 import { createServer as createNodeServer } from 'node:http';
 import { timingSafeEqual } from 'node:crypto';
+import { createReadStream } from 'node:fs';
+import { stat } from 'node:fs/promises';
+import { Readable } from 'node:stream';
 import {
   createMcpHandler,
   bearerAuthChallengeResponse,
@@ -12,6 +15,76 @@ import { createClient } from 'dalux-build-api';
 import { buildServer } from './server';
 import { createOAuthServer, type OAuthServer } from './oauth';
 import { validateDaluxBaseUrl } from './daluxUrl';
+import { createModelLinkStore, resolveModelFile, type ModelLinkStore } from './modelLinks';
+import { IFCLITE_EMBED_ORIGIN } from './ui/ifcViewer';
+
+/** Exported for tests only — not part of the public module surface. */
+export const MODEL_ROUTE_PREFIX = '/models/';
+
+/**
+ * Serves the IFC bytes a `view_model_3d` ticket points at, for the ifclite
+ * embed viewer running in a foreign-origin iframe (see ui/ifcViewer.ts) to
+ * fetch. This route authenticates via the opaque ticket in the URL, not via
+ * Dalux credentials or the OAuth bearer token, so it's handled up front,
+ * before any of that — and its CORS headers deliberately allow only
+ * `embed.ifclite.com`, the one origin that has any business calling it.
+ */
+export async function handleModelRequest(request: Request, modelLinks: ModelLinkStore): Promise<Response | undefined> {
+  const url = new URL(request.url);
+  if (!url.pathname.startsWith(MODEL_ROUTE_PREFIX)) return undefined;
+
+  const corsHeaders: Record<string, string> = {
+    'Access-Control-Allow-Origin': IFCLITE_EMBED_ORIGIN,
+    'Access-Control-Allow-Methods': 'GET, HEAD, OPTIONS',
+    'Access-Control-Allow-Headers': 'range',
+    'Access-Control-Expose-Headers': 'content-length, content-range, accept-ranges',
+    Vary: 'Origin',
+  };
+
+  if (request.method === 'OPTIONS') {
+    return new Response(null, { status: 204, headers: corsHeaders });
+  }
+  if (request.method !== 'GET' && request.method !== 'HEAD') {
+    return new Response('Method not allowed', { status: 405, headers: corsHeaders });
+  }
+
+  const token = url.pathname.slice(MODEL_ROUTE_PREFIX.length);
+  const ticket = modelLinks.consume(token);
+  if (!ticket) {
+    return new Response('Model link expired or unknown', { status: 404, headers: corsHeaders });
+  }
+
+  let filePath: string | undefined;
+  try {
+    filePath = await resolveModelFile(ticket);
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    return new Response(`Failed to fetch model: ${message}`, { status: 502, headers: corsHeaders });
+  }
+  if (!filePath) {
+    return new Response('Model download did not return a file', { status: 502, headers: corsHeaders });
+  }
+
+  const fileStat = await stat(filePath);
+  const headers = new Headers({ ...corsHeaders, 'Content-Type': 'application/octet-stream', 'Accept-Ranges': 'bytes' });
+
+  const range = request.headers.get('range');
+  const rangeMatch = range ? /^bytes=(\d+)-(\d*)$/.exec(range) : null;
+  if (rangeMatch) {
+    const start = Number(rangeMatch[1]);
+    const end = rangeMatch[2] ? Number(rangeMatch[2]) : fileStat.size - 1;
+    headers.set('Content-Range', `bytes ${start}-${end}/${fileStat.size}`);
+    headers.set('Content-Length', String(end - start + 1));
+    if (request.method === 'HEAD') return new Response(null, { status: 206, headers });
+    const stream = createReadStream(filePath, { start, end });
+    return new Response(Readable.toWeb(stream) as ReadableStream, { status: 206, headers });
+  }
+
+  headers.set('Content-Length', String(fileStat.size));
+  if (request.method === 'HEAD') return new Response(null, { status: 200, headers });
+  const stream = createReadStream(filePath);
+  return new Response(Readable.toWeb(stream) as ReadableStream, { status: 200, headers });
+}
 
 export interface BuildHttpAppOptions {
   /**
@@ -91,6 +164,7 @@ function extractCredentials(request: Request): { baseUrl: string; apiKey: string
  */
 export function buildHttpApp(options: BuildHttpAppOptions = {}): HttpApp {
   const handlersByCredentials = new Map<string, ReturnType<typeof createMcpHandler>>();
+  const modelLinks = createModelLinkStore();
 
   let oauthServer: OAuthServer | undefined;
   let resourceMetadataUrl: string | undefined;
@@ -106,6 +180,9 @@ export function buildHttpApp(options: BuildHttpAppOptions = {}): HttpApp {
 
   const guardedHandler = {
     fetch: async (request: Request): Promise<Response> => {
+      const modelResponse = await handleModelRequest(request, modelLinks);
+      if (modelResponse) return modelResponse;
+
       if (oauthServer) {
         const oauthResponse = await oauthServer.handleRequest(request);
         if (oauthResponse) return oauthResponse;
@@ -154,7 +231,15 @@ export function buildHttpApp(options: BuildHttpAppOptions = {}): HttpApp {
       let mcpHandler = handlersByCredentials.get(key);
       if (!mcpHandler) {
         const client = createClient({ baseUrl: daluxCredentials.baseUrl, apiKey: daluxCredentials.apiKey });
-        mcpHandler = createMcpHandler(() => buildServer(client));
+        const hosting = options.publicUrl
+          ? {
+              publicUrl: options.publicUrl,
+              daluxBaseUrl: daluxCredentials.baseUrl,
+              daluxApiKey: daluxCredentials.apiKey,
+              modelLinks,
+            }
+          : undefined;
+        mcpHandler = createMcpHandler(() => buildServer(client, { hosting }));
         handlersByCredentials.set(key, mcpHandler);
       }
       return mcpHandler.fetch(request);
@@ -167,8 +252,16 @@ export function buildHttpApp(options: BuildHttpAppOptions = {}): HttpApp {
   const validateOrigin = localhostOnly ? localhostOriginValidation() : null;
 
   const server = createNodeServer((req, res) => {
-    if (validateHost && !validateHost(req, res)) return;
-    if (validateOrigin && !validateOrigin(req, res)) return;
+    // /models/ requests are cross-origin by design — the ifclite embed
+    // viewer fetches them from https://embed.ifclite.com, never from
+    // localhost — and carry their own auth (the ticket in the URL), so the
+    // localhost Host/Origin checks below (meant to stop DNS-rebinding
+    // against the unauthenticated-by-default MCP endpoint) don't apply.
+    const isModelRoute = req.url?.startsWith(MODEL_ROUTE_PREFIX) ?? false;
+    if (!isModelRoute) {
+      if (validateHost && !validateHost(req, res)) return;
+      if (validateOrigin && !validateOrigin(req, res)) return;
+    }
     void nodeHandler(req, res);
   });
 

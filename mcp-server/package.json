@@ -12,6 +12,11 @@
     "README.md"
   ],
   "scripts": {
+    "build:app": "node scripts/build-ifc-viewer.mjs",
+    "prebuild": "npm run build:app",
+    "predev": "npm run build:app",
+    "pretest": "npm run build:app",
+    "pretypecheck": "npm run build:app",
     "build": "tsup",
     "typecheck": "tsc --noEmit",
     "dev": "tsx src/cli.ts",
@@ -26,8 +31,13 @@
     "zod": "^4.4.3"
   },
   "devDependencies": {
+    "@ifc-lite/embed-sdk": "^1.15.0",
+    "@modelcontextprotocol/client": "^2.0.0",
+    "@modelcontextprotocol/core": "^2.0.0",
+    "@modelcontextprotocol/ext-apps": "^2.0.0",
     "@types/jest": "^30.0.0",
     "@types/node": "^22.0.0",
+    "esbuild": "^0.27.0",
     "jest": "^30.4.2",
     "ts-jest": "^29.2.5",
     "tsup": "^8.3.5",

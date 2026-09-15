@@ -10,6 +10,7 @@ import * as directory from './tools/directory';
 import * as quality from './tools/quality';
 import * as scheduling from './tools/scheduling';
 import * as documents from './tools/documents';
+import { registerIfcViewer, type IfcHostingOptions } from './ui/ifcViewer';
 
 interface ToolSpec<Schema extends z.ZodTypeAny> {
   name: string;
@@ -209,6 +210,8 @@ export const TOOLS = [
 export interface BuildServerOptions {
   name?: string;
   version?: string;
+  /** Enables the view_model_3d tool's 3D viewer — see ui/ifcViewer.ts. Only set on the HTTP deployment (--public-url); leave unset for stdio. */
+  hosting?: IfcHostingOptions;
 }
 
 /**
@@ -236,6 +239,8 @@ export function buildServer(client: DaluxClient, options: BuildServerOptions = {
       },
     );
   }
+
+  registerIfcViewer(server, client, options.hosting);
 
   return server;
 }

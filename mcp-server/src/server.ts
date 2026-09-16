@@ -10,6 +10,7 @@ import * as directory from './tools/directory';
 import * as quality from './tools/quality';
 import * as scheduling from './tools/scheduling';
 import * as documents from './tools/documents';
+import * as ifc from './tools/ifc';
 import { registerIfcViewer, type IfcHostingOptions } from './ui/ifcViewer';
 
 interface ToolSpec<Schema extends z.ZodTypeAny> {
@@ -204,6 +205,54 @@ export const TOOLS = [
     description: 'List version sets on a project.',
     inputSchema: scheduling.listVersionSetsInput,
     handler: scheduling.listVersionSets,
+  }),
+
+  // IFC analysis (see tools/ifc.ts — deliberately read-only)
+  tool({
+    name: 'ifc_model_info',
+    description:
+      'Summarise an IFC file from Dalux: entity counts by type, units, materials, and how many products carry property sets.',
+    inputSchema: ifc.ifcModelInfoInput,
+    handler: ifc.ifcModelInfo,
+  }),
+  tool({
+    name: 'ifc_discover_properties',
+    description:
+      'List the property sets and properties each IFC type actually carries, with coverage counts. Call this before ifc_schedule or ifc_property_values — pset names are exporter-specific and guessing one yields blank columns rather than an error.',
+    inputSchema: ifc.ifcDiscoverPropertiesInput,
+    handler: ifc.ifcDiscoverProperties,
+  }),
+  tool({
+    name: 'ifc_property_values',
+    description: 'Value histogram for one "Pset.Property" across an IFC type — useful for picking a filter value.',
+    inputSchema: ifc.ifcPropertyValuesInput,
+    handler: ifc.ifcPropertyValues,
+  }),
+  tool({
+    name: 'ifc_query_elements',
+    description: 'Filter IFC elements by type and/or a property comparison (= != > < >= <= contains exists matches).',
+    inputSchema: ifc.ifcQueryElementsInput,
+    handler: ifc.ifcQueryElements,
+  }),
+  tool({
+    name: 'ifc_schedule',
+    description:
+      'Build a schedule / quantity-takeoff table for an IFC type from explicit "Pset.Property" columns, written to CSV. Values are in the file\'s own units (usually millimetres).',
+    inputSchema: ifc.ifcScheduleInput,
+    handler: ifc.ifcSchedule,
+  }),
+  tool({
+    name: 'ifc_clash_start',
+    description:
+      'Start a clash detection run on an IFC from Dalux. Returns a jobId immediately — clash meshes the whole model first and can take minutes. Poll with ifc_clash_result.',
+    inputSchema: ifc.ifcClashStartInput,
+    handler: ifc.ifcClashStart,
+  }),
+  tool({
+    name: 'ifc_clash_result',
+    description: 'Poll a clash job started by ifc_clash_start; returns a summary plus the deepest clashes once finished.',
+    inputSchema: ifc.ifcClashResultInput,
+    handler: ifc.ifcClashResult,
   }),
 ] as const;
 

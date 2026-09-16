@@ -123,6 +123,106 @@ export interface HttpApp {
   handleRequest: (request: Request) => Promise<Response>;
 }
 
+/**
+ * Diagnostic logging for tool discovery, off unless
+ * `DALUX_MCP_LOG_DISCOVERY=1`. Exists to answer one question that can't be
+ * answered from the server side alone: when a host advertises fewer tools
+ * than this server registers, is it being served a short list, or is it
+ * shortening a full one itself? Logs what each client negotiates and how
+ * many tools it is actually handed. Never logs Dalux credentials — only the
+ * JSON-RPC method, the client's self-reported name/version, the negotiated
+ * protocol version, and counts.
+ */
+const LOG_DISCOVERY = process.env.DALUX_MCP_LOG_DISCOVERY === '1';
+
+interface JsonRpcPeek {
+  method?: string;
+  clientName?: string;
+  clientVersion?: string;
+  protocolVersion?: string;
+}
+
+/**
+ * Read the JSON-RPC envelope without consuming the body the MCP handler
+ * still needs — hence the clone. Returns undefined for anything that isn't a
+ * parseable JSON-RPC POST, since this is diagnostics: it must never be the
+ * reason a request fails.
+ */
+async function peekJsonRpc(request: Request): Promise<JsonRpcPeek | undefined> {
+  if (request.method !== 'POST') return undefined;
+  try {
+    const body: unknown = await request.clone().json();
+    // Batches share a transport frame; the first message identifies the intent.
+    const message = Array.isArray(body) ? body[0] : body;
+    if (!message || typeof message !== 'object') return undefined;
+    const { method, params } = message as { method?: string; params?: Record<string, unknown> };
+    const clientInfo = params?.clientInfo as { name?: string; version?: string } | undefined;
+    return {
+      method,
+      clientName: clientInfo?.name,
+      clientVersion: clientInfo?.version,
+      protocolVersion: typeof params?.protocolVersion === 'string' ? params.protocolVersion : undefined,
+    };
+  } catch {
+    return undefined;
+  }
+}
+
+/**
+ * Pull the tool count out of a tools/list response, which may be a plain
+ * JSON body or an SSE frame depending on what the client accepts.
+ */
+function summarizeToolList(payload: string): { count?: number; nextCursor?: boolean } {
+  const frames = payload.includes('data: ')
+    ? payload
+        .split('\n')
+        .filter((line) => line.startsWith('data: '))
+        .map((line) => line.slice('data: '.length))
+    : [payload];
+  for (const frame of frames) {
+    try {
+      const parsed = JSON.parse(frame) as { result?: { tools?: unknown[]; nextCursor?: unknown } };
+      if (Array.isArray(parsed.result?.tools)) {
+        return { count: parsed.result.tools.length, nextCursor: Boolean(parsed.result.nextCursor) };
+      }
+    } catch {
+      // Not every SSE frame is a JSON-RPC response; skip it.
+    }
+  }
+  return {};
+}
+
+/**
+ * Logs to stderr, not stdout: on the stdio transport stdout *is* the
+ * protocol channel, and this module is shared with that entrypoint.
+ */
+function logDiscovery(peek: JsonRpcPeek, request: Request, response: Response): void {
+  const userAgent = request.headers.get('user-agent')?.slice(0, 120) ?? '?';
+  if (peek.method === 'initialize') {
+    console.error(
+      `[discovery] initialize client=${peek.clientName ?? '?'}@${peek.clientVersion ?? '?'} ` +
+        `protocolVersion=${peek.protocolVersion ?? '?'} status=${response.status} ua=${userAgent}`,
+    );
+    return;
+  }
+  if (peek.method !== 'tools/list') return;
+  // tools/list carries no clientInfo — the user agent is what ties it back
+  // to the initialize above, since this transport is stateless.
+  response
+    .clone()
+    .text()
+    .then((payload) => {
+      const { count, nextCursor } = summarizeToolList(payload);
+      console.error(
+        `[discovery] tools/list status=${response.status} tools=${count ?? '?'} ` +
+          `nextCursor=${nextCursor ?? false} bytes=${payload.length} ua=${userAgent}`,
+      );
+    })
+    .catch(() => {
+      // A body we couldn't read tells us nothing; the client still got its response.
+    });
+}
+
 function constantTimeEqual(a: string, b: string): boolean {
   const bufA = Buffer.from(a);
   const bufB = Buffer.from(b);
@@ -242,7 +342,11 @@ export function buildHttpApp(options: BuildHttpAppOptions = {}): HttpApp {
         mcpHandler = createMcpHandler(() => buildServer(client, { hosting }));
         handlersByCredentials.set(key, mcpHandler);
       }
-      return mcpHandler.fetch(request);
+      // Peek before the handler consumes the body, log after it answers.
+      const peek = LOG_DISCOVERY ? await peekJsonRpc(request) : undefined;
+      const response = await mcpHandler.fetch(request);
+      if (peek) logDiscovery(peek, request, response);
+      return response;
     },
   };
 

@@ -31,6 +31,7 @@ Reads the same environment variables as the rest of the Dalux Build clients:
 | `PORT` | HTTP transport only | Port to listen on (default `8080`) |
 | `HOST` | HTTP transport only | Address to bind (default `127.0.0.1`; use `0.0.0.0` for Docker/remote — see below) |
 | `PUBLIC_URL` | HTTP transport only, optional | Externally-reachable `https://` base URL of this deployment. Set it to enable OAuth for Claude.ai/ChatGPT custom connectors — see below |
+| `DALUX_MCP_LOG_DISCOVERY` | HTTP transport only, optional | Set to `1` to log each client's `initialize` (client name/version, negotiated protocol version) and `tools/list` (tool count, `nextCursor`, payload size) to stderr. For diagnosing a host that shows fewer tools than the server registers — it distinguishes "served a short list" from "shortened a full list client-side". Logs no credentials |
 
 A `.env` file in the working directory is picked up automatically (via the underlying `dalux-build-api` client).
 

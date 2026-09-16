@@ -24,6 +24,10 @@
   },
   "license": "MIT",
   "dependencies": {
+    "@ifc-lite/mcp": "^0.16.0",
+    "@ifc-lite/parser": "^6.5.0",
+    "@ifc-lite/query": "^2.4.0",
+    "@ifc-lite/sdk": "^6.1.0",
     "@modelcontextprotocol/node": "^2.0.0",
     "@modelcontextprotocol/server": "^2.0.0",
     "dalux-build-api": "*",

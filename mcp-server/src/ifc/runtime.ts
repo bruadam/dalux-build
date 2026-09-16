@@ -10,32 +10,39 @@ import type { ModelRegistry, ToolContext } from '@ifc-lite/mcp';
 type IfcLite = typeof import('@ifc-lite/mcp');
 
 let modulePromise: Promise<IfcLite> | null = null;
-
-export function loadIfcLite(): Promise<IfcLite> {
-  modulePromise ??= import('@ifc-lite/mcp');
-  return modulePromise;
-}
+let consoleRedirected = false;
 
 /**
- * ifc-lite writes geometry diagnostics ("[IFC-LITE] CSG diagnostics: …") to
- * stdout. On our default stdio transport stdout carries the JSON-RPC framing,
- * so an unguarded call corrupts the stream. Redirect stdout to stderr for the
- * duration of `fn` — stderr is already where this server logs.
+ * ifc-lite reports geometry diagnostics ("[IFC-LITE] CSG diagnostics: …")
+ * through console.log/info/warn, which land on stdout — and on our default
+ * stdio transport stdout carries the JSON-RPC framing, so those lines would
+ * corrupt the stream.
+ *
+ * Redirect those three to stderr permanently rather than around each call.
+ * Swapping `process.stdout.write` for the duration of a call looked tighter but
+ * was actively wrong: the swap is process-wide while the server is concurrent,
+ * so a response emitted during a clash run went to stderr and the client hung
+ * waiting for it. Guarding the console methods leaves the transport's own
+ * `process.stdout.write` untouched, and the worst case — diverting some
+ * unrelated console.log to stderr — cannot break the protocol.
+ *
+ * console.error already goes to stderr and is what this server logs with, so it
+ * is deliberately left alone.
  */
-export async function withQuietStdout<T>(fn: () => Promise<T>): Promise<T> {
-  const realWrite = process.stdout.write.bind(process.stdout);
-  process.stdout.write = ((chunk: string | Uint8Array, ...rest: unknown[]) => {
-    const encoding = typeof rest[0] === 'string' ? (rest[0] as BufferEncoding) : undefined;
-    const callback = rest.find((r) => typeof r === 'function') as ((e?: Error | null) => void) | undefined;
-    process.stderr.write(chunk, encoding as BufferEncoding);
-    callback?.(null);
-    return true;
-  }) as typeof process.stdout.write;
-  try {
-    return await fn();
-  } finally {
-    process.stdout.write = realWrite;
+function redirectIfcLiteLogging(): void {
+  if (consoleRedirected) return;
+  consoleRedirected = true;
+  for (const level of ['log', 'info', 'warn'] as const) {
+    console[level] = (...args: unknown[]) => console.error(...args);
   }
+}
+
+export function loadIfcLite(): Promise<IfcLite> {
+  // Installed here because this is the only route to ifc-lite, so the guard is
+  // always in place before any of its code can run.
+  redirectIfcLiteLogging();
+  modulePromise ??= import('@ifc-lite/mcp');
+  return modulePromise;
 }
 
 /**
@@ -74,7 +81,7 @@ export async function callIfcTool(
   // Some handlers throw (SelectorUnsupportedError, and a raw TypeError when a
   // required argument is missing) rather than returning isError, so both paths
   // have to be funnelled into one.
-  const result = await withQuietStdout(async () => tool.handler(input, ctx));
+  const result = await tool.handler(input, ctx);
   const text = (result.content ?? [])
     .map((c) => (c.type === 'text' ? c.text : ''))
     .join('\n');

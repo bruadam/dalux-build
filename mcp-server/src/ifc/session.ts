@@ -14,8 +14,8 @@ import path from 'node:path';
 import type { DaluxClient } from 'dalux-build-api';
 import type { LoadedModel, ModelRegistry } from '@ifc-lite/mcp';
 
-import { cacheDirFor } from '../pdfSearch';
-import { loadIfcLite, withQuietStdout } from './runtime';
+import { cacheDirFor } from '../cachePaths';
+import { loadIfcLite } from './runtime';
 
 export interface IfcRef {
   projectId: string;
@@ -103,7 +103,7 @@ export async function resolveModel(client: DaluxClient, ref: IfcRef): Promise<Re
 
   const filePath = (await cachedIfcPath(ref.fileId)) ?? (await downloadIfc(client, ref));
   const ifc = await loadIfcLite();
-  const model = await withQuietStdout(() => ifc.loadIfcModel(filePath, { modelId: ref.fileId }));
+  const model = await ifc.loadIfcModel(filePath, { modelId: ref.fileId });
 
   registry.add(model);
   entries.set(ref.fileId, { model, filePath, lastUsed: Date.now() });

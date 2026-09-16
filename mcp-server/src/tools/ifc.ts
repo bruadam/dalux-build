@@ -15,7 +15,7 @@ import path from 'node:path';
 import { z } from 'zod';
 import type { DaluxClient } from 'dalux-build-api';
 
-import { cacheDirFor } from '../pdfSearch';
+import { cacheDirFor } from '../cachePaths';
 import { buildCatalogue, splitPath, validateColumns } from '../ifc/catalogue';
 import { describeJob, getClashJob, startClashJob, COMMONLY_DOMINANT_TYPES } from '../ifc/clashJobs';
 import { buildToolContext, callIfcTool } from '../ifc/runtime';

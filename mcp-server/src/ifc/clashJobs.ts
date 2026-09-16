@@ -14,7 +14,7 @@ import { writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import type { ModelRegistry } from '@ifc-lite/mcp';
 
-import { cacheDirFor } from '../pdfSearch';
+import { cacheDirFor } from '../cachePaths';
 import { buildToolContext, callIfcTool } from './runtime';
 
 export type ClashStatus = 'running' | 'done' | 'error';

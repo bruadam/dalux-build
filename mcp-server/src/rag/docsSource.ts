@@ -1,13 +1,48 @@
 /**
  * Reading a docs corpus straight from a GitHub repository — laws, guidelines,
  * standards, procedures, or whatever else lives under a folder there — over
- * the GitHub REST API. No local clone: `build_docs_index` fetches on demand
- * and only what changed since the last build (see docsBuild.ts).
+ * the GitHub REST API. No local clone: `npm run docs:build` fetches on
+ * demand and only what changed since the last build (see docsBuild.ts).
+ *
+ * Two ways to authenticate against a private repo:
+ *  - `DOCS_GITHUB_TOKEN`/`GITHUB_TOKEN` — a real token, sent as a Bearer
+ *    header. What a deployed server (Docker, HTTP transport) must use.
+ *  - `DOCS_GITHUB_USE_GH_CLI=1` — shells out to the local `gh` CLI instead,
+ *    reusing whatever account it's already logged into. No token ever
+ *    touches this process's environment or the filesystem; only works on a
+ *    host with `gh` installed and authenticated (a dev machine running the
+ *    server for Claude Desktop, not a container). Ignored if a token is set.
  */
 
+import { execFile } from 'node:child_process';
 import { SUPPORTED_EXTENSIONS } from '../extract';
 
 const GITHUB_API = 'https://api.github.com';
+
+function useGhCli(token: string | null): boolean {
+  if (token) return false;
+  return process.env.DOCS_GITHUB_USE_GH_CLI === '1' || process.env.DOCS_GITHUB_USE_GH_CLI === 'true';
+}
+
+/** Runs `gh api <endpoint>` and parses its JSON stdout — same response shape as the REST API itself. */
+function ghCliJson<T>(endpoint: string): Promise<T> {
+  return new Promise<T>((resolve, reject) => {
+    execFile('gh', ['api', endpoint], { maxBuffer: 64 * 1024 * 1024 }, (err, stdout, stderr) => {
+      if (err) {
+        const detail = stderr?.toString().trim() || err.message;
+        reject(
+          new Error(`gh api ${endpoint} failed: ${detail}. Run "gh auth login" (or "gh auth status" to check), or set DOCS_GITHUB_TOKEN instead.`),
+        );
+        return;
+      }
+      try {
+        resolve(JSON.parse(stdout.toString()) as T);
+      } catch (parseErr) {
+        reject(new Error(`gh api ${endpoint} returned invalid JSON: ${parseErr instanceof Error ? parseErr.message : String(parseErr)}`));
+      }
+    });
+  });
+}
 
 export interface DocsRepoScope {
   owner: string;
@@ -73,10 +108,10 @@ export async function listDocsEntries(
   scope: DocsRepoScope,
   token: string | null,
 ): Promise<{ entries: DocsRepoEntry[]; truncated: boolean }> {
-  const tree = await githubJson<GitTreeResponse>(
-    `${GITHUB_API}/repos/${scope.owner}/${scope.repo}/git/trees/${encodeURIComponent(scope.ref)}?recursive=1`,
-    token,
-  );
+  const endpoint = `repos/${scope.owner}/${scope.repo}/git/trees/${encodeURIComponent(scope.ref)}?recursive=1`;
+  const tree = useGhCli(token)
+    ? await ghCliJson<GitTreeResponse>(endpoint)
+    : await githubJson<GitTreeResponse>(`${GITHUB_API}/${endpoint}`, token);
 
   const prefix = scope.path ? `${scope.path.replace(/^\/+|\/+$/g, '')}/` : '';
   const entries = tree.tree
@@ -96,10 +131,10 @@ interface ContentsResponse {
 /** Fetches one file's raw bytes via the Contents API (base64-decoded server response). */
 export async function fetchDocContent(scope: DocsRepoScope, path: string, token: string | null): Promise<Buffer> {
   const encodedPath = path.split('/').map(encodeURIComponent).join('/');
-  const data = await githubJson<ContentsResponse>(
-    `${GITHUB_API}/repos/${scope.owner}/${scope.repo}/contents/${encodedPath}?ref=${encodeURIComponent(scope.ref)}`,
-    token,
-  );
+  const endpoint = `repos/${scope.owner}/${scope.repo}/contents/${encodedPath}?ref=${encodeURIComponent(scope.ref)}`;
+  const data = useGhCli(token)
+    ? await ghCliJson<ContentsResponse>(endpoint)
+    : await githubJson<ContentsResponse>(`${GITHUB_API}/${endpoint}`, token);
   if (data.encoding !== 'base64') {
     throw new Error(`Unexpected encoding "${data.encoding}" for ${path} — expected base64.`);
   }

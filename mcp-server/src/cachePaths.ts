@@ -1,5 +1,5 @@
 import { mkdirSync, readdirSync, rmSync, statSync } from 'node:fs';
-import { tmpdir } from 'node:os';
+import { homedir, tmpdir } from 'node:os';
 import path from 'node:path';
 
 /**
@@ -64,9 +64,28 @@ export function taskIndexDir(indexId: string): string {
   return dir;
 }
 
-/** Root under which every temporary docs-repo index lives (see rag/docsStore.ts). */
+/**
+ * Root under which the docs-repo index lives (see rag/docsStore.ts) — persistent,
+ * unlike the file-area and task indexes above.
+ *
+ * Those two are cheap to rebuild (they read live Dalux data) and scoped to
+ * whatever project a session happens to be looking at, so the OS temp
+ * directory — wiped on reboot, fine to lose — is the right home for them.
+ * The docs index is the opposite: one shared corpus, expensive to rebuild
+ * (an OpenAI embedding call per chunk) and barely changes day to day, so
+ * losing it on every restart would mean re-embedding hundreds of documents
+ * just to answer the first `search_docs` call of a new session.
+ *
+ * `DALUX_MCP_DOCS_DIR` overrides this directly; `DALUX_MCP_CACHE_DIR` (the
+ * ephemeral-cache override above) is honoured too, so tests that redirect
+ * the whole cache to a throwaway directory keep isolating the docs index
+ * without extra setup. Absent both, this defaults to a directory under the
+ * user's home rather than tmpdir.
+ */
 export function docsIndexRoot(): string {
-  const dir = path.join(mcpCacheRoot(), 'docs-index');
+  const configured = process.env.DALUX_MCP_DOCS_DIR ?? process.env.DALUX_MCP_CACHE_DIR;
+  const base = configured ? path.resolve(configured) : path.join(homedir(), '.dalux-mcp');
+  const dir = path.join(base, 'docs-index');
   mkdirSync(dir, { recursive: true });
   return dir;
 }

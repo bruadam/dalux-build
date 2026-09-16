@@ -11,11 +11,34 @@
  * and leaves the rest of the corpus untouched.
  */
 
+import { createHash } from 'node:crypto';
 import { existsSync, mkdirSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { docsIndexDir, docsIndexRoot } from '../cachePaths';
 import type { TextChunk } from '../extract';
 import type { DocsRepoScope } from './docsSource';
+
+/**
+ * Longest sanitized filename this produces, well under the 255-byte limit
+ * most filesystems (APFS, ext4, NTFS) impose on a single path component —
+ * leaves headroom for the ".json"/".vec" suffix and multi-byte UTF-8 in the
+ * hash-preserved characters.
+ */
+const MAX_SAFE_ID_LENGTH = 150;
+
+/**
+ * A repo path used as a filename/path component, safely: unsafe characters
+ * replaced, and — since some corpora (e.g. Molio's Danish document titles)
+ * produce sanitized names past what a filesystem allows in one component —
+ * long ones truncated with a content hash appended so two documents can
+ * never collide once shortened.
+ */
+export function safeDocId(docPath: string): string {
+  const sanitized = docPath.replace(/[^A-Za-z0-9._-]/g, '_');
+  if (sanitized.length <= MAX_SAFE_ID_LENGTH) return sanitized;
+  const hash = createHash('sha256').update(docPath).digest('hex').slice(0, 16);
+  return `${sanitized.slice(0, MAX_SAFE_ID_LENGTH - hash.length - 1)}_${hash}`;
+}
 
 export const MANIFEST_VERSION = 1;
 
@@ -65,11 +88,6 @@ function manifestPath(indexId: string): string {
   return path.join(docsIndexDir(indexId), 'manifest.json');
 }
 
-/** Repo paths come from GitHub but may still contain characters unsafe as a filename. */
-function safeId(docPath: string): string {
-  return docPath.replace(/[^A-Za-z0-9._-]/g, '_');
-}
-
 export function readManifest(indexId: string): DocsIndexManifest | null {
   const file = manifestPath(indexId);
   if (!existsSync(file)) return null;
@@ -86,7 +104,7 @@ export function writeManifest(manifest: DocsIndexManifest): void {
 }
 
 export function writeDocument(indexId: string, doc: IndexedDoc, vectors: number[][] | null): void {
-  const base = path.join(docsDir(indexId), safeId(doc.path));
+  const base = path.join(docsDir(indexId), safeDocId(doc.path));
   writeFileSync(`${base}.json`, JSON.stringify(doc), 'utf-8');
   if (vectors?.length) {
     const flat = new Float32Array(vectors.length * vectors[0].length);
@@ -98,7 +116,7 @@ export function writeDocument(indexId: string, doc: IndexedDoc, vectors: number[
 }
 
 export function readDocument(indexId: string, docPath: string): IndexedDoc | null {
-  const file = path.join(docsDir(indexId), `${safeId(docPath)}.json`);
+  const file = path.join(docsDir(indexId), `${safeDocId(docPath)}.json`);
   if (!existsSync(file)) return null;
   try {
     return JSON.parse(readFileSync(file, 'utf-8')) as IndexedDoc;
@@ -109,7 +127,7 @@ export function readDocument(indexId: string, docPath: string): IndexedDoc | nul
 
 /** Per-chunk vectors for a document, or null when it was indexed lexically. */
 export function readVectors(indexId: string, docPath: string, dimensions: number): Float32Array[] | null {
-  const file = path.join(docsDir(indexId), `${safeId(docPath)}.vec`);
+  const file = path.join(docsDir(indexId), `${safeDocId(docPath)}.vec`);
   if (!existsSync(file)) return null;
   const raw = readFileSync(file);
   // Node may hand back a pooled Buffer whose byteOffset is not 4-byte aligned,
@@ -124,13 +142,13 @@ export function readVectors(indexId: string, docPath: string, dimensions: number
 }
 
 export function deleteDocument(indexId: string, docPath: string): void {
-  const base = path.join(docsDir(indexId), safeId(docPath));
+  const base = path.join(docsDir(indexId), safeDocId(docPath));
   rmSync(`${base}.json`, { force: true });
   rmSync(`${base}.vec`, { force: true });
 }
 
 export function dropIndex(indexId: string): boolean {
-  const dir = path.join(docsIndexRoot(), safeId(indexId));
+  const dir = path.join(docsIndexRoot(), safeDocId(indexId));
   if (!existsSync(dir)) return false;
   rmSync(dir, { recursive: true, force: true });
   return true;

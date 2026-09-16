@@ -26,9 +26,11 @@ Reads the same environment variables as the rest of the Dalux Build clients:
 | `DALUX_BASE_URL` | yes | Your Dalux Build API base URL |
 | `DALUX_API_KEY` | yes | Your company's X-API-KEY |
 | `OPENAI_API_KEY` | no | Enables semantic (embedding-based) ranking in document search; without it, ranking falls back to BM25 |
-| `DALUX_MCP_CACHE_DIR` | no | Where downloads and search indexes are cached (default `$TMPDIR/dalux-mcp`). Set it when the temp directory is small or wiped between restarts |
-| `DOCS_GITHUB_TOKEN` (or `GITHUB_TOKEN`) | only for a private docs repo | Token `build_docs_index`/`search_docs_index` send to the GitHub API — required to read a private repo, optional (but raises the rate limit) for a public one. Needs read access to the repo's contents; no other scope |
-| `DOCS_GITHUB_OWNER`, `DOCS_GITHUB_REPO`, `DOCS_GITHUB_REF`, `DOCS_GITHUB_PATH` | no | Default `owner`/`repo`/`ref`/`path` for `build_docs_index`/`search_docs_index`, so callers don't have to name the repo every time. `ref` defaults to `main`, `path` to `docs` if unset; every value can still be overridden per call — see [Docs-repo search](#docs-repo-search-laws-guidelines-standards-procedures) below |
+| `DALUX_MCP_CACHE_DIR` | no | Where downloads and the ephemeral file-area/task indexes are cached (default `$TMPDIR/dalux-mcp`). Set it when the temp directory is small or wiped between restarts. Also used by the docs index if `DALUX_MCP_DOCS_DIR` is unset |
+| `DALUX_MCP_DOCS_DIR` | no | Where the (persistent) docs-repo index is stored (default `~/.dalux-mcp/docs-index`) — separate from `DALUX_MCP_CACHE_DIR` because, unlike the other two indexes, this one is meant to survive restarts |
+| `DOCS_GITHUB_TOKEN` (or `GITHUB_TOKEN`) | only for a private docs repo | Token `npm run docs:build` sends to the GitHub API — required to read a private repo, optional (but raises the rate limit) for a public one. Needs read access to the repo's contents; no other scope |
+| `DOCS_GITHUB_USE_GH_CLI` | no | Set to `1` to have `npm run docs:build` fetch the docs repo via the local `gh` CLI's own login instead of a token — a dev-machine-only alternative to `DOCS_GITHUB_TOKEN`; ignored once a token is set |
+| `DOCS_GITHUB_OWNER`, `DOCS_GITHUB_REPO`, `DOCS_GITHUB_REF`, `DOCS_GITHUB_PATH` | no | Which repo/branch/folder `docs:build`/`search_docs` index — this deployment's one pinned docs corpus. `ref` defaults to `main`, `path` to `docs` if unset — see [Docs-repo search](#docs-repo-search-laws-guidelines-standards-procedures) below |
 | `DALUX_MCP_TOKEN` | HTTP transport only | Shared-secret bearer token clients must send as `Authorization: Bearer <token>` |
 | `PORT` | HTTP transport only | Port to listen on (default `8080`) |
 | `HOST` | HTTP transport only | Address to bind (default `127.0.0.1`; use `0.0.0.0` for Docker/remote — see below) |
@@ -126,7 +128,7 @@ This is fully additive: deployments that never set `PUBLIC_URL` behave exactly a
 
 **Cross-task search**: `build_task_index`, `search_task_index`, `list_task_indexes`, `drop_task_index`
 
-**Docs-repo search** (laws, guidelines, standards, procedures — see below): `build_docs_index`, `search_docs_index`, `list_docs_indexes`, `drop_docs_index`
+**Docs-repo search** (laws, guidelines, standards, procedures — see below): `search_docs`, `list_docs_indexes` (index built server-side via `npm run docs:build`, not a tool)
 
 **Projects**: `list_projects`, `get_project`, `find_project_by_name`, `search_projects_by_name`
 
@@ -224,23 +226,32 @@ Unlike the file-area index there is nothing to download, so a build always compl
 
 ### Docs-repo search (laws, guidelines, standards, procedures)
 
-A project's file areas hold project-specific documents; a corpus of laws, guidelines, standards and procedures is usually *not* project-specific — the same fire code applies to every project a company runs. `build_docs_index`/`search_docs_index` index that kind of corpus straight from a GitHub repo, the same shape as `build_file_area_index`/`search_file_area` (temporary local index, cited passages, no answer synthesis) but with GitHub as the source instead of a Dalux file area — see [`bruadam/dalux-build-docs`](https://github.com/bruadam/dalux-build-docs) for a worked example repo (private; a `laws`/`guidelines`/`standards`/`procedures` folder layout with one placeholder `.md`/`.html`/`.pdf` per category):
+A project's file areas hold project-specific documents; a corpus of laws, guidelines, standards and procedures is usually *not* project-specific — the same fire code applies to every project a company runs. `search_docs` searches that kind of corpus, indexed straight from a GitHub repo — cited passages, no answer synthesis (like `build_file_area_index`/`search_file_area`), but with GitHub as the source instead of a Dalux file area, and pinned to **one** corpus per deployment rather than addressed per call — see [`bruadam/dalux-build-docs`](https://github.com/bruadam/dalux-build-docs) for the corpus this is built against (private; Danish building-code and standards content under `laws`/`guidelines`/`standards`/`procedures`-style folders):
 
 ```
-build_docs_index(owner?, repo?, ref?, path?)         ->  { indexId, docsInScope, docsIndexedThisPass, complete, failed, ... }
-search_docs_index(indexId | scope, query, topK?)     ->  [{ path, location, text, score }, ...]
-list_docs_indexes()                                   ->  what is currently cached, with size and freshness
-drop_docs_index(indexId)                              ->  delete one (nothing on GitHub is touched)
+search_docs(query, topK?, perDocLimit?, pathContains?) -> [{ path, location, text, score }, ...]
+list_docs_indexes()                                     -> { indexes: [{ docCount, chunkCount, updatedAt, mode, ... }] }
 ```
 
-`owner`/`repo`/`ref`/`path` default to the `DOCS_GITHUB_OWNER`/`DOCS_GITHUB_REPO`/`DOCS_GITHUB_REF`/`DOCS_GITHUB_PATH` env vars (`ref` falls back to `main`, `path` to `docs`) so a deployment can pin one default corpus and callers just say what they're looking for. Fetching goes through the GitHub REST API (Git Trees API for the file listing, Contents API per file) — no local clone, no git binary needed on the host.
+**Building the index is deliberately not a tool call.** Indexing costs an OpenAI embedding call per chunk and can take minutes for a large corpus — both bad things to let a model trigger mid-conversation. Instead it's a server-side step:
+
+```sh
+cd mcp-server
+npm run docs:build            # index (or incrementally refresh) the pinned corpus
+npm run docs:build -- --refresh   # force re-extraction/re-embedding of every document
+```
+
+Run this whenever the docs repo changes, or as a deploy/rebuild step before restarting the server — not per session. `search_docs` only ever reads what the last `docs:build` wrote; if it errors saying the corpus isn't indexed, that means `docs:build` hasn't run on this server, not something to retry. `list_docs_indexes` is read-only and safe to call any time to check what's currently indexed and how fresh it is.
+
+`owner`/`repo`/`ref`/`path` are **not** arguments anywhere in this — they only come from the `DOCS_GITHUB_OWNER`/`DOCS_GITHUB_REPO`/`DOCS_GITHUB_REF`/`DOCS_GITHUB_PATH` env vars (`ref` falls back to `main`, `path` to `docs`), so a deployment always searches the one corpus it was configured with; nothing (model or script) can point `search_docs` at an arbitrary repo. Fetching goes through the GitHub REST API (Git Trees API for the file listing, Contents API per file) — no local clone, no git binary needed on the host. (The lower-level `build_docs_index`/`search_docs_index`/`list_docs_indexes`/`drop_docs_index` functions `docs:build` and `search_docs` wrap still exist in `src/tools/docsIndex.ts` and take an explicit scope — useful for tests — but only `search_docs`/`list_docs_indexes` are registered as MCP tools.)
 
 Details worth knowing:
 
-- **No local clone**: `DOCS_GITHUB_TOKEN` (or `GITHUB_TOKEN`) needs read access to the repo's contents — required for a private repo, optional (but raises GitHub's rate limit) for a public one.
+- **Persistent**: unlike the file-area and task indexes (OS temp directory, gone on reboot), the docs index lives under `~/.dalux-mcp/docs-index` by default — survives a server restart, so `search_docs` doesn't have to wait on a fresh `docs:build` every session. Override the location with `DALUX_MCP_DOCS_DIR` (or `DALUX_MCP_CACHE_DIR`, shared with the other indexes).
+- **Auth**: a private repo needs `DOCS_GITHUB_TOKEN` (or `GITHUB_TOKEN`) with read access to the repo's contents — required for private, optional (but raises the rate limit) for public. As a local-only alternative, set `DOCS_GITHUB_USE_GH_CLI=1` to shell out to the `gh` CLI instead, reusing whatever account it's already logged into (`gh auth login`) — no token ever touches this server's environment. Only works on a host with `gh` installed and authenticated (a dev machine, not a container); ignored once a token is set.
 - **Incremental**: each entry's git blob SHA doubles as its revision key, so a document is only re-fetched when its content actually changed — no separate hashing needed, unlike the task index. Documents that left the repo have their chunks dropped; documents that fail to extract are recorded once and not retried until their SHA changes.
-- **Formats**: anything `search_file_content`/`build_file_area_index` reads — `.md`, `.html`, `.pdf`, `.docx`, `.xlsx` and their variants (see the format table above). A repo can mix all of them freely.
-- **Budgeted**: same shape as `build_file_area_index` — indexes at most `maxDocs` (250) documents per call and stops after `timeBudgetSeconds` (120); if the result says `complete: false`, call it again with the same arguments.
+- **Formats**: anything `search_file_content`/`build_file_area_index` reads — `.md`, `.html`, `.pdf`, `.docx`, `.xlsx` and their variants (see the format table above). A repo can mix all of them freely; other extensions (images, `.DS_Store`, etc.) are skipped, not errored.
+- **Budgeted**: `docs:build` loops calling the underlying build function (up to 2000 documents / 600s per pass) until the corpus is fully indexed, so one `npm run docs:build` normally finishes the whole corpus in one command even if it takes several passes internally.
 
 ### `view_model_3d` (3D IFC viewer)
 

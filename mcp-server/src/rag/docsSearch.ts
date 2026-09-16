@@ -85,10 +85,7 @@ export async function searchDocsIndex(
 ): Promise<DocsIndexSearchResult> {
   const manifest = readManifest(indexId);
   if (!manifest) {
-    throw new Error(
-      `No docs index "${indexId}" on this server. Build one with build_docs_index first ` +
-        '(indexes live in the OS temp directory and do not survive a restart of the machine).',
-    );
+    throw new Error(`No docs index "${indexId}" on this server. Build one with \`npm run docs:build\` first.`);
   }
 
   const topK = options.topK ?? 8;
@@ -106,7 +103,7 @@ export async function searchDocsIndex(
   }
   if (missingVectors) {
     warnings.push(
-      'Some documents have no embeddings (indexed before the key was set) — ranking lexically so scores stay comparable. Re-run build_docs_index with refresh=true to embed them.',
+      'Some documents have no embeddings (indexed before the key was set) — ranking lexically so scores stay comparable. Re-run `npm run docs:build -- --refresh` to embed them.',
     );
   }
 

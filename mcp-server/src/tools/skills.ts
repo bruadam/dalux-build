@@ -43,7 +43,7 @@ Call \`get_skill\` again with one of these topics for the full doc on that area 
 | topic | covers |
 | --- | --- |
 | \`tasks\` | \`list_project_tasks\` filtering — OData \`$filter\`/\`$select\`/\`$orderby\` syntax, field paths, examples |
-| \`documents\` | \`search_file_content\`, \`render_pdf_page\`, cross-document search (\`build_file_area_index\`/\`search_file_area\`), and docs-repo search over GitHub (\`build_docs_index\`/\`search_docs_index\`) |
+| \`documents\` | \`search_file_content\`, \`render_pdf_page\`, cross-document search (\`build_file_area_index\`/\`search_file_area\`), and docs-repo search over GitHub (\`search_docs\`/\`list_docs_indexes\`) |
 | \`files\` | Navigating file areas/folders/files, path-based lookups, projects, directory (users/companies) |
 | \`models_and_quality\` | IFC model tools, the 3D viewer, forms, quality plans, scheduling |
 
@@ -241,25 +241,28 @@ Details worth knowing before pointing this at a large file area:
 
 Indexes untouched for a week are deleted automatically on the next build.
 
-## Docs-repo search: \`build_docs_index\` / \`search_docs_index\`
+## Docs-repo search: \`search_docs\` / \`list_docs_indexes\`
 
-Same shape, different source and use case: a Dalux file area holds project-specific documents, but laws,
-guidelines, standards and procedures are usually shared across every project — kept in a separate GitHub repo
-rather than any one Dalux file area. \`build_docs_index\`/\`search_docs_index\` index a folder of that repo
-(recursively) over the GitHub REST API — no local clone:
+Different source and use case from the above: a Dalux file area holds project-specific documents, but laws,
+guidelines, standards and procedures are usually shared across every project — kept in one GitHub repo this
+deployment is pinned to (via \`DOCS_GITHUB_OWNER\`/\`DOCS_GITHUB_REPO\`/\`DOCS_GITHUB_REF\`/\`DOCS_GITHUB_PATH\`), not
+addressed per call the way file-area and task indexes are:
 
 \`\`\`
-build_docs_index(owner?, repo?, ref?, path?)      ->  { indexId, docsInScope, docsIndexedThisPass, complete, ... }
-search_docs_index(indexId | scope, query, topK?)  ->  [{ path, location, text, score }, ...]
-list_docs_indexes()                                ->  what is currently cached, with size and freshness
-drop_docs_index(indexId)                            ->  delete one (nothing on GitHub is touched)
+search_docs(query, topK?, pathContains?) ->  [{ path, location, text, score }, ...]
+list_docs_indexes()                      ->  { indexes: [{ docCount, chunkCount, updatedAt, mode, ... }] }
 \`\`\`
 
-\`owner\`/\`repo\`/\`ref\`/\`path\` fall back to the \`DOCS_GITHUB_OWNER\`/\`DOCS_GITHUB_REPO\`/\`DOCS_GITHUB_REF\`/
-\`DOCS_GITHUB_PATH\` env vars (\`ref\` defaults to \`main\`, \`path\` to \`docs\`) if the server has them set, so a
-deployment can pin one default corpus. A private repo needs \`DOCS_GITHUB_TOKEN\` (or \`GITHUB_TOKEN\`) set on the
-server with read access. Each document's git blob SHA doubles as its revision key, so re-running the build after
-editing a few files only re-indexes those — everything else is reused from disk. Reads the same formats as
+Unlike the file-area and task indexes, this one **persists across server restarts** and is **never built by a tool
+call** — it's one corpus shared by every session, not scoped to whatever project is currently open, and indexing
+costs an embedding call per chunk plus can take minutes for a large corpus, both bad things to let a model trigger
+mid-conversation. It's built out-of-band, server-side, with \`npm run docs:build\` (see
+\`mcp-server/scripts/build-docs-index.ts\`) — a deploy/rebuild step, not a chat action. If \`search_docs\` errors
+saying the corpus isn't indexed yet, that's telling you \`docs:build\` hasn't run on this server, not something to
+retry. \`list_docs_indexes\` is read-only and safe to call any time to check what's currently indexed and how fresh
+it is. A private repo needs \`DOCS_GITHUB_TOKEN\` (or \`GITHUB_TOKEN\`, or a \`gh\`-CLI login with
+\`DOCS_GITHUB_USE_GH_CLI=1\`) set wherever \`docs:build\` runs. Each document's git blob SHA doubles as its revision
+key, so re-running \`docs:build\` after editing a few files only re-indexes those. Reads the same formats as
 \`search_file_content\` (\`.md\`, \`.html\`, \`.pdf\`, \`.docx\`, \`.xlsx\`).
 `,
 };

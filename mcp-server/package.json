@@ -20,6 +20,7 @@
     "build": "tsup",
     "typecheck": "tsc --noEmit",
     "dev": "tsx src/cli.ts",
+    "docs:build": "tsx scripts/build-docs-index.ts",
     "test": "node scripts/run-jest.mjs --coverage"
   },
   "license": "MIT",

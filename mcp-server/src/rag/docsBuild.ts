@@ -20,6 +20,7 @@ import {
   MANIFEST_VERSION,
   deleteDocument,
   readManifest,
+  safeDocId,
   writeDocument,
   writeManifest,
   type DocsIndexManifest,
@@ -185,9 +186,12 @@ export async function buildDocsIndex(
       }
 
       // The repo path is never used as a path component directly: "../../etc/passwd.md"
-      // would otherwise write outside the index directory.
-      const localName = `${entry.path.replace(/[^A-Za-z0-9._-]/g, '_')}${path.extname(entry.path).toLowerCase()}`;
-      localPath = path.join(src, localName);
+      // would otherwise write outside the index directory, and some corpora
+      // (e.g. Molio's Danish document titles) sanitize to a name longer than
+      // a filesystem allows in one component — safeDocId truncates+hashes
+      // those. No need to re-append the extension: extractDocument below is
+      // given entry.path as a nameHint and uses that for format detection.
+      localPath = path.join(src, safeDocId(entry.path));
       writeFileSync(localPath, buffer);
       if (statSync(localPath).size > maxFileSizeBytes) {
         sizeSkipped.push({
@@ -263,7 +267,7 @@ export async function buildDocsIndex(
   const totalChunks = Object.values(manifest.docs).reduce((total, entry) => total + entry.chunkCount, 0);
   const complete = docsPending === 0;
   if (!complete) {
-    warnings.push(`${docsPending} document(s) still to index — call build_docs_index again with the same arguments to continue.`);
+    warnings.push(`${docsPending} document(s) still to index — run \`npm run docs:build\` again to continue.`);
   }
 
   return {

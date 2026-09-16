@@ -159,3 +159,60 @@ export async function dropDocsIndex(_client: DaluxClient, args: DropDocsIndexInp
       : `No docs index "${args.indexId}" on this server.`,
   };
 }
+
+// ---------- search_docs ----------
+//
+// A deployment normally has exactly one reference-docs corpus, pinned via
+// DOCS_GITHUB_OWNER/REPO/REF/PATH. build_docs_index/search_docs_index above
+// stay around for scripts/build-docs-index.ts (see there) and tests, but
+// building is deliberately NOT an MCP tool: indexing hundreds of documents
+// costs an OpenAI embedding call per chunk and can take minutes, which is a
+// bad thing to let a model trigger mid-conversation. The index is built
+// out-of-band (`npm run docs:build`, e.g. as a deploy step) and persists on
+// disk (see cachePaths.docsIndexRoot) — search_docs only ever reads it.
+//
+// No owner/repo/ref/path/indexId here either — the model can't point this
+// server at a repo nobody meant it to read.
+
+export const searchDocsInput = z.object({
+  query: z.string().describe('What to look for, in natural language.'),
+  topK: z.number().int().min(1).max(50).optional().describe('Max passages to return (default 8).'),
+  perDocLimit: z
+    .number()
+    .int()
+    .min(1)
+    .max(20)
+    .nullable()
+    .optional()
+    .describe('Max passages from any one document (default 3; null for no cap).'),
+  pathContains: z.string().optional().describe('Only search documents whose repo path contains this text, e.g. "molio/".'),
+});
+export type SearchDocsInput = z.infer<typeof searchDocsInput>;
+
+export async function searchDocs(_client: DaluxClient, args: SearchDocsInput) {
+  const scope = resolveScope({});
+  const indexId = docsIndexIdFor(scope);
+  const manifest = readManifest(indexId);
+  if (!manifest) {
+    throw new Error(
+      'The docs corpus has not been indexed yet on this server — run `npm run docs:build` (see mcp-server/scripts/build-docs-index.ts) and restart the server.',
+    );
+  }
+
+  const result = await runSearchDocsIndex(indexId, args.query, {
+    topK: args.topK,
+    perDocLimit: args.perDocLimit,
+    pathContains: args.pathContains,
+  });
+
+  return {
+    mode: result.mode,
+    query: result.query,
+    docsSearched: result.docsSearched,
+    chunksSearched: result.chunksSearched,
+    matches: result.matches.map((match) => ({ ...match, score: Number(match.score.toFixed(4)) })),
+    warnings: result.warnings,
+    indexedDocs: Object.keys(manifest.docs).length,
+    indexUpdatedAt: manifest.updatedAt,
+  };
+}

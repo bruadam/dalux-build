@@ -186,32 +186,24 @@ export const TOOLS = [
     handler: taskIndex.dropTaskIndex,
   }),
 
-  // Cross-document search over a GitHub docs repo — laws, guidelines, standards, procedures (see tools/docsIndex.ts)
+  // Reference-docs search — one corpus of laws/guidelines/standards/procedures,
+  // pinned by this deployment's DOCS_GITHUB_* env vars (see tools/docsIndex.ts).
+  // The index persists on disk across restarts (see cachePaths.docsIndexRoot)
+  // and is built out-of-band by `npm run docs:build`, never by a tool call —
+  // indexing is too slow/expensive to trigger from mid-conversation.
   tool({
-    name: 'build_docs_index',
+    name: 'search_docs',
     description:
-      'Build (or incrementally refresh) a temporary local search index over a reference-docs repo on GitHub (laws, guidelines, standards, procedures, or any other corpus of .md/.html/.pdf/.docx/.xlsx files) — separate from any one Dalux project. Fetches over the GitHub API, no local clone. Nothing on GitHub is modified. Large repos are indexed over several calls: if the result says complete=false, call it again with the same arguments.',
-    inputSchema: docsIndex.buildDocsIndexInput,
-    handler: docsIndex.buildDocsIndex,
-  }),
-  tool({
-    name: 'search_docs_index',
-    description:
-      'Search across every document in an index built by build_docs_index, returning the best-matching passages from all of them with the document path and location to cite. Use this for "what do our standards/guidelines/laws say about X" questions that span the whole corpus.',
-    inputSchema: docsIndex.searchDocsIndexInput,
-    handler: docsIndex.searchDocsIndex,
+      'Search the reference-docs corpus (laws, guidelines, standards, procedures) for a natural-language query, returning the best-matching passages with the document path and location to cite. Use this for "what do our standards/guidelines/laws say about X" questions. If it errors saying the corpus isn\'t indexed yet, that\'s a server setup step (`npm run docs:build`), not something to retry.',
+    inputSchema: docsIndex.searchDocsInput,
+    handler: docsIndex.searchDocs,
   }),
   tool({
     name: 'list_docs_indexes',
-    description: 'List the temporary docs-repo indexes currently on this server, with their scope, size and freshness.',
+    description:
+      'Show the reference-docs index currently on this server — document/chunk counts and when it was last built. Read-only; does not trigger a rebuild (that\'s the server-side `npm run docs:build` step).',
     inputSchema: docsIndex.listDocsIndexesInput,
     handler: docsIndex.listDocsIndexes,
-  }),
-  tool({
-    name: 'drop_docs_index',
-    description: 'Delete a temporary docs-repo index from this server\'s local cache. Does not touch anything on GitHub.',
-    inputSchema: docsIndex.dropDocsIndexInput,
-    handler: docsIndex.dropDocsIndex,
   }),
 
   // Tasks

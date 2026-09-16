@@ -198,7 +198,7 @@ describe('docs index (GitHub-sourced)', () => {
     expect(await docsIndex.dropDocsIndex(fakeClient, { indexId: built.indexId })).toMatchObject({ dropped: true });
     expect(await docsIndex.dropDocsIndex(fakeClient, { indexId: built.indexId })).toMatchObject({ dropped: false });
     await expect(docsIndex.searchDocsIndex(fakeClient, { indexId: built.indexId, query: 'anything' })).rejects.toThrow(
-      /build_docs_index/,
+      /docs:build/,
     );
   });
 
@@ -206,5 +206,23 @@ describe('docs index (GitHub-sourced)', () => {
     global.fetch = jest.fn(async () => jsonResponse({ message: 'Not Found' }, 404)) as unknown as typeof fetch;
 
     await expect(docsIndex.buildDocsIndex(fakeClient, { ...scopeArgs, repo: 'does-not-exist' })).rejects.toThrow(/HTTP 404/);
+  });
+
+  it('indexes and finds a document whose path sanitizes to a name longer than a filesystem allows in one component', async () => {
+    // Regression: a real corpus (Molio's Danish standards) has document
+    // titles this long; the pre-fix sanitizer produced a >255-byte filename
+    // and every one of these documents failed to index with ENAMETOOLONG.
+    const longPath =
+      'docs/molio/A113 Fordeling af ydelser og ansvar ved projektering, fremstilling og montage af elementer af beton og letklinkerbeton/' +
+      'Anvisning - Fordeling af ydelser og ansvar ved projektering, fremstilling og montage af elementer af beton og letklinkerbeton.md';
+    const scope = { ...scopeArgs, repo: 'long-filename-repo' };
+    global.fetch = fakeGithub({ [longPath]: lawMd }) as unknown as typeof fetch;
+
+    const report = await docsIndex.buildDocsIndex(fakeClient, scope);
+    expect(report.docsIndexedThisPass).toBe(1);
+    expect(report.failed).toEqual([]);
+
+    const result = await docsIndex.searchDocsIndex(fakeClient, { ...scope, query: 'principal contractor site safety' });
+    expect(result.matches[0]?.path).toBe(longPath);
   });
 });

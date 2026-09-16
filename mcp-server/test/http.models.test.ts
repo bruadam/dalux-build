@@ -3,7 +3,7 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 
 let cacheDir: string;
-jest.mock('../src/pdfSearch', () => ({
+jest.mock('../src/cachePaths', () => ({
   cacheDirFor: jest.fn((fileId: string) => path.join(cacheDir, fileId)),
 }));
 

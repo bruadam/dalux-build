@@ -15,7 +15,7 @@ import path from 'node:path';
 import { z } from 'zod';
 import type { DaluxClient } from 'dalux-build-api';
 
-import { cacheDirFor } from '../cachePaths';
+import { derivedDirFor } from '../cachePaths';
 import { buildCatalogue, splitPath, validateColumns } from '../ifc/catalogue';
 import { describeJob, getClashJob, startClashJob, COMMONLY_DOMINANT_TYPES } from '../ifc/clashJobs';
 import { buildToolContext, callIfcTool } from '../ifc/runtime';
@@ -220,7 +220,7 @@ export async function ifcSchedule(client: DaluxClient, args: IfcScheduleInput) {
   const lines = csv.split('\n').filter((l) => l.length > 0);
   const previewRows = args.previewRows ?? 10;
 
-  const outPath = path.join(cacheDirFor(args.fileId), `schedule-${args.type}-${Date.now()}.csv`);
+  const outPath = path.join(derivedDirFor(args.fileId), `schedule-${args.type}-${Date.now()}.csv`);
   await writeFile(outPath, csv, 'utf-8');
 
   return {

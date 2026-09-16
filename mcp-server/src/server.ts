@@ -10,6 +10,8 @@ import * as directory from './tools/directory';
 import * as quality from './tools/quality';
 import * as scheduling from './tools/scheduling';
 import * as documents from './tools/documents';
+import * as drawings from './tools/drawings';
+import * as fileAreaIndex from './tools/fileAreaIndex';
 import * as ifc from './tools/ifc';
 import { registerIfcViewer, type IfcHostingOptions } from './ui/ifcViewer';
 
@@ -87,10 +89,55 @@ export const TOOLS = [
     handler: documents.downloadFile,
   }),
   tool({
+    name: 'search_file_content',
+    description:
+      'Search inside one document for a natural-language query. Reads PDFs (including drawings, whose text layer holds title blocks, room names and annotations), Word (.docx/.docm) and Excel (.xlsx/.xlsm) files, and returns the best-matching passages with a citable location — page number, heading, or sheet and row range.',
+    inputSchema: documents.searchFileContentInput,
+    handler: documents.searchFileContent,
+  }),
+  tool({
+    // Kept so existing clients and prompts that learned the old name keep
+    // working; it is the same handler, which now reads more than PDFs.
     name: 'search_pdf_content',
-    description: 'Search inside a PDF file\'s text content for a natural-language query, returning the best-matching passages with page numbers.',
-    inputSchema: documents.searchPdfContentInput,
-    handler: documents.searchPdfContent,
+    description:
+      'Deprecated alias for search_file_content, which also reads Word and Excel files. Searches one document and returns the best-matching passages.',
+    inputSchema: documents.searchFileContentInput,
+    handler: documents.searchFileContent,
+  }),
+  tool({
+    name: 'render_pdf_page',
+    description:
+      'Rasterize one page of a PDF (drawing exports included) to an image, for when the chat needs to see the sheet — symbols, dimension lines, hatching and other linework a text search cannot find because none of it is real text. Prefer search_file_content when the text layer already has the answer; this costs image tokens that a text search does not.',
+    inputSchema: drawings.renderPdfPageInput,
+    handler: drawings.renderPdfPage,
+  }),
+
+  // Cross-document search (see tools/fileAreaIndex.ts — a temporary local index)
+  tool({
+    name: 'build_file_area_index',
+    description:
+      'Build (or incrementally refresh) a temporary local search index over the documents in a Dalux file area or folder, so they can be searched together. Downloads and extracts PDFs, Word and Excel files into a disposable index in the OS temp directory — nothing in Dalux is modified. Large scopes are indexed over several calls: if the result says complete=false, call it again with the same arguments.',
+    inputSchema: fileAreaIndex.buildFileAreaIndexInput,
+    handler: fileAreaIndex.buildFileAreaIndex,
+  }),
+  tool({
+    name: 'search_file_area',
+    description:
+      'Search across every document in an index built by build_file_area_index, returning the best-matching passages from all of them with the file and location to cite. Use this for questions that span documents ("which specifications mention fire rating EI60?"); use search_file_content when the document is already known.',
+    inputSchema: fileAreaIndex.searchFileAreaInput,
+    handler: fileAreaIndex.searchFileArea,
+  }),
+  tool({
+    name: 'list_file_area_indexes',
+    description: 'List the temporary document indexes currently on this server, with their scope, size and freshness.',
+    inputSchema: fileAreaIndex.listFileAreaIndexesInput,
+    handler: fileAreaIndex.listFileAreaIndexes,
+  }),
+  tool({
+    name: 'drop_file_area_index',
+    description: 'Delete a temporary document index from this server\'s local cache. Does not touch anything in Dalux.',
+    inputSchema: fileAreaIndex.dropFileAreaIndexInput,
+    handler: fileAreaIndex.dropFileAreaIndex,
   }),
 
   // Tasks
@@ -256,6 +303,21 @@ export const TOOLS = [
   }),
 ] as const;
 
+type ImageContent = { type: 'image'; mimeType: string; data: string };
+type TextContent = { type: 'text'; text: string };
+
+/** A handler result carrying an `image: { mimeType, data }` field (see tools/drawings.ts) renders as a real image content block, with the rest of the result alongside it as text — not base64 stuffed into JSON, which a multimodal client can't see as a picture. */
+function toolResultContent(result: unknown): [TextContent] | [ImageContent, TextContent] {
+  if (result && typeof result === 'object' && 'image' in result && result.image) {
+    const { image, ...meta } = result as { image: { mimeType: string; data: string } } & Record<string, unknown>;
+    return [
+      { type: 'image', mimeType: image.mimeType, data: image.data },
+      { type: 'text', text: JSON.stringify(meta) },
+    ];
+  }
+  return [{ type: 'text', text: JSON.stringify(result) }];
+}
+
 export interface BuildServerOptions {
   name?: string;
   version?: string;
@@ -280,7 +342,7 @@ export function buildServer(client: DaluxClient, options: BuildServerOptions = {
       async (args: unknown) => {
         try {
           const result = await spec.handler(client, args as never);
-          return { content: [{ type: 'text' as const, text: JSON.stringify(result) }] };
+          return { content: [...toolResultContent(result)] };
         } catch (err) {
           const message = err instanceof Error ? err.message : String(err);
           return { content: [{ type: 'text' as const, text: `Error: ${message}` }], isError: true };

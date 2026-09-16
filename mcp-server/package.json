@@ -20,7 +20,7 @@
     "build": "tsup",
     "typecheck": "tsc --noEmit",
     "dev": "tsx src/cli.ts",
-    "test": "jest --coverage"
+    "test": "node scripts/run-jest.mjs --coverage"
   },
   "license": "MIT",
   "dependencies": {
@@ -30,8 +30,11 @@
     "@ifc-lite/sdk": "^6.1.0",
     "@modelcontextprotocol/node": "^2.0.0",
     "@modelcontextprotocol/server": "^2.0.0",
+    "@napi-rs/canvas": "^1.0.9",
     "dalux-build-api": "*",
+    "fflate": "^0.8.3",
     "pdf-parse": "^2.4.5",
+    "pdfjs-dist": "^6.3.289",
     "zod": "^4.4.3"
   },
   "devDependencies": {

@@ -77,8 +77,27 @@ function htmlEscape(value: string): string {
   });
 }
 
+/**
+ * Browser-based OAuth clients (e.g. Linear's "Automatic" custom-MCP-server
+ * flow, which registers a client and exchanges tokens via `fetch` from
+ * linear.app itself, not a server-side backend) hit these endpoints
+ * cross-origin. Without CORS headers — and a response to the preflight
+ * `OPTIONS` request browsers send ahead of a JSON `POST` — the request is
+ * blocked before it ever reaches this server, and the client-side flow dies
+ * silently: no error, no redirect to `/authorize`, nothing.
+ */
+const CORS_HEADERS: Record<string, string> = {
+  'Access-Control-Allow-Origin': '*',
+  'Access-Control-Allow-Methods': 'POST, GET, OPTIONS',
+  'Access-Control-Allow-Headers': 'content-type, authorization',
+};
+
+function corsPreflightResponse(): Response {
+  return new Response(null, { status: 204, headers: CORS_HEADERS });
+}
+
 function jsonResponse(status: number, body: unknown): Response {
-  return new Response(JSON.stringify(body), { status, headers: { 'Content-Type': 'application/json' } });
+  return new Response(JSON.stringify(body), { status, headers: { 'Content-Type': 'application/json', ...CORS_HEADERS } });
 }
 
 function htmlResponse(status: number, body: string): Response {
@@ -330,6 +349,9 @@ export function createOAuthServer(options: { issuer: string; resourceUrl: URL })
     if (wellKnown) return wellKnown;
 
     const { pathname } = new URL(request.url);
+    if ((pathname === '/register' || pathname === '/token') && request.method === 'OPTIONS') {
+      return corsPreflightResponse();
+    }
     if (pathname === '/register' && request.method === 'POST') return handleRegister(request);
     if (pathname === '/authorize' && request.method === 'GET') return handleAuthorizeGet(request);
     if (pathname === '/authorize' && request.method === 'POST') return handleAuthorizePost(request);

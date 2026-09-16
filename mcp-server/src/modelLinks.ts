@@ -2,7 +2,7 @@ import { existsSync, readdirSync } from 'node:fs';
 import path from 'node:path';
 import { randomBytes } from 'node:crypto';
 import { createClient } from 'dalux-build-api';
-import { cacheDirFor } from './pdfSearch';
+import { cacheDirFor } from './cachePaths';
 
 /**
  * Short-lived tickets that let the ifclite embed viewer — running inside the
@@ -72,7 +72,7 @@ export function createModelLinkStore(): ModelLinkStore {
 /**
  * Resolves a ticket to a local file path, downloading (and caching) the
  * Dalux file if it isn't already on disk. Shares the same per-fileId cache
- * directory as `download_file` / `search_pdf_content` (`pdfSearch.ts`'s
+ * directory as `download_file` / `search_file_content` (`cachePaths.ts`'s
  * `cacheDirFor`), so a model already pulled by one of those tools is reused
  * here too — and a model fetched here doesn't re-download on a second
  * `Range` request for the same ticket.

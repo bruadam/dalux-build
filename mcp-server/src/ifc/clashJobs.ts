@@ -14,7 +14,7 @@ import { writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import type { ModelRegistry } from '@ifc-lite/mcp';
 
-import { cacheDirFor } from '../cachePaths';
+import { derivedDirFor } from '../cachePaths';
 import { buildToolContext, callIfcTool } from './runtime';
 
 export type ClashStatus = 'running' | 'done' | 'error';
@@ -88,7 +88,7 @@ export function startClashJob(opts: StartClashOptions): ClashJob {
       const clashes = Array.isArray(data.clashes) ? data.clashes : [];
       const summary = data.summary as { total?: number } | undefined;
 
-      const resultPath = path.join(cacheDirFor(opts.fileId), `clash-${job.id}.json`);
+      const resultPath = path.join(derivedDirFor(opts.fileId), `clash-${job.id}.json`);
       await writeFile(
         resultPath,
         JSON.stringify(

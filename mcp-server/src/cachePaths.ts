@@ -21,6 +21,21 @@ export function cacheDirFor(fileId: string): string {
   return dir;
 }
 
+/**
+ * Per-file directory for artifacts this server *derives* from a download —
+ * schedule CSVs, clash results.
+ *
+ * Deliberately not a sub-directory of `cacheDirFor`: that holds the downloaded
+ * file itself, and `modelLinks.resolveModelFile` takes its only non-dot entry
+ * to be that file, so dropping anything else in there hands the 3D viewer a
+ * CSV instead of the IFC.
+ */
+export function derivedDirFor(fileId: string): string {
+  const dir = path.join(mcpCacheRoot(), 'derived', fileId);
+  mkdirSync(dir, { recursive: true });
+  return dir;
+}
+
 /** Root under which every temporary file-area index lives (one sub-directory per index). */
 export function ragRoot(): string {
   const dir = path.join(mcpCacheRoot(), 'rag');

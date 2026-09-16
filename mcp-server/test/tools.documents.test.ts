@@ -1,28 +1,49 @@
+import { mkdtempSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import path from 'node:path';
 import type { DaluxClient } from 'dalux-build-api';
 
-jest.mock('../src/pdfSearch', () => ({
-  cacheDirFor: jest.fn().mockReturnValue('/tmp/dalux-mcp/files/f1'),
-  extractChunks: jest.fn(),
-  searchChunks: jest.fn(),
+let cacheDir: string;
+jest.mock('../src/cachePaths', () => ({
+  cacheDirFor: jest.fn(() => cacheDir),
 }));
 
-import * as pdfSearch from '../src/pdfSearch';
 import * as documents from '../src/tools/documents';
+import { cacheDirFor } from '../src/cachePaths';
+import { paragraph, writeDocx, writeXlsx } from './fixtures/office';
 
 function fakeClient(overrides: Partial<Record<string, unknown>>): DaluxClient {
   return overrides as unknown as DaluxClient;
 }
 
+/** A client whose getFile "download" is the fixture already sitting in the cache dir. */
+function clientServing(filePath: string, fileName: string) {
+  const getFile = jest.fn().mockResolvedValue({
+    downloadedFilePath: filePath,
+    data: { fileName },
+  });
+  return { client: fakeClient({ files: { getFile } }), getFile };
+}
+
 describe('tools/documents', () => {
+  let originalKey: string | undefined;
+
+  beforeAll(() => {
+    cacheDir = mkdtempSync(path.join(tmpdir(), 'dalux-documents-'));
+    originalKey = process.env.OPENAI_API_KEY;
+    delete process.env.OPENAI_API_KEY;
+  });
+
+  afterAll(() => {
+    if (originalKey !== undefined) process.env.OPENAI_API_KEY = originalKey;
+    rmSync(cacheDir, { recursive: true, force: true });
+  });
+
   afterEach(() => jest.clearAllMocks());
 
   describe('downloadFile', () => {
     it('requests a download to the cache dir and reports the saved path', async () => {
-      const getFile = jest.fn().mockResolvedValue({
-        downloadedFilePath: '/tmp/dalux-mcp/files/f1/spec.pdf',
-        data: { fileName: 'spec.pdf' },
-      });
-      const client = fakeClient({ files: { getFile } });
+      const { client, getFile } = clientServing('/tmp/dalux-mcp/files/f1/spec.pdf', 'spec.pdf');
 
       const result = await documents.downloadFile(client, {
         projectId: 'p1',
@@ -30,11 +51,8 @@ describe('tools/documents', () => {
         fileId: 'f1',
       });
 
-      expect(pdfSearch.cacheDirFor).toHaveBeenCalledWith('f1');
-      expect(getFile).toHaveBeenCalledWith('p1', 'fa1', 'f1', {
-        download: true,
-        savePath: '/tmp/dalux-mcp/files/f1',
-      });
+      expect(cacheDirFor).toHaveBeenCalledWith('f1');
+      expect(getFile).toHaveBeenCalledWith('p1', 'fa1', 'f1', { download: true, savePath: cacheDir });
       expect(result).toEqual({
         found: true,
         filePath: '/tmp/dalux-mcp/files/f1/spec.pdf',
@@ -57,48 +75,97 @@ describe('tools/documents', () => {
     });
   });
 
-  describe('searchPdfContent', () => {
-    it('downloads the file, extracts chunks, and returns ranked matches', async () => {
-      const getFile = jest.fn().mockResolvedValue({
-        downloadedFilePath: '/tmp/dalux-mcp/files/f1/spec.pdf',
-        data: { fileName: 'spec.pdf' },
-      });
-      const client = fakeClient({ files: { getFile } });
-      (pdfSearch.extractChunks as jest.Mock).mockResolvedValue([{ page: 1, text: 'concrete mix ratio' }]);
-      (pdfSearch.searchChunks as jest.Mock).mockResolvedValue([{ page: 1, text: 'concrete mix ratio', score: 0.9 }]);
+  describe('searchFileContent', () => {
+    it('searches a Word document and cites the heading the passage sits under', async () => {
+      const file = writeDocx(
+        cacheDir,
+        'contract.docx',
+        [
+          paragraph('7 Retention', 'Heading1'),
+          paragraph('A retention of five percent is withheld until handover.'),
+        ].join(''),
+      );
+      const { client } = clientServing(file, 'contract.docx');
 
-      const result = await documents.searchPdfContent(client, {
+      const result = await documents.searchFileContent(client, {
         projectId: 'p1',
         fileAreaId: 'fa1',
         fileId: 'f1',
-        query: 'concrete mix',
+        query: 'retention withheld until handover',
       });
 
-      expect(pdfSearch.extractChunks).toHaveBeenCalledWith('/tmp/dalux-mcp/files/f1/spec.pdf');
-      expect(pdfSearch.searchChunks).toHaveBeenCalledWith(
-        [{ page: 1, text: 'concrete mix ratio' }],
-        'concrete mix',
-        5,
-      );
-      expect(result).toEqual({
-        fileName: 'spec.pdf',
-        fileId: 'f1',
-        matches: [{ page: 1, text: 'concrete mix ratio', score: 0.9 }],
+      expect(result).toMatchObject({
+        found: true,
+        searchable: true,
+        format: 'docx',
+        ranking: 'lexical',
+        fileName: 'contract.docx',
       });
+      expect(result.matches?.[0]).toMatchObject({ page: null, location: '§ 7 Retention' });
+      expect(result.matches?.[0].text).toContain('five percent');
+    });
+
+    it('searches a spreadsheet and cites the sheet and rows', async () => {
+      const file = writeXlsx(cacheDir, 'takeoff.xlsx', [
+        { name: 'Takeoff', rows: [['Item', 'Qty'], ['Insulation 200mm', '450']] },
+      ]);
+      const { client } = clientServing(file, 'takeoff.xlsx');
+
+      const result = await documents.searchFileContent(client, {
+        projectId: 'p1',
+        fileAreaId: 'fa1',
+        fileId: 'f2',
+        query: 'insulation quantity',
+      });
+
+      expect(result.matches?.[0].location).toBe('Takeoff!rows 2–2');
+      expect(result.matches?.[0].text).toContain('Item=Insulation 200mm | Qty=450');
+    });
+
+    it('honours topK', async () => {
+      const file = writeDocx(
+        cacheDir,
+        'many.docx',
+        Array.from({ length: 200 }, (_, i) => paragraph(`Clause ${i}: scaffolding shall be inspected weekly.`)).join(''),
+      );
+      const { client } = clientServing(file, 'many.docx');
+
+      const result = await documents.searchFileContent(client, {
+        projectId: 'p1',
+        fileAreaId: 'fa1',
+        fileId: 'f3',
+        query: 'scaffolding inspected',
+        topK: 2,
+      });
+
+      expect(result.matches).toHaveLength(2);
+    });
+
+    it('explains an unreadable format instead of failing the tool call', async () => {
+      const { client } = clientServing(path.join(cacheDir, 'model.dwg'), 'model.dwg');
+
+      const result = await documents.searchFileContent(client, {
+        projectId: 'p1',
+        fileAreaId: 'fa1',
+        fileId: 'f4',
+        query: 'anything',
+      });
+
+      expect(result).toMatchObject({ found: true, searchable: false });
+      expect(result.message).toContain('.docx');
     });
 
     it('skips extraction and reports not-found when the download failed', async () => {
       const getFile = jest.fn().mockResolvedValue('File not found');
       const client = fakeClient({ files: { getFile } });
 
-      const result = await documents.searchPdfContent(client, {
+      const result = await documents.searchFileContent(client, {
         projectId: 'p1',
         fileAreaId: 'fa1',
         fileId: 'missing',
         query: 'anything',
       });
 
-      expect(pdfSearch.extractChunks).not.toHaveBeenCalled();
       expect(result).toEqual({ found: false, message: 'File not found' });
     });
   });

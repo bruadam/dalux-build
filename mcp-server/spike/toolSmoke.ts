@@ -1,18 +1,21 @@
 /**
  * End-to-end smoke test of the ifc_* tools against real Dalux models.
  *
- * Both fixtures are already in the download cache, so resolveModel() hits the
- * cache and the DaluxClient is never called — the stub below exists only to
- * satisfy the signature, and a network call would throw loudly rather than
- * silently pass.
+ * Both fixtures are already in the download cache, so the only Dalux call the
+ * tools make is resolveModel()'s authorization check, which the stub below
+ * answers "yes" to. A download means the cache was missed, so that throws
+ * loudly rather than silently passing.
  */
 import type { DaluxClient } from 'dalux-build-api';
 import * as ifc from '../src/tools/ifc';
 
 const client = {
   files: {
-    getFile() {
-      throw new Error('DaluxClient was called — expected the model to come from cache.');
+    getFile(_projectId: string, _fileAreaId: string, fileId: string, options?: { download?: boolean }) {
+      if (options?.download) {
+        throw new Error('DaluxClient download was called — expected the model to come from cache.');
+      }
+      return Promise.resolve({ data: { fileId, fileName: `${fileId}.ifc` } });
     },
   },
 } as unknown as DaluxClient;

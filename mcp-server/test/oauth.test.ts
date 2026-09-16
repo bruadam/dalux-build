@@ -207,6 +207,66 @@ describe('OAuth authorization server (mounted when publicUrl is set)', () => {
     expect(challenge).toContain('resource_metadata=');
     expect(challenge).toContain('oauth-protected-resource');
   });
+
+  // Clients like Linear's "Automatic" custom-MCP-server flow run dynamic
+  // client registration and token exchange as a `fetch` from the browser tab
+  // itself (linear.app), not from a backend. Without CORS on /register and
+  // /token, the browser blocks the preflight and the flow dies before it
+  // ever redirects to /authorize — silently, with no error surfaced.
+  describe('CORS for browser-based clients (e.g. Linear)', () => {
+    it('answers the /register preflight and tags the real response', async () => {
+      const { handleRequest } = buildHttpApp({ publicUrl: ISSUER });
+
+      const preflight = await handleRequest(
+        new Request(`${ISSUER}/register`, {
+          method: 'OPTIONS',
+          headers: {
+            Origin: 'https://linear.app',
+            'Access-Control-Request-Method': 'POST',
+            'Access-Control-Request-Headers': 'content-type',
+          },
+        }),
+      );
+      expect(preflight.status).toBe(204);
+      expect(preflight.headers.get('access-control-allow-origin')).toBe('*');
+      expect(preflight.headers.get('access-control-allow-methods')).toContain('POST');
+
+      const response = await handleRequest(
+        new Request(`${ISSUER}/register`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', Origin: 'https://linear.app' },
+          body: JSON.stringify({ redirect_uris: [REDIRECT_URI] }),
+        }),
+      );
+      expect(response.status).toBe(201);
+      expect(response.headers.get('access-control-allow-origin')).toBe('*');
+    });
+
+    it('answers the /token preflight and tags the real response', async () => {
+      const { handleRequest } = buildHttpApp({ publicUrl: ISSUER });
+      const clientId = await registerClient(handleRequest);
+      const { codeVerifier, codeChallenge } = pkcePair();
+      const authorizePost = await authorizeAndGetCode(handleRequest, clientId, codeChallenge);
+      const code = extractCode(authorizePost);
+
+      const preflight = await handleRequest(
+        new Request(`${ISSUER}/token`, {
+          method: 'OPTIONS',
+          headers: {
+            Origin: 'https://linear.app',
+            'Access-Control-Request-Method': 'POST',
+            'Access-Control-Request-Headers': 'content-type',
+          },
+        }),
+      );
+      expect(preflight.status).toBe(204);
+      expect(preflight.headers.get('access-control-allow-origin')).toBe('*');
+
+      const tokenResponse = await exchangeCode(handleRequest, { code, clientId, codeVerifier });
+      expect(tokenResponse.status).toBe(200);
+      expect(tokenResponse.headers.get('access-control-allow-origin')).toBe('*');
+    });
+  });
 });
 
 describe('static X-Dalux-* header auth (backward compatibility)', () => {

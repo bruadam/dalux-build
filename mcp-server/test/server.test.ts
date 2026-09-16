@@ -2,8 +2,8 @@ import { z } from 'zod';
 import { TOOLS } from '../src/server';
 
 describe('TOOLS registry', () => {
-  it('has 28 tools with unique names', () => {
-    expect(TOOLS).toHaveLength(28);
+  it('has 41 tools with unique names', () => {
+    expect(TOOLS).toHaveLength(41);
     const names = TOOLS.map((t) => t.name);
     expect(new Set(names).size).toBe(names.length);
   });
@@ -17,9 +17,15 @@ describe('TOOLS registry', () => {
   });
 
   it('does not expose any mutating (create/update/delete) operation', () => {
-    // download_file/search_pdf_content are the two explicitly-allowed exceptions:
-    // they write to a local cache, not to Dalux — no Dalux data is mutated.
-    const allowlist = new Set(['download_file', 'search_pdf_content']);
+    // These write to (or delete from) the local disposable cache, not to
+    // Dalux — no project data is mutated by any of them.
+    const allowlist = new Set([
+      'download_file',
+      'search_pdf_content',
+      'search_file_content',
+      'build_file_area_index',
+      'drop_file_area_index',
+    ]);
     for (const tool of TOOLS) {
       if (allowlist.has(tool.name)) continue;
       expect(tool.name).not.toMatch(/^(create|update|delete|upload|finish)_/);

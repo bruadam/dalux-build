@@ -8,7 +8,7 @@ jest.mock('dalux-build-api', () => ({
 }));
 
 let cacheDir: string;
-jest.mock('../src/pdfSearch', () => ({
+jest.mock('../src/cachePaths', () => ({
   cacheDirFor: jest.fn((fileId: string) => path.join(cacheDir, fileId)),
 }));
 

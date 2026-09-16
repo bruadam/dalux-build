@@ -14,6 +14,7 @@ import * as drawings from './tools/drawings';
 import * as fileAreaIndex from './tools/fileAreaIndex';
 import * as ifc from './tools/ifc';
 import { registerIfcViewer, type IfcHostingOptions } from './ui/ifcViewer';
+import { registerTaskTimeline } from './ui/taskTimeline';
 
 interface ToolSpec<Schema extends z.ZodTypeAny> {
   name: string;
@@ -352,6 +353,7 @@ export function buildServer(client: DaluxClient, options: BuildServerOptions = {
   }
 
   registerIfcViewer(server, client, options.hosting);
+  registerTaskTimeline(server, client);
 
   return server;
 }

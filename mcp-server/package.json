@@ -12,7 +12,7 @@
     "README.md"
   ],
   "scripts": {
-    "build:app": "node scripts/build-ifc-viewer.mjs",
+    "build:app": "node scripts/build-ifc-viewer.mjs && node scripts/build-task-timeline.mjs",
     "prebuild": "npm run build:app",
     "predev": "npm run build:app",
     "pretest": "npm run build:app",

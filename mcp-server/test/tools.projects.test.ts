@@ -48,4 +48,34 @@ describe('tools/projects', () => {
     expect(getProjectByName).toHaveBeenCalledWith('Acme Tower');
     expect(result).toBeNull();
   });
+
+  it('searchProjectsByName matches a case-insensitive substring and returns every hit', async () => {
+    const listProjects = jest.fn().mockResolvedValue({
+      items: [
+        { projectId: 'p1', projectName: 'Acme Tower North' },
+        { projectId: 'p2', projectName: 'acme tower south' },
+        { projectId: 'p3', projectName: 'Someplace Else' },
+        { projectId: 'p4' },
+      ],
+    });
+    const client = fakeClient({ projects: { listProjects } });
+
+    const result = await projects.searchProjectsByName(client, { query: 'ACME TOWER' });
+
+    expect(result.items).toEqual([
+      { projectId: 'p1', projectName: 'Acme Tower North' },
+      { projectId: 'p2', projectName: 'acme tower south' },
+    ]);
+    expect(result.totalCount).toBe(2);
+  });
+
+  it('searchProjectsByName returns no matches rather than throwing when nothing matches', async () => {
+    const listProjects = jest.fn().mockResolvedValue({ items: [{ projectId: 'p1', projectName: 'Someplace Else' }] });
+    const client = fakeClient({ projects: { listProjects } });
+
+    const result = await projects.searchProjectsByName(client, { query: 'nonexistent' });
+
+    expect(result.items).toEqual([]);
+    expect(result.totalCount).toBe(0);
+  });
 });

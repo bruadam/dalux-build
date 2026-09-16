@@ -50,15 +50,44 @@ export function ragIndexDir(indexId: string): string {
   return dir;
 }
 
+/** Root under which every temporary task index lives (see rag/taskStore.ts). */
+export function taskIndexRoot(): string {
+  const dir = path.join(mcpCacheRoot(), 'task-index');
+  mkdirSync(dir, { recursive: true });
+  return dir;
+}
+
+/** Directory holding a single temporary task index's manifest and per-task chunks/vectors. */
+export function taskIndexDir(indexId: string): string {
+  const dir = path.join(taskIndexRoot(), indexId);
+  mkdirSync(dir, { recursive: true });
+  return dir;
+}
+
+/** Root under which every temporary docs-repo index lives (see rag/docsStore.ts). */
+export function docsIndexRoot(): string {
+  const dir = path.join(mcpCacheRoot(), 'docs-index');
+  mkdirSync(dir, { recursive: true });
+  return dir;
+}
+
+/** Directory holding a single temporary docs-repo index's manifest and per-document chunks/vectors. */
+export function docsIndexDir(indexId: string): string {
+  const dir = path.join(docsIndexRoot(), indexId);
+  mkdirSync(dir, { recursive: true });
+  return dir;
+}
+
 /**
- * Delete index directories untouched for longer than `maxAgeMs`.
+ * Delete index directories untouched for longer than `maxAgeMs`, under `root`
+ * (defaulting to the file-area index root; pass `taskIndexRoot()` to prune task
+ * indexes instead).
  *
- * These indexes are caches of project documents living in the OS temp
- * directory; pruning on every build keeps a long-running server from
- * accumulating stale copies of file areas nobody is querying any more.
+ * These indexes are caches of project data living in the OS temp directory;
+ * pruning on every build keeps a long-running server from accumulating stale
+ * copies nobody is querying any more.
  */
-export function pruneStaleIndexes(maxAgeMs: number, now: number = Date.now()): string[] {
-  const root = ragRoot();
+export function pruneStaleIndexes(maxAgeMs: number, now: number = Date.now(), root: string = ragRoot()): string[] {
   const pruned: string[] = [];
   let entries: string[];
   try {

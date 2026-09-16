@@ -1,6 +1,9 @@
 import { z } from 'zod';
 import type { DaluxClient } from 'dalux-build-api';
 import { collectAllDaluxItems } from '../daluxPagination';
+import type { TextChunk } from '../extract';
+import { groupChangesByTaskId, renderTaskLines, str, unwrapTask } from '../rag/taskText';
+import { searchChunks } from '../search/documentSearch';
 import { fullListForLlm, type PaginatedForLlm } from '../serialize';
 
 // ---------- list_project_tasks ----------
@@ -47,6 +50,103 @@ export async function listProjectTasks(
     client.tasks.getProjectTasks(projectId, { ...params, ...pageParams }),
   );
   return fullListForLlm(items);
+}
+
+// ---------- search_tasks ----------
+
+export const searchTasksInput = z.object({
+  projectId: z.string().describe('The Dalux project ID.'),
+  query: z
+    .string()
+    .describe(
+      'Keywords or a natural-language description of what to find. Matched against each task\'s subject, ' +
+        'description, custom fields, type, status and (optionally) change history — no OData syntax needed.',
+    ),
+  typeId: z
+    .string()
+    .optional()
+    .describe('Only search tasks of this task type ID. Ignored if filter is also set.'),
+  filter: z
+    .string()
+    .optional()
+    .describe('Raw OData $filter expression narrowing which tasks are searched (same syntax as list_project_tasks).'),
+  includeChanges: z
+    .boolean()
+    .optional()
+    .describe(
+      'Also match against each task\'s change history text (fetches every task change on the project — an extra ' +
+        'API call). Default false. For repeated searches over the same project, build_task_index + ' +
+        'search_task_index is cheaper.',
+    ),
+  topK: z.number().int().min(1).max(100).optional().describe('Max matching tasks to return (default 20).'),
+});
+export type SearchTasksInput = z.infer<typeof searchTasksInput>;
+
+/**
+ * Ranked keyword/semantic search across a project's tasks — the "find tasks
+ * about X" complement to list_project_tasks' exact OData filtering. Ranks by
+ * BM25, or by OpenAI embeddings when OPENAI_API_KEY is set (see search/rank.ts).
+ *
+ * Re-fetches and re-renders every task on each call, same trade-off as
+ * search_file_content vs. build_file_area_index: cheap for one-off questions,
+ * wasteful if called repeatedly against the same project — use
+ * build_task_index + search_task_index for that.
+ */
+export async function searchTasks(client: DaluxClient, args: SearchTasksInput) {
+  const { projectId, query, typeId, filter, includeChanges, topK } = args;
+
+  const params: Record<string, unknown> = {};
+  if (filter !== undefined) {
+    params.$filter = filter;
+  } else if (typeId !== undefined) {
+    params.$filter = `data/type/typeId eq '${typeId.replace(/'/g, "''")}'`;
+  }
+
+  const rawTasks = await collectAllDaluxItems((pageParams) =>
+    client.tasks.getProjectTasks(projectId, { ...params, ...pageParams }),
+  );
+
+  const changesByTaskId = includeChanges
+    ? groupChangesByTaskId(
+        (await collectAllDaluxItems((pageParams) =>
+          client.tasks.getProjectTaskChanges(projectId, pageParams),
+        )) as Record<string, unknown>[],
+      )
+    : new Map<string, Record<string, unknown>[]>();
+
+  const byTaskId = new Map<string, { data: Record<string, unknown>; raw: unknown }>();
+  const chunks: TextChunk[] = [];
+  for (const raw of rawTasks) {
+    const data = unwrapTask(raw);
+    const taskId = data.taskId as string | undefined;
+    if (!taskId) continue;
+    byTaskId.set(taskId, { data, raw });
+    chunks.push({
+      page: null,
+      location: taskId,
+      text: renderTaskLines(data, changesByTaskId.get(taskId) ?? []).join('\n'),
+    });
+  }
+
+  const { mode, matches } = await searchChunks(chunks, query, topK ?? 20);
+
+  return {
+    mode,
+    query,
+    totalTasks: byTaskId.size,
+    returnedCount: matches.length,
+    matches: matches.map((match) => {
+      const entry = byTaskId.get(match.location)!;
+      return {
+        taskId: match.location,
+        subject: str(entry.data.subject) ?? str(entry.data.title),
+        number: str(entry.data.number),
+        usage: str(entry.data.usage),
+        score: Number(match.score.toFixed(4)),
+        task: entry.raw,
+      };
+    }),
+  };
 }
 
 // ---------- get_task ----------

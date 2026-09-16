@@ -27,6 +27,8 @@ Reads the same environment variables as the rest of the Dalux Build clients:
 | `DALUX_API_KEY` | yes | Your company's X-API-KEY |
 | `OPENAI_API_KEY` | no | Enables semantic (embedding-based) ranking in document search; without it, ranking falls back to BM25 |
 | `DALUX_MCP_CACHE_DIR` | no | Where downloads and search indexes are cached (default `$TMPDIR/dalux-mcp`). Set it when the temp directory is small or wiped between restarts |
+| `DOCS_GITHUB_TOKEN` (or `GITHUB_TOKEN`) | only for a private docs repo | Token `build_docs_index`/`search_docs_index` send to the GitHub API — required to read a private repo, optional (but raises the rate limit) for a public one. Needs read access to the repo's contents; no other scope |
+| `DOCS_GITHUB_OWNER`, `DOCS_GITHUB_REPO`, `DOCS_GITHUB_REF`, `DOCS_GITHUB_PATH` | no | Default `owner`/`repo`/`ref`/`path` for `build_docs_index`/`search_docs_index`, so callers don't have to name the repo every time. `ref` defaults to `main`, `path` to `docs` if unset; every value can still be overridden per call — see [Docs-repo search](#docs-repo-search-laws-guidelines-standards-procedures) below |
 | `DALUX_MCP_TOKEN` | HTTP transport only | Shared-secret bearer token clients must send as `Authorization: Bearer <token>` |
 | `PORT` | HTTP transport only | Port to listen on (default `8080`) |
 | `HOST` | HTTP transport only | Address to bind (default `127.0.0.1`; use `0.0.0.0` for Docker/remote — see below) |
@@ -114,13 +116,19 @@ This is fully additive: deployments that never set `PUBLIC_URL` behave exactly a
 
 ## Tools
 
-**Files & folders**: `list_file_areas`, `get_file_area`, `list_folders`, `get_folder`, `get_folder_by_path`, `get_folder_tree`, `list_files_in_folder`, `list_files`, `get_file`, `download_file`, `search_file_content`, `render_pdf_page`
+**Usage guide**: `get_skill` — this server's own bundled documentation, callable with no arguments; see below
+
+**Files & folders**: `list_file_areas`, `get_file_area`, `list_folders`, `search_folders_by_name`, `get_folder`, `get_folder_by_path`, `get_folder_tree`, `list_files_in_folder`, `list_files`, `search_files_by_name`, `get_file`, `download_file`, `search_file_content`, `render_pdf_page`
 
 **Cross-document search**: `build_file_area_index`, `search_file_area`, `list_file_area_indexes`, `drop_file_area_index`
 
-**Tasks**: `list_project_tasks`, `get_task`, `list_task_changes`, `list_task_attachments`
+**Tasks**: `list_project_tasks`, `search_tasks`, `get_task`, `list_task_changes`, `list_task_attachments`
 
-**Projects**: `list_projects`, `get_project`, `find_project_by_name`
+**Cross-task search**: `build_task_index`, `search_task_index`, `list_task_indexes`, `drop_task_index`
+
+**Docs-repo search** (laws, guidelines, standards, procedures — see below): `build_docs_index`, `search_docs_index`, `list_docs_indexes`, `drop_docs_index`
+
+**Projects**: `list_projects`, `get_project`, `find_project_by_name`, `search_projects_by_name`
 
 **Forms**: `list_forms`, `get_form`
 
@@ -134,6 +142,24 @@ This is fully additive: deployments that never set `PUBLIC_URL` behave exactly a
 
 List tools report `totalCount`/`truncated` and follow Dalux pagination to completion, returning all matching items. There is no extra MCP-side list cap.
 
+`search_projects_by_name`, `search_files_by_name` and `search_folders_by_name` complement the exact-match `find_project_by_name` / exact-`folderId` lookups: they match a substring anywhere in the name, case-insensitively, and return every match rather than assuming there is exactly one — useful when only part of the name (or its casing) is known.
+
+### Usage guide (`get_skill`)
+
+The server bundles its own usage documentation and serves it over MCP, so any connecting client gets it — not just a Claude Code checkout of this repo with `.claude/skills/` on disk. `buildServer()` sets the server's `instructions` (delivered at `initialize`, before the model decides what to call first) to name `get_skill` explicitly as the recommended first call.
+
+`get_skill(topic?)` (`src/tools/skills.ts`) returns markdown. Called with no arguments it returns the `overview` topic, which orients the model and lists the others:
+
+| topic | covers |
+| --- | --- |
+| `overview` | tool categories, general usage principles, how errors are reported |
+| `tasks` | `list_project_tasks` filtering — OData `$filter`/`$select`/`$orderby` syntax, field paths, worked examples |
+| `documents` | `search_file_content`, `render_pdf_page`, cross-document search (`build_file_area_index`/`search_file_area`) |
+| `files` | file areas/folders/files navigation, path-based lookups, projects, directory (users/companies) |
+| `models_and_quality` | IFC model tools, the 3D viewer, forms, quality plans, scheduling |
+
+The same five docs are also published as `dalux-build://skill/<topic>` resources (`text/markdown`), for hosts that surface MCP resources directly (Claude Code's resource tools, Claude Desktop's resource picker) rather than relying on the model to call a tool. Both paths read from the same content in `src/tools/skills.ts` — there is only one copy to keep in sync.
+
 ### Document search
 
 `download_file` downloads a file into a local cache directory (`$TMPDIR/dalux-mcp/files/<fileId>/`) and returns the local path — not raw bytes, which would blow an LLM's context for anything but a tiny file.
@@ -145,6 +171,8 @@ List tools report `totalCount`/`truncated` and follow Dalux pagination to comple
 | PDF | `.pdf` | `p. 12` | Includes drawings — their text layer holds the title block, room names, areas and annotations |
 | Word | `.docx`, `.docm` | `§ 4 Payment › 4.2 Retention` | Paragraphs and table rows; headings tracked (including localised style names such as Danish `Overskrift1`); tracked deletions excluded |
 | Excel | `.xlsx`, `.xlsm` | `Budget!rows 40–58` | Rows are rendered as `Description=Concrete C30/37 \| Qty=120`, and each chunk repeats the sheet name and header row so a passage is quantifiable on its own |
+| Markdown | `.md`, `.markdown` | `§ 4 Payment › 4.2 Retention` | ATX headings (`#`..`######`) tracked the same way as Word; fenced code blocks kept as plain text, not treated as headings |
+| HTML | `.html`, `.htm` | `§ 4 Payment › 4.2 Retention` | `h1`–`h6` tracked as headings; `<script>`/`<style>`/`<head>` content dropped; tags stripped, common entities decoded |
 
 `search_pdf_content` still exists as a deprecated alias for the same handler, so prompts and clients that learned the old name keep working.
 
@@ -176,6 +204,43 @@ Details worth knowing before pointing it at a large file area:
 - **Cost**: with a key, indexing embeds every chunk once (`text-embedding-3-small`); a 250-document folder is a few million tokens of embeddings. Without one, indexing makes no API calls at all.
 
 This is the TypeScript counterpart of the corpus-wide RAG agent in the Python package (`python/dalux_build/ai/`), which uses Chroma and LangChain and hosts its own LLM loop. Chunk size and overlap match (1000/150) so passages read the same through either path.
+
+### Task search
+
+`list_project_tasks` filters with an exact OData `$filter` expression (see `get_skill({ topic: "tasks" })`) — precise, but it needs the model to write correct OData and can only match the literal field it's pointed at. Two tools answer "which tasks are about X" without that:
+
+`search_tasks(projectId, query, typeId?, filter?, includeChanges?, topK?)` is the ad-hoc, no-setup option: it fetches the project's tasks (optionally narrowed with `typeId`/`filter` first), renders each one's subject, type, status, custom fields and (if `includeChanges: true`) change-history text, ranks them against `query` (embeddings if `OPENAI_API_KEY` is set, BM25 otherwise — see `src/search/rank.ts`), and returns the best-matching tasks with a `score`. Good for a one-off question; it re-fetches and re-renders every task on every call.
+
+For repeated searches over the same project, build an index instead — the task-side counterpart of `build_file_area_index`/`search_file_area`, combining each task with its change history into one searchable document per task:
+
+```
+build_task_index(projectId, typeId?, filter?)      ->  { indexId, taskCount, tasksIndexed, tasksReused, totalChunks, ... }
+search_task_index(indexId | scope, query, topK?)    ->  [{ taskId, subject, location, text, score }, ...]
+list_task_indexes()                                 ->  what is currently cached, with size and freshness
+drop_task_index(indexId)                             ->  delete one (nothing in Dalux is touched)
+```
+
+Unlike the file-area index there is nothing to download, so a build always completes in one call (no `complete`/budget fields to poll). It's still incremental: each task's own fields plus its change history are hashed into a `revisionKey`, so re-running the build after a handful of edits only re-renders and re-embeds the tasks that actually changed — everything else is reused from disk. A `location` in a match like `entries 3-5` refers to the task's own rendered lines (its fields, then one line per change with a description), not a page.
+
+### Docs-repo search (laws, guidelines, standards, procedures)
+
+A project's file areas hold project-specific documents; a corpus of laws, guidelines, standards and procedures is usually *not* project-specific — the same fire code applies to every project a company runs. `build_docs_index`/`search_docs_index` index that kind of corpus straight from a GitHub repo, the same shape as `build_file_area_index`/`search_file_area` (temporary local index, cited passages, no answer synthesis) but with GitHub as the source instead of a Dalux file area — see [`bruadam/dalux-build-docs`](https://github.com/bruadam/dalux-build-docs) for a worked example repo (private; a `laws`/`guidelines`/`standards`/`procedures` folder layout with one placeholder `.md`/`.html`/`.pdf` per category):
+
+```
+build_docs_index(owner?, repo?, ref?, path?)         ->  { indexId, docsInScope, docsIndexedThisPass, complete, failed, ... }
+search_docs_index(indexId | scope, query, topK?)     ->  [{ path, location, text, score }, ...]
+list_docs_indexes()                                   ->  what is currently cached, with size and freshness
+drop_docs_index(indexId)                              ->  delete one (nothing on GitHub is touched)
+```
+
+`owner`/`repo`/`ref`/`path` default to the `DOCS_GITHUB_OWNER`/`DOCS_GITHUB_REPO`/`DOCS_GITHUB_REF`/`DOCS_GITHUB_PATH` env vars (`ref` falls back to `main`, `path` to `docs`) so a deployment can pin one default corpus and callers just say what they're looking for. Fetching goes through the GitHub REST API (Git Trees API for the file listing, Contents API per file) — no local clone, no git binary needed on the host.
+
+Details worth knowing:
+
+- **No local clone**: `DOCS_GITHUB_TOKEN` (or `GITHUB_TOKEN`) needs read access to the repo's contents — required for a private repo, optional (but raises GitHub's rate limit) for a public one.
+- **Incremental**: each entry's git blob SHA doubles as its revision key, so a document is only re-fetched when its content actually changed — no separate hashing needed, unlike the task index. Documents that left the repo have their chunks dropped; documents that fail to extract are recorded once and not retried until their SHA changes.
+- **Formats**: anything `search_file_content`/`build_file_area_index` reads — `.md`, `.html`, `.pdf`, `.docx`, `.xlsx` and their variants (see the format table above). A repo can mix all of them freely.
+- **Budgeted**: same shape as `build_file_area_index` — indexes at most `maxDocs` (250) documents per call and stops after `timeBudgetSeconds` (120); if the result says `complete: false`, call it again with the same arguments.
 
 ### `view_model_3d` (3D IFC viewer)
 

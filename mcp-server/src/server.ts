@@ -12,9 +12,12 @@ import * as scheduling from './tools/scheduling';
 import * as documents from './tools/documents';
 import * as drawings from './tools/drawings';
 import * as fileAreaIndex from './tools/fileAreaIndex';
+import * as taskIndex from './tools/taskIndex';
+import * as docsIndex from './tools/docsIndex';
 import * as ifc from './tools/ifc';
 import { registerIfcViewer, type IfcHostingOptions } from './ui/ifcViewer';
 import { registerTaskTimeline } from './ui/taskTimeline';
+import { registerSkills } from './tools/skills';
 
 interface ToolSpec<Schema extends z.ZodTypeAny> {
   name: string;
@@ -48,6 +51,13 @@ export const TOOLS = [
     handler: files.listFolders,
   }),
   tool({
+    name: 'search_folders_by_name',
+    description:
+      'Find folders in a file area whose name contains a substring, case-insensitively — for when only part of the folder name is known. Use get_folder_by_path when the full path is already known.',
+    inputSchema: files.searchFoldersByNameInput,
+    handler: files.searchFoldersByName,
+  }),
+  tool({
     name: 'get_folder',
     description: 'Get a single folder by ID.',
     inputSchema: files.getFolderInput,
@@ -76,6 +86,13 @@ export const TOOLS = [
     description: 'List all files in a file area.',
     inputSchema: files.listFilesInput,
     handler: files.listFiles,
+  }),
+  tool({
+    name: 'search_files_by_name',
+    description:
+      'Find files in a file area whose name contains a substring, case-insensitively — for when only part of the file name is known.',
+    inputSchema: files.searchFilesByNameInput,
+    handler: files.searchFilesByName,
   }),
   tool({
     name: 'get_file',
@@ -141,12 +158,75 @@ export const TOOLS = [
     handler: fileAreaIndex.dropFileAreaIndex,
   }),
 
+  // Cross-task search (see tools/taskIndex.ts — a temporary local index over tasks + change history)
+  tool({
+    name: 'build_task_index',
+    description:
+      'Build (or incrementally refresh) a temporary local search index over a project\'s tasks, combining each task\'s own fields with its change history into one searchable document per task. Nothing in Dalux is modified. A task whose content is unchanged since the last build is skipped, so re-running after a few edits is cheap.',
+    inputSchema: taskIndex.buildTaskIndexInput,
+    handler: taskIndex.buildTaskIndex,
+  }),
+  tool({
+    name: 'search_task_index',
+    description:
+      'Search across every task in an index built by build_task_index, returning the best-matching passages (from a task\'s fields or its change history) with the task to cite. Use this for questions that span many tasks ("which tasks mention a crack in a beam?", "what changed on tasks assigned to X last month?"); use search_tasks for a one-off question that does not warrant building an index first.',
+    inputSchema: taskIndex.searchTaskIndexInput,
+    handler: taskIndex.searchTaskIndex,
+  }),
+  tool({
+    name: 'list_task_indexes',
+    description: 'List the temporary task indexes currently on this server, with their scope, size and freshness.',
+    inputSchema: taskIndex.listTaskIndexesInput,
+    handler: taskIndex.listTaskIndexes,
+  }),
+  tool({
+    name: 'drop_task_index',
+    description: 'Delete a temporary task index from this server\'s local cache. Does not touch anything in Dalux.',
+    inputSchema: taskIndex.dropTaskIndexInput,
+    handler: taskIndex.dropTaskIndex,
+  }),
+
+  // Cross-document search over a GitHub docs repo — laws, guidelines, standards, procedures (see tools/docsIndex.ts)
+  tool({
+    name: 'build_docs_index',
+    description:
+      'Build (or incrementally refresh) a temporary local search index over a reference-docs repo on GitHub (laws, guidelines, standards, procedures, or any other corpus of .md/.html/.pdf/.docx/.xlsx files) — separate from any one Dalux project. Fetches over the GitHub API, no local clone. Nothing on GitHub is modified. Large repos are indexed over several calls: if the result says complete=false, call it again with the same arguments.',
+    inputSchema: docsIndex.buildDocsIndexInput,
+    handler: docsIndex.buildDocsIndex,
+  }),
+  tool({
+    name: 'search_docs_index',
+    description:
+      'Search across every document in an index built by build_docs_index, returning the best-matching passages from all of them with the document path and location to cite. Use this for "what do our standards/guidelines/laws say about X" questions that span the whole corpus.',
+    inputSchema: docsIndex.searchDocsIndexInput,
+    handler: docsIndex.searchDocsIndex,
+  }),
+  tool({
+    name: 'list_docs_indexes',
+    description: 'List the temporary docs-repo indexes currently on this server, with their scope, size and freshness.',
+    inputSchema: docsIndex.listDocsIndexesInput,
+    handler: docsIndex.listDocsIndexes,
+  }),
+  tool({
+    name: 'drop_docs_index',
+    description: 'Delete a temporary docs-repo index from this server\'s local cache. Does not touch anything on GitHub.',
+    inputSchema: docsIndex.dropDocsIndexInput,
+    handler: docsIndex.dropDocsIndex,
+  }),
+
   // Tasks
   tool({
     name: 'list_project_tasks',
     description: 'List tasks on a project, optionally filtered by type/OData filter.',
     inputSchema: tasks.listProjectTasksInput,
     handler: tasks.listProjectTasks,
+  }),
+  tool({
+    name: 'search_tasks',
+    description:
+      'Ranked keyword/natural-language search across a project\'s tasks — no OData syntax needed. Matches against subject, description, custom fields, type, status and (optionally) change history, returning the best-matching tasks with a relevance score. For repeated searches over the same project, build_task_index + search_task_index is cheaper.',
+    inputSchema: tasks.searchTasksInput,
+    handler: tasks.searchTasks,
   }),
   tool({
     name: 'get_task',
@@ -182,9 +262,16 @@ export const TOOLS = [
   }),
   tool({
     name: 'find_project_by_name',
-    description: 'Find a project ID by its display name.',
+    description: 'Find a project ID by its exact display name.',
     inputSchema: projects.findProjectByNameInput,
     handler: projects.findProjectByName,
+  }),
+  tool({
+    name: 'search_projects_by_name',
+    description:
+      'Find projects whose name contains a substring, case-insensitively — for when only part of the project name is known, or its exact casing isn\'t. Returns every match, not just one.',
+    inputSchema: projects.searchProjectsByNameInput,
+    handler: projects.searchProjectsByName,
   }),
 
   // Forms
@@ -331,10 +418,18 @@ export interface BuildServerOptions {
  * Does not start any transport — call `.connect(transport)` (or use `cli.ts`).
  */
 export function buildServer(client: DaluxClient, options: BuildServerOptions = {}): McpServer {
-  const server = new McpServer({
-    name: options.name ?? 'dalux-build',
-    version: options.version ?? '0.1.0',
-  });
+  const server = new McpServer(
+    {
+      name: options.name ?? 'dalux-build',
+      version: options.version ?? '0.1.0',
+    },
+    {
+      instructions:
+        'Read-only Dalux Build API access. Call get_skill (no arguments) first — before browsing an ' +
+        'unfamiliar project or writing an OData filter for list_project_tasks — for this server\'s own ' +
+        'usage guide and links to deeper topics (tasks/documents/files/models_and_quality).',
+    },
+  );
 
   for (const spec of TOOLS) {
     server.registerTool(
@@ -354,6 +449,7 @@ export function buildServer(client: DaluxClient, options: BuildServerOptions = {
 
   registerIfcViewer(server, client, options.hosting);
   registerTaskTimeline(server, client);
+  registerSkills(server);
 
   return server;
 }

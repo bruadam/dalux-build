@@ -1,7 +1,13 @@
 import { z } from 'zod';
 import type { DaluxClient } from 'dalux-build-api';
 import { collectAllDaluxItems } from '../daluxPagination';
-import { fullListForLlm, type PaginatedForLlm } from '../serialize';
+import { fullListForLlm, paginateForLlm, type PaginatedForLlm } from '../serialize';
+
+/** Case-insensitive substring match on a named string field, tolerant of items missing that field. */
+function matchesNameQuery(item: unknown, field: string, needle: string): boolean {
+  const value = (item as Record<string, unknown>)[field];
+  return typeof value === 'string' && value.toLowerCase().includes(needle);
+}
 
 // ---------- list_file_areas ----------
 
@@ -43,6 +49,29 @@ export async function listFolders(
     client.folders.listFolders(args.projectId, args.fileAreaId, params),
   );
   return fullListForLlm(items);
+}
+
+// ---------- search_folders_by_name ----------
+
+export const searchFoldersByNameInput = z.object({
+  projectId: z.string().describe('The Dalux project ID.'),
+  fileAreaId: z.string().describe('The file area ID.'),
+  query: z.string().describe('Text to look for anywhere in the folder name (case-insensitive, no exact match required).'),
+  limit: z.number().int().min(1).max(200).optional().describe('Max matches to return (default 50).'),
+});
+export type SearchFoldersByNameInput = z.infer<typeof searchFoldersByNameInput>;
+
+/** Finds folders in a file area whose name contains `query`, case-insensitively. */
+export async function searchFoldersByName(
+  client: DaluxClient,
+  args: SearchFoldersByNameInput,
+): Promise<PaginatedForLlm<unknown>> {
+  const items = await collectAllDaluxItems((params) =>
+    client.folders.listFolders(args.projectId, args.fileAreaId, params),
+  );
+  const needle = args.query.toLowerCase();
+  const matches = items.filter((item) => matchesNameQuery(item, 'folderName', needle));
+  return paginateForLlm(matches, { limit: args.limit });
 }
 
 // ---------- get_folder ----------
@@ -121,6 +150,27 @@ export async function listFiles(
 ): Promise<PaginatedForLlm<unknown>> {
   const items = await collectAllDaluxItems((params) => client.files.listFiles(args.projectId, args.fileAreaId, params));
   return fullListForLlm(items);
+}
+
+// ---------- search_files_by_name ----------
+
+export const searchFilesByNameInput = z.object({
+  projectId: z.string().describe('The Dalux project ID.'),
+  fileAreaId: z.string().describe('The file area ID.'),
+  query: z.string().describe('Text to look for anywhere in the file name (case-insensitive, no exact match required).'),
+  limit: z.number().int().min(1).max(200).optional().describe('Max matches to return (default 50).'),
+});
+export type SearchFilesByNameInput = z.infer<typeof searchFilesByNameInput>;
+
+/** Finds files in a file area whose name contains `query`, case-insensitively. */
+export async function searchFilesByName(
+  client: DaluxClient,
+  args: SearchFilesByNameInput,
+): Promise<PaginatedForLlm<unknown>> {
+  const items = await collectAllDaluxItems((params) => client.files.listFiles(args.projectId, args.fileAreaId, params));
+  const needle = args.query.toLowerCase();
+  const matches = items.filter((item) => matchesNameQuery(item, 'fileName', needle));
+  return paginateForLlm(matches, { limit: args.limit });
 }
 
 // ---------- get_file ----------

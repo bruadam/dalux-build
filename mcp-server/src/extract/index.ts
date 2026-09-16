@@ -1,5 +1,7 @@
 import path from 'node:path';
 import { extractDocx } from './docx';
+import { extractHtml } from './html';
+import { extractMarkdown } from './markdown';
 import { extractPdf } from './pdf';
 import { extractXlsx } from './xlsx';
 import { UnsupportedFormatError, type DocumentFormat, type ExtractionResult } from './types';
@@ -8,7 +10,7 @@ export * from './types';
 export { CHUNK_SIZE, CHUNK_OVERLAP } from './chunk';
 
 /** Extensions this server can read, in the form the tool descriptions advertise. */
-export const SUPPORTED_EXTENSIONS = ['.pdf', '.docx', '.docm', '.xlsx', '.xlsm'] as const;
+export const SUPPORTED_EXTENSIONS = ['.pdf', '.docx', '.docm', '.xlsx', '.xlsm', '.md', '.markdown', '.html', '.htm'] as const;
 
 const FORMAT_BY_EXTENSION: Record<string, DocumentFormat> = {
   '.pdf': 'pdf',
@@ -18,6 +20,10 @@ const FORMAT_BY_EXTENSION: Record<string, DocumentFormat> = {
   '.docm': 'docx',
   '.xlsx': 'xlsx',
   '.xlsm': 'xlsx',
+  '.md': 'md',
+  '.markdown': 'md',
+  '.html': 'html',
+  '.htm': 'html',
 };
 
 export function formatFor(fileName: string): DocumentFormat | null {
@@ -49,5 +55,9 @@ export async function extractDocument(filePath: string, nameHint?: string): Prom
       return extractDocx(filePath);
     case 'xlsx':
       return extractXlsx(filePath);
+    case 'md':
+      return extractMarkdown(filePath);
+    case 'html':
+      return extractHtml(filePath);
   }
 }

@@ -48,3 +48,28 @@ export type FindProjectByNameInput = z.infer<typeof findProjectByNameInput>;
 export async function findProjectByName(client: DaluxClient, args: FindProjectByNameInput) {
   return client.projects.getProjectByName(args.projectName);
 }
+
+// ---------- search_projects_by_name ----------
+
+export const searchProjectsByNameInput = z.object({
+  query: z.string().describe('Text to look for anywhere in the project name (case-insensitive, no exact match required).'),
+});
+export type SearchProjectsByNameInput = z.infer<typeof searchProjectsByNameInput>;
+
+/**
+ * Finds projects whose name contains `query`, case-insensitively — unlike
+ * find_project_by_name, which needs the exact display name. Useful when only
+ * part of the name is known or its casing is uncertain.
+ */
+export async function searchProjectsByName(
+  client: DaluxClient,
+  args: SearchProjectsByNameInput,
+): Promise<PaginatedForLlm<unknown>> {
+  const items = await collectAllDaluxItems((params) => client.projects.listProjects(params));
+  const needle = args.query.toLowerCase();
+  const matches = items.filter((item) => {
+    const projectName = (item as Record<string, unknown>).projectName;
+    return typeof projectName === 'string' && projectName.toLowerCase().includes(needle);
+  });
+  return fullListForLlm(matches);
+}

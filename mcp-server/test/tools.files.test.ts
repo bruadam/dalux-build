@@ -89,4 +89,50 @@ describe('tools/files', () => {
 
     expect(getFile).toHaveBeenCalledWith('p1', 'fa1', 'f1');
   });
+
+  it('searchFilesByName excludes names that do not contain the query', async () => {
+    const listFiles = jest.fn().mockResolvedValue({
+      items: [
+        { fileId: 'f1', fileName: 'Floor Plan Level 3.pdf' },
+        { fileId: 'f2', fileName: 'Structural Calcs.docx' },
+      ],
+    });
+    const client = fakeClient({ files: { listFiles } });
+
+    const result = await files.searchFilesByName(client, { projectId: 'p1', fileAreaId: 'fa1', query: 'calcs' });
+
+    expect(listFiles).toHaveBeenCalledWith('p1', 'fa1', {});
+    expect(result.items).toEqual([{ fileId: 'f2', fileName: 'Structural Calcs.docx' }]);
+  });
+
+  it('searchFilesByName matches a case-insensitive substring anywhere in the file name', async () => {
+    const listFiles = jest.fn().mockResolvedValue({
+      items: [
+        { fileId: 'f1', fileName: 'Floor Plan Level 3.pdf' },
+        { fileId: 'f2', fileName: 'Structural Calcs.docx' },
+      ],
+    });
+    const client = fakeClient({ files: { listFiles } });
+
+    const result = await files.searchFilesByName(client, { projectId: 'p1', fileAreaId: 'fa1', query: 'FLOOR PLAN' });
+
+    expect(result.items).toEqual([{ fileId: 'f1', fileName: 'Floor Plan Level 3.pdf' }]);
+    expect(result.totalCount).toBe(1);
+  });
+
+  it('searchFoldersByName matches a case-insensitive substring anywhere in the folder name', async () => {
+    const listFolders = jest.fn().mockResolvedValue({
+      items: [
+        { folderId: 'fo1', folderName: '4_Design' },
+        { folderId: 'fo2', folderName: '5_Construction' },
+      ],
+    });
+    const client = fakeClient({ folders: { listFolders } });
+
+    const result = await files.searchFoldersByName(client, { projectId: 'p1', fileAreaId: 'fa1', query: 'design' });
+
+    expect(listFolders).toHaveBeenCalledWith('p1', 'fa1', {});
+    expect(result.items).toEqual([{ folderId: 'fo1', folderName: '4_Design' }]);
+    expect(result.totalCount).toBe(1);
+  });
 });

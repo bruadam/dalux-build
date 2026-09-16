@@ -97,6 +97,46 @@ describe('tools/tasks', () => {
     expect(result.truncated).toBe(false);
   });
 
+  it('searchTasks ranks tasks against the query and skips fetching changes by default', async () => {
+    const getProjectTasks = jest.fn().mockResolvedValue({
+      items: [
+        { data: { taskId: 't1', subject: 'Crack in beam B12', usage: 'safetyissue' } },
+        { data: { taskId: 't2', subject: 'Order more concrete', usage: 'task' } },
+      ],
+    });
+    const getProjectTaskChanges = jest.fn();
+    const client = fakeClient({ tasks: { getProjectTasks, getProjectTaskChanges } });
+
+    const result = await tasks.searchTasks(client, { projectId: 'p1', query: 'crack in the beam' });
+
+    expect(getProjectTasks).toHaveBeenCalledWith('p1', {});
+    expect(getProjectTaskChanges).not.toHaveBeenCalled();
+    expect(result.totalTasks).toBe(2);
+    expect(result.matches[0]).toMatchObject({ taskId: 't1', subject: 'Crack in beam B12' });
+  });
+
+  it('searchTasks expands typeId into an OData filter and includes change text when asked', async () => {
+    const getProjectTasks = jest.fn().mockResolvedValue({
+      items: [{ data: { taskId: 't1', subject: 'Inspection' } }],
+    });
+    const getProjectTaskChanges = jest.fn().mockResolvedValue({
+      items: [{ taskId: 't1', description: 'Reassigned after a plumbing leak was reported', timestamp: '2026-01-02', action: 'update' }],
+    });
+    const client = fakeClient({ tasks: { getProjectTasks, getProjectTaskChanges } });
+
+    const result = await tasks.searchTasks(client, {
+      projectId: 'p1',
+      query: 'plumbing leak',
+      typeId: 'ty1',
+      includeChanges: true,
+    });
+
+    expect(getProjectTasks).toHaveBeenCalledWith('p1', { $filter: "data/type/typeId eq 'ty1'" });
+    expect(getProjectTaskChanges).toHaveBeenCalledWith('p1', {});
+    expect(result.matches).toHaveLength(1);
+    expect(result.matches[0].taskId).toBe('t1');
+  });
+
   it('listTaskAttachments tolerates a missing items envelope', async () => {
     const getProjectTaskAttachments = jest.fn().mockResolvedValue(null);
     const client = fakeClient({ tasks: { getProjectTaskAttachments } });

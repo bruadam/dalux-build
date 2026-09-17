@@ -1,14 +1,16 @@
 /**
  * Build (or incrementally refresh) a temporary local RAG index over a
- * project's tasks and their change history, combined one task at a time.
+ * project's tasks, their change history, and their attachments' text,
+ * combined one task at a time.
  *
- * Unlike the file-area index (rag/build.ts), there is nothing to download —
- * tasks and changes are already structured JSON — so a build always
- * completes in one pass; only the embedding calls are batched to keep them
- * fast and (with OPENAI_API_KEY set) cheap. A task whose own fields and
- * change history are unchanged since the last build (by content hash) is
- * skipped, so re-running the build after a handful of edits only re-embeds
- * those tasks.
+ * Unlike the file-area index (rag/build.ts), tasks and changes are already
+ * structured JSON and need no download — only attachments do. A task whose
+ * own fields, change history, and attachment list are all unchanged since
+ * the last build (by content hash) is skipped, so re-running the build
+ * after a handful of edits only re-embeds (and re-downloads attachments
+ * for) those tasks. Unlike the file-area index, there is currently no
+ * time-budgeted multi-pass build here — a project with many large,
+ * newly-attached documents can make the first build slow.
  */
 
 import { createHash } from 'node:crypto';
@@ -17,7 +19,8 @@ import { taskIndexRoot, pruneStaleIndexes } from '../cachePaths';
 import { collectAllDaluxItems } from '../daluxPagination';
 import { CHUNK_OVERLAP, CHUNK_SIZE, packLines } from '../extract/chunk';
 import { EMBEDDING_DIMENSIONS, EMBEDDING_MODEL, embedTexts, embeddingsAvailable } from '../search/rank';
-import { groupChangesByTaskId, renderTaskLines, str, taskRevisionKey, unwrapTask } from './taskText';
+import { extractAttachmentTextsByTaskId, groupAttachmentsByTaskId } from './taskAttachments';
+import { groupChangesByTaskId, renderTaskLines, str, taskRevisionKey, unwrapTask, type AttachmentText } from './taskText';
 import {
   MANIFEST_VERSION,
   deleteDocument,
@@ -34,6 +37,10 @@ const STALE_INDEX_MS = 7 * 24 * 60 * 60 * 1000;
 
 /** Guard against one task with an enormous change history dominating the index. */
 const MAX_CHUNKS_PER_TASK = 50;
+
+/** This is the cached path, so a higher cap than search_tasks' ad-hoc includeAttachments is worth the one-time cost. */
+const MAX_ATTACHMENTS_PER_TASK_INDEX = 10;
+const ATTACHMENT_CONCURRENCY_INDEX = 6;
 
 export function taskIndexIdFor(scope: TaskIndexScope): string {
   const raw = [scope.projectId, scope.typeId ?? '', scope.filter ?? ''].join(':');
@@ -54,6 +61,7 @@ export interface TaskBuildReport {
   tasksReused: number;
   tasksRemoved: number;
   changeCount: number;
+  attachmentCount: number;
   totalChunks: number;
   warnings: string[];
   elapsedSeconds: number;
@@ -63,12 +71,17 @@ interface DirtyTask {
   taskId: string;
   data: Record<string, unknown>;
   changes: Record<string, unknown>[];
-  chunks: TaskChunk[];
+  attachments: Record<string, unknown>[];
   revisionKey: string;
+  chunks: TaskChunk[];
 }
 
-function chunkTask(data: Record<string, unknown>, changes: Record<string, unknown>[]): TaskChunk[] {
-  const lines = renderTaskLines(data, changes);
+function chunkTask(
+  data: Record<string, unknown>,
+  changes: Record<string, unknown>[],
+  attachmentTexts: readonly AttachmentText[],
+): TaskChunk[] {
+  const lines = renderTaskLines(data, changes, attachmentTexts);
   let packed = packLines(lines, CHUNK_SIZE, CHUNK_OVERLAP);
   if (packed.length > MAX_CHUNKS_PER_TASK) packed = packed.slice(0, MAX_CHUNKS_PER_TASK);
   return packed.map((chunk) => ({
@@ -117,11 +130,13 @@ export async function buildTaskIndex(
     params.$filter = `data/type/typeId eq '${scope.typeId.replace(/'/g, "''")}'`;
   }
 
-  const [rawTasks, rawChanges] = await Promise.all([
+  const [rawTasks, rawChanges, rawAttachments] = await Promise.all([
     collectAllDaluxItems((pageParams) => client.tasks.getProjectTasks(scope.projectId, { ...params, ...pageParams })),
     collectAllDaluxItems((pageParams) => client.tasks.getProjectTaskChanges(scope.projectId, pageParams)),
+    collectAllDaluxItems((pageParams) => client.tasks.getProjectTaskAttachments(scope.projectId, pageParams)),
   ]);
   const changesByTaskId = groupChangesByTaskId(rawChanges as Record<string, unknown>[]);
+  const attachmentsByTaskId = groupAttachmentsByTaskId(rawAttachments);
 
   const tasks = rawTasks
     .map((raw) => unwrapTask(raw))
@@ -140,10 +155,24 @@ export async function buildTaskIndex(
   for (const data of tasks) {
     const taskId = data.taskId as string;
     const changes = changesByTaskId.get(taskId) ?? [];
-    const revisionKey = taskRevisionKey(data, changes);
+    const attachments = attachmentsByTaskId.get(taskId) ?? [];
+    const revisionKey = taskRevisionKey(data, changes, attachments);
     const cached = manifest.tasks[taskId];
     if (!refresh && cached && cached.revisionKey === revisionKey) continue;
-    dirty.push({ taskId, data, changes, chunks: chunkTask(data, changes), revisionKey });
+    dirty.push({ taskId, data, changes, attachments, revisionKey, chunks: [] });
+  }
+
+  // Attachments are downloaded and parsed only for tasks that are actually
+  // dirty — a task whose fields/changes/attachment list are unchanged reuses
+  // its cached chunks (and never re-downloads anything).
+  const attachmentTextsByTaskId = await extractAttachmentTextsByTaskId(
+    client,
+    new Map(dirty.map((task) => [task.taskId, task.attachments])),
+    dirty.map((task) => task.taskId),
+    { maxPerTask: MAX_ATTACHMENTS_PER_TASK_INDEX, concurrency: ATTACHMENT_CONCURRENCY_INDEX },
+  );
+  for (const task of dirty) {
+    task.chunks = chunkTask(task.data, task.changes, attachmentTextsByTaskId.get(task.taskId) ?? []);
   }
 
   // One flattened embeddings call across every dirty task's chunks, rather than
@@ -174,6 +203,7 @@ export async function buildTaskIndex(
       revisionKey: task.revisionKey,
       chunkCount: task.chunks.length,
       changeCount: task.changes.length,
+      attachmentCount: task.attachments.length,
       indexedAt: new Date().toISOString(),
     };
   }
@@ -208,6 +238,7 @@ export async function buildTaskIndex(
     tasksReused: tasks.length - dirty.length,
     tasksRemoved,
     changeCount: rawChanges.length,
+    attachmentCount: rawAttachments.length,
     totalChunks,
     warnings,
     elapsedSeconds: Number(((Date.now() - startedAt) / 1000).toFixed(1)),

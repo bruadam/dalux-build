@@ -4,6 +4,7 @@ import path from 'node:path';
 import type { DaluxClient } from 'dalux-build-api';
 
 import * as taskIndex from '../src/tools/taskIndex';
+import { paragraph, writeDocx } from './fixtures/office';
 
 interface FakeTask {
   taskId: string;
@@ -19,7 +20,17 @@ interface FakeChange {
   action?: string;
 }
 
-function fakeClient(tasksList: FakeTask[], changes: FakeChange[] = []) {
+interface FakeAttachment {
+  taskId: string;
+  mediaFile: { name: string; fileDownload: string };
+}
+
+function fakeClient(
+  tasksList: FakeTask[],
+  changes: FakeChange[] = [],
+  attachments: FakeAttachment[] = [],
+  downloadFileFromLink: jest.Mock = jest.fn(),
+) {
   const getProjectTasks = jest.fn(async (_projectId: string, _params: Record<string, unknown>) => ({
     items: tasksList.map((task) => ({ data: { ...task } })),
     metadata: { totalRemainingItems: 0 },
@@ -28,9 +39,22 @@ function fakeClient(tasksList: FakeTask[], changes: FakeChange[] = []) {
     items: changes,
     metadata: { totalRemainingItems: 0 },
   }));
+  const getProjectTaskAttachments = jest.fn(async () => ({
+    items: attachments,
+    metadata: { totalRemainingItems: 0 },
+  }));
 
-  const client = { tasks: { getProjectTasks, getProjectTaskChanges } };
-  return { client: client as unknown as DaluxClient, getProjectTasks, getProjectTaskChanges };
+  const client = {
+    tasks: { getProjectTasks, getProjectTaskChanges, getProjectTaskAttachments },
+    files: { downloadFileFromLink },
+  };
+  return {
+    client: client as unknown as DaluxClient,
+    getProjectTasks,
+    getProjectTaskChanges,
+    getProjectTaskAttachments,
+    downloadFileFromLink,
+  };
 }
 
 describe('task index', () => {
@@ -153,5 +177,52 @@ describe('task index', () => {
     await expect(taskIndex.searchTaskIndex(client, { indexId: built.indexId, query: 'anything' })).rejects.toThrow(
       /build_task_index/,
     );
+  });
+
+  it('downloads and extracts attachment text into a task\'s chunks', async () => {
+    const fixtureDir = mkdtempSync(path.join(tmpdir(), 'dalux-task-attachment-'));
+    const docxPath = writeDocx(fixtureDir, 'report.docx', paragraph('Copper pipe corrosion assessment for riser B12'));
+    const downloadFileFromLink = jest.fn(async () => docxPath);
+
+    const { client, getProjectTaskAttachments } = fakeClient(
+      [{ taskId: 't1', subject: 'Plumbing inspection' }],
+      [],
+      [{ taskId: 't1', mediaFile: { name: 'report.docx', fileDownload: 'https://example.invalid/report.docx' } }],
+      downloadFileFromLink,
+    );
+
+    const report = await taskIndex.buildTaskIndex(client, { projectId: 'p-attach' });
+    expect(getProjectTaskAttachments).toHaveBeenCalled();
+    expect(report.attachmentCount).toBe(1);
+    expect(downloadFileFromLink).toHaveBeenCalledWith(
+      'https://example.invalid/report.docx',
+      'report.docx',
+      expect.any(String),
+    );
+
+    const result = await taskIndex.searchTaskIndex(client, { projectId: 'p-attach', query: 'copper pipe corrosion' });
+    expect(result.matches[0]?.taskId).toBe('t1');
+
+    rmSync(fixtureDir, { recursive: true, force: true });
+  });
+
+  it('reuses a task\'s cached chunks (no re-download) when its attachment list is unchanged', async () => {
+    const fixtureDir = mkdtempSync(path.join(tmpdir(), 'dalux-task-attachment-'));
+    const docxPath = writeDocx(fixtureDir, 'report.docx', paragraph('Copper pipe corrosion assessment'));
+    const attachments: FakeAttachment[] = [
+      { taskId: 't1', mediaFile: { name: 'report.docx', fileDownload: 'https://example.invalid/report.docx' } },
+    ];
+    const tasksList: FakeTask[] = [{ taskId: 't1', subject: 'Plumbing inspection' }];
+
+    const first = fakeClient(tasksList, [], attachments, jest.fn(async () => docxPath));
+    await taskIndex.buildTaskIndex(first.client, { projectId: 'p-attach-reuse' });
+    expect(first.downloadFileFromLink).toHaveBeenCalledTimes(1);
+
+    const second = fakeClient(tasksList, [], attachments, jest.fn(async () => docxPath));
+    const reused = await taskIndex.buildTaskIndex(second.client, { projectId: 'p-attach-reuse' });
+    expect(reused.tasksIndexed).toBe(0);
+    expect(second.downloadFileFromLink).not.toHaveBeenCalled();
+
+    rmSync(fixtureDir, { recursive: true, force: true });
   });
 });

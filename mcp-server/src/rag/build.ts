@@ -12,6 +12,7 @@ import { mkdirSync, rmSync, statSync } from 'node:fs';
 import path from 'node:path';
 import type { DaluxClient } from 'dalux-build-api';
 import { pruneStaleIndexes, ragIndexDir } from '../cachePaths';
+import { pool } from '../concurrency';
 import { extractDocument } from '../extract';
 import { EMBEDDING_DIMENSIONS, EMBEDDING_MODEL, embedTexts, embeddingsAvailable } from '../search/rank';
 import { indexIdFor, listIndexableFiles, type IndexScope, type IndexableFile } from './scope';
@@ -100,29 +101,6 @@ async function downloadSource(
     throw new Error(typeof downloaded === 'string' ? downloaded : 'Dalux returned no download link for this file.');
   }
   return downloaded.downloadedFilePath;
-}
-
-/** Run `worker` over `items` with at most `limit` in flight, stopping when `shouldStop` says so. */
-async function pool<T>(
-  items: readonly T[],
-  limit: number,
-  shouldStop: () => boolean,
-  worker: (item: T) => Promise<void>,
-): Promise<number> {
-  let next = 0;
-  let processed = 0;
-  const runners = Array.from({ length: Math.min(limit, items.length) }, async () => {
-    for (;;) {
-      if (shouldStop()) return;
-      const index = next;
-      next += 1;
-      if (index >= items.length) return;
-      await worker(items[index]);
-      processed += 1;
-    }
-  });
-  await Promise.all(runners);
-  return processed;
 }
 
 export async function buildIndex(

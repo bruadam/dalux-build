@@ -39,6 +39,7 @@ export interface TaskManifestEntry {
   revisionKey: string;
   chunkCount: number;
   changeCount: number;
+  attachmentCount: number;
   indexedAt: string;
 }
 

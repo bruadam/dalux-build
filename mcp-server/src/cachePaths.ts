@@ -98,6 +98,23 @@ export function docsIndexDir(indexId: string): string {
 }
 
 /**
+ * Path to the persisted clash-rule catalog (see ifc/ruleCatalog.ts): a small
+ * JSON file of named clash rules — ifc-lite's built-in discipline-matrix
+ * presets plus whatever custom rules a caller has saved.
+ *
+ * Persistent under the user's home directory for the same reason as
+ * docsIndexRoot above: a rule library is meant to accumulate across sessions
+ * and projects rather than be re-entered every restart. `DALUX_MCP_CACHE_DIR`
+ * is honoured so tests can redirect it alongside the rest of the cache.
+ */
+export function clashRulesPath(): string {
+  const configured = process.env.DALUX_MCP_CACHE_DIR;
+  const base = configured ? path.resolve(configured) : path.join(homedir(), '.dalux-mcp');
+  mkdirSync(base, { recursive: true });
+  return path.join(base, 'clash-rules.json');
+}
+
+/**
  * Delete index directories untouched for longer than `maxAgeMs`, under `root`
  * (defaulting to the file-area index root; pass `taskIndexRoot()` to prune task
  * indexes instead).

@@ -14,12 +14,16 @@ import { writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { z } from 'zod';
 import type { DaluxClient } from 'dalux-build-api';
+import type { ClashRule } from '@ifc-lite/clash';
+import type { ComparisonOp } from '@ifc-lite/sdk';
 
 import { derivedDirFor } from '../cachePaths';
 import { buildCatalogue, splitPath, validateColumns } from '../ifc/catalogue';
+import { resolveMembers } from '../ifc/clashEngine';
 import { describeJob, getClashJob, startClashJob, COMMONLY_DOMINANT_TYPES } from '../ifc/clashJobs';
 import { buildToolContext, callIfcTool } from '../ifc/runtime';
-import { resolveModel } from '../ifc/session';
+import { deleteRule, getRules, listRules, saveRule } from '../ifc/ruleCatalog';
+import { resolveModel, type ResolvedModel } from '../ifc/session';
 
 const ifcRef = {
   projectId: z.string().describe('The Dalux project ID.'),
@@ -234,46 +238,179 @@ export async function ifcSchedule(client: DaluxClient, args: IfcScheduleInput) {
   };
 }
 
-// ---------- ifc_clash_start / ifc_clash_result ----------
+// ---------- ifc_clash_rules_list / _save / _delete ----------
 
-export const ifcClashStartInput = z.object({
-  ...ifcRef,
-  a: z.string().optional().describe('Type selector for set A, e.g. "IfcDuct*|IfcPipe*". Defaults to all elements.'),
-  b: z.string().optional().describe('Type selector for set B. Omit to self-clash within A.'),
+export const ifcClashRulesListInput = z.object({});
+export type IfcClashRulesListInput = z.infer<typeof ifcClashRulesListInput>;
+
+/** List the clash rule catalog: ifc-lite's built-in discipline matrix plus any custom rules saved so far. */
+export async function ifcClashRulesList(_client: DaluxClient, _args: IfcClashRulesListInput) {
+  const rules = await listRules();
+  return { rules };
+}
+
+export const ifcClashRulesSaveInput = z.object({
+  id: z.string().optional().describe('Rule id to update. Omit to create a new rule (id is derived from name). May match a built-in id to override it.'),
+  name: z.string().describe('Rule name, e.g. "MEP vs Structure" or "VENTxSTR".'),
+  description: z.string().optional(),
+  a: z.string().describe('Type selector for set A, e.g. "IfcDuct*|IfcPipe*".'),
+  b: z.string().optional().describe('Type selector for set B. Omit for a self-clash within A.'),
   mode: z.enum(['hard', 'clearance']).optional().describe('hard = interpenetration (default); clearance = minimum gap.'),
   tolerance: z.number().optional().describe('Penetration tolerance in metres (hard mode).'),
   clearance: z.number().optional().describe('Required gap in metres (clearance mode).'),
+  severity: z.enum(['critical', 'major', 'minor', 'info']).optional(),
+  reportTouch: z.boolean().optional().describe('Report touch-classified results instead of suppressing them.'),
+});
+export type IfcClashRulesSaveInput = z.infer<typeof ifcClashRulesSaveInput>;
+
+/** Save (create or update) a custom rule in the persistent clash rule catalog. */
+export async function ifcClashRulesSave(_client: DaluxClient, args: IfcClashRulesSaveInput) {
+  return { saved: saveRule(args) };
+}
+
+export const ifcClashRulesDeleteInput = z.object({
+  id: z.string().describe('Id of the custom rule to delete (see ifc_clash_rules_list). Built-in rules cannot be deleted.'),
+});
+export type IfcClashRulesDeleteInput = z.infer<typeof ifcClashRulesDeleteInput>;
+
+export async function ifcClashRulesDelete(_client: DaluxClient, args: IfcClashRulesDeleteInput) {
+  const ok = deleteRule(args.id);
+  if (!ok) throw new Error(`No custom rule with id "${args.id}" (built-in rules can be overridden via ifc_clash_rules_save with the same id, but not deleted).`);
+  return { deleted: args.id };
+}
+
+// ---------- ifc_clash_start / ifc_clash_result ----------
+
+const propertyFilter = z.object({
+  path: z.string().describe('Full "Pset.Property" path, e.g. "Tekla Quantity.Weight".'),
+  op: z.enum(['=', '!=', '>', '<', '>=', '<=', 'contains', 'exists', 'matches']),
+  value: z.union([z.string(), z.number(), z.boolean()]).optional().describe('Omit only for "exists".'),
+});
+
+export const ifcClashStartInput = z.object({
+  projectId: z.string().describe('The Dalux project ID.'),
+  models: z
+    .array(z.object({ fileAreaId: z.string(), fileId: z.string().describe('The file ID of an .ifc file.') }))
+    .min(1)
+    .describe(
+      'IFC files to clash, all from projectId. One entry self-clashes/pairwise-clashes within that model. ' +
+        'Two or more clash ACROSS models too (e.g. a structure IFC vs a separately-exported MEP IFC) — assumes ' +
+        'they already share one coordinate system.',
+    ),
+  ruleIds: z.array(z.string()).optional().describe('Catalog rule ids to run (see ifc_clash_rules_list, e.g. the built-in "MEPxSTR"). Combine with `rule` for an ad-hoc rule in the same run.'),
+  rule: z
+    .object({
+      name: z.string().optional(),
+      a: z.string().optional().describe('Type selector for set A, e.g. "IfcDuct*|IfcPipe*". Defaults to all elements.'),
+      aFilter: propertyFilter.optional().describe('Restrict side A further by a property value. Requires `a` to be one exact IFC type (no "*"/"|"), since the filter is resolved per-type against each model\'s own property sets.'),
+      b: z.string().optional().describe('Type selector for set B. Omit to self-clash within A.'),
+      bFilter: propertyFilter.optional().describe('Restrict side B further by a property value. Requires `b` to be one exact IFC type.'),
+      mode: z.enum(['hard', 'clearance']).optional().describe('hard = interpenetration (default); clearance = minimum gap.'),
+      tolerance: z.number().optional().describe('Penetration tolerance in metres (hard mode).'),
+      clearance: z.number().optional().describe('Required gap in metres (clearance mode).'),
+    })
+    .optional()
+    .describe('One ad-hoc rule, in addition to or instead of ruleIds.'),
 });
 export type IfcClashStartInput = z.infer<typeof ifcClashStartInput>;
 
+async function resolveFilterMembers(
+  models: ResolvedModel[],
+  type: string,
+  filter: { path: string; op: ComparisonOp; value?: string | number | boolean },
+): Promise<string[]> {
+  if (/[*|!]/.test(type)) {
+    throw new Error(`Property filters need one exact IFC type, not a selector: got "${type}".`);
+  }
+  const parts = splitPath(filter.path);
+  if (!parts) throw new Error(`property.path must be "Pset.Property", got "${filter.path}".`);
+
+  const members: string[] = [];
+  for (const { model } of models) {
+    const cat = buildCatalogue(model);
+    if (!cat.types.some((t) => t.type === type)) continue; // this model just has none of that type
+    const invalid = validateColumns(cat, type, [filter.path]);
+    if (invalid) throw new Error(`[model ${model.id}] ${invalid}`);
+    members.push(...(await resolveMembers(model, type, { pset: parts.pset, property: parts.property, op: filter.op, value: filter.value })));
+  }
+  return members;
+}
+
+async function buildAdHocRule(models: ResolvedModel[], rule: NonNullable<IfcClashStartInput['rule']>): Promise<ClashRule> {
+  const a = rule.a ?? '*';
+  const b = rule.b;
+  const label = rule.name ?? (b ? `${a} vs ${b}` : a === '*' ? 'all elements (self-clash)' : `${a} (self-clash)`);
+
+  const clashRule: ClashRule = {
+    id: 'ad-hoc',
+    name: label,
+    a,
+    ...(b != null ? { b } : {}),
+    mode: rule.mode ?? 'hard',
+    ...(rule.tolerance != null ? { tolerance: rule.tolerance } : {}),
+    ...(rule.clearance != null ? { clearance: rule.clearance } : {}),
+  };
+
+  if (rule.aFilter) clashRule.membersA = await resolveFilterMembers(models, a, rule.aFilter);
+  if (rule.bFilter) {
+    if (!b) throw new Error('rule.bFilter requires rule.b (a type selector for side B).');
+    clashRule.membersB = await resolveFilterMembers(models, b, rule.bFilter);
+  }
+  return clashRule;
+}
+
 /**
- * Start a clash run. Returns a jobId immediately — poll ifc_clash_result.
+ * Start a clash run across one or more models. Returns a jobId immediately —
+ * poll ifc_clash_result.
  *
- * Clash tessellates the whole model before pairing anything, and that cost is
+ * Clash tessellates every model before pairing anything, and that cost is
  * large and unpredictable (the same 2.1MB model measured 299s and 4921s on
- * separate runs), so this cannot be a blocking call. A model that is already
- * warm from a previous run is far cheaper.
+ * separate runs), so this cannot be a blocking call. Models already warm from
+ * a previous run are far cheaper.
  *
  * Note on selectors: an unfiltered run over structural models is dominated by
  * rebar-inside-concrete, which is correct by design rather than a defect.
- * Narrow `a`/`b` to the disciplines you actually care about.
+ * Narrow rule selectors to the disciplines you actually care about.
  */
 export async function ifcClashStart(client: DaluxClient, args: IfcClashStartInput) {
-  const { model, registry } = await open(client, args);
+  if (!args.ruleIds?.length && !args.rule) {
+    throw new Error('Provide ruleIds (catalog rules), a `rule` (ad-hoc), or both.');
+  }
+
+  const resolved = await Promise.all(
+    args.models.map((m) => resolveModel(client, { projectId: args.projectId, fileAreaId: m.fileAreaId, fileId: m.fileId })),
+  );
+
+  const rules: ClashRule[] = [];
+  if (args.ruleIds?.length) {
+    const catalogRules = await getRules(args.ruleIds);
+    for (const r of catalogRules) {
+      rules.push({
+        id: r.id,
+        name: r.name,
+        a: r.a,
+        ...(r.b != null ? { b: r.b } : {}),
+        mode: r.mode,
+        ...(r.tolerance != null ? { tolerance: r.tolerance } : {}),
+        ...(r.clearance != null ? { clearance: r.clearance } : {}),
+        ...(r.severity != null ? { severity: r.severity } : {}),
+        ...(r.reportTouch ? { reportTouch: true } : {}),
+      });
+    }
+  }
+  if (args.rule) rules.push(await buildAdHocRule(resolved, args.rule));
+
   const job = startClashJob({
-    fileId: args.fileId,
-    registry,
-    modelId: model.id,
-    a: args.a,
-    b: args.b,
-    mode: args.mode,
-    tolerance: args.tolerance,
-    clearance: args.clearance,
+    fileIds: args.models.map((m) => m.fileId),
+    models: resolved.map((r) => r.model),
+    rules,
   });
+
+  const unfilteredAdHoc = args.rule && !args.rule.a && !args.rule.b;
   return {
     ...describeJob(job),
-    hint: !args.a && !args.b
-      ? `Unfiltered run. Embedded types such as ${COMMONLY_DOMINANT_TYPES.join(', ')} commonly dominate results; consider setting a/b.`
+    hint: unfilteredAdHoc
+      ? `Unfiltered ad-hoc rule. Embedded types such as ${COMMONLY_DOMINANT_TYPES.join(', ')} commonly dominate results; consider setting a/b.`
       : undefined,
   };
 }

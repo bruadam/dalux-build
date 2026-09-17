@@ -25,6 +25,8 @@
   },
   "license": "MIT",
   "dependencies": {
+    "@ifc-lite/clash": "^2.2.1",
+    "@ifc-lite/geometry": "^7.1.0",
     "@ifc-lite/mcp": "^0.16.0",
     "@ifc-lite/parser": "^6.5.0",
     "@ifc-lite/query": "^2.4.0",
@@ -35,7 +37,7 @@
     "dalux-build-api": "*",
     "fflate": "^0.8.3",
     "pdf-parse": "^2.4.5",
-    "pdfjs-dist": "^6.3.289",
+    "pdfjs-dist": "5.4.296",
     "zod": "^4.4.3"
   },
   "devDependencies": {

@@ -158,18 +158,18 @@ export const TOOLS = [
     handler: fileAreaIndex.dropFileAreaIndex,
   }),
 
-  // Cross-task search (see tools/taskIndex.ts — a temporary local index over tasks + change history)
+  // Cross-task search (see tools/taskIndex.ts — a temporary local index over tasks + change history + attachments)
   tool({
     name: 'build_task_index',
     description:
-      'Build (or incrementally refresh) a temporary local search index over a project\'s tasks, combining each task\'s own fields with its change history into one searchable document per task. Nothing in Dalux is modified. A task whose content is unchanged since the last build is skipped, so re-running after a few edits is cheap.',
+      'Build (or incrementally refresh) a temporary local search index over a project\'s tasks, combining each task\'s own fields, change history, and attachment text (pdf/docx/xlsx — downloaded and extracted, not just an extra API call) into one searchable document per task. Nothing in Dalux is modified. A task whose content, change history, and attachment list are all unchanged since the last build is skipped (and its attachments are not re-downloaded), so re-running after a few edits is cheap — the first build of a project with many/large attachments is the expensive one.',
     inputSchema: taskIndex.buildTaskIndexInput,
     handler: taskIndex.buildTaskIndex,
   }),
   tool({
     name: 'search_task_index',
     description:
-      'Search across every task in an index built by build_task_index, returning the best-matching passages (from a task\'s fields or its change history) with the task to cite. Use this for questions that span many tasks ("which tasks mention a crack in a beam?", "what changed on tasks assigned to X last month?"); use search_tasks for a one-off question that does not warrant building an index first.',
+      'Search across every task in an index built by build_task_index, returning the best-matching passages (from a task\'s fields, its change history, or an attachment\'s text) with the task to cite. Use this for questions that span many tasks ("which tasks mention a crack in a beam?", "what changed on tasks assigned to X last month?"); use search_tasks for a one-off question that does not warrant building an index first.',
     inputSchema: taskIndex.searchTaskIndexInput,
     handler: taskIndex.searchTaskIndex,
   }),
@@ -209,34 +209,58 @@ export const TOOLS = [
   // Tasks
   tool({
     name: 'list_project_tasks',
-    description: 'List tasks on a project, optionally filtered by type/OData filter.',
+    description:
+      'List tasks on a project, optionally filtered by type/OData filter and/or field conditions. Dalux\'s ' +
+        '$filter only supports a single `data/type/typeId eq \'<id>\'` expression (no `and`/`or`, no comparisons, ' +
+        'no other fields) — use `conditions` for anything else (dates, status, custom fields, ...), applied ' +
+        'client-side against each task\'s own JSON fields.',
     inputSchema: tasks.listProjectTasksInput,
     handler: tasks.listProjectTasks,
   }),
   tool({
     name: 'search_tasks',
     description:
-      'Ranked keyword/natural-language search across a project\'s tasks — no OData syntax needed. Matches against subject, description, custom fields, type, status and (optionally) change history, returning the best-matching tasks with a relevance score. For repeated searches over the same project, build_task_index + search_task_index is cheaper.',
+      'Ranked keyword/natural-language search across a project\'s tasks — no OData syntax needed. Matches against subject, description, custom fields, type, status and (optionally) change history and attachment text (pdf/docx/xlsx), returning the best-matching tasks with a relevance score. Supports `conditions` for field-based filtering (dates, status, custom fields, ...) applied client-side, since Dalux\'s own $filter only supports typeId eq. For repeated searches over the same project, build_task_index + search_task_index is cheaper — it downloads and extracts each attachment once instead of on every call.',
     inputSchema: tasks.searchTasksInput,
     handler: tasks.searchTasks,
   }),
   tool({
     name: 'get_task',
-    description: 'Get a single task by ID.',
+    description:
+      'Get a single task by ID. Returns only the task\'s own structured fields by default (subject, type, custom ' +
+        'fields) — set includeChanges and/or includeAttachments to also pull that task\'s change history and ' +
+        'attachments (filtered client-side, since Dalux has no per-task filter for those).',
     inputSchema: tasks.getTaskInput,
     handler: tasks.getTask,
   }),
   tool({
     name: 'list_task_changes',
-    description: 'List change history entries for tasks on a project.',
+    description:
+      'List change history entries for tasks on a project, paginated (default 50, max 200 per call — a ' +
+        'project-wide change log can otherwise be huge). Pass taskId to scope to one task (filtered client-side ' +
+        'after fetching the full updatedAfter window — Dalux has no server-side per-task filter).',
     inputSchema: tasks.listTaskChangesInput,
     handler: tasks.listTaskChanges,
   }),
   tool({
     name: 'list_task_attachments',
-    description: 'List task attachments on a project.',
+    description:
+      'List task attachments on a project, paginated (default 50, max 200 per call — a project-wide attachment ' +
+        'list can otherwise be huge). Pass taskId to scope to one task (filtered client-side after fetching the ' +
+        'full updatedAfter window — Dalux has no server-side per-task filter). Each item\'s mediaFile.fileDownload ' +
+        'is a direct, signed URL — pass it to download_task_attachment to fetch the actual file content.',
     inputSchema: tasks.listTaskAttachmentsInput,
     handler: tasks.listTaskAttachments,
+  }),
+  tool({
+    name: 'download_task_attachment',
+    description:
+      'Download a task attachment\'s file content into a local cache and return its path (does not return raw ' +
+        'bytes). Pass the mediaFile.fileDownload URL from list_task_attachments or get_task (includeAttachments: ' +
+        'true) — unlike ordinary project files, task attachments have no fileId/fileArea to look up through ' +
+        'get_file/download_file; this signs the request with the same Dalux API key instead.',
+    inputSchema: tasks.downloadTaskAttachmentInput,
+    handler: tasks.downloadTaskAttachment,
   }),
 
   // Projects
@@ -369,9 +393,27 @@ export const TOOLS = [
     handler: ifc.ifcSchedule,
   }),
   tool({
+    name: 'ifc_clash_rules_list',
+    description: 'List the clash rule catalog: ifc-lite\'s built-in discipline matrix (MEPxSTR, HVACxARCH, ...) plus any custom rules saved with ifc_clash_rules_save. Call before ifc_clash_start to pick ruleIds.',
+    inputSchema: ifc.ifcClashRulesListInput,
+    handler: ifc.ifcClashRulesList,
+  }),
+  tool({
+    name: 'ifc_clash_rules_save',
+    description: 'Create or update a named rule in the persistent clash rule catalog, so it can be reused across projects via ifc_clash_start\'s ruleIds.',
+    inputSchema: ifc.ifcClashRulesSaveInput,
+    handler: ifc.ifcClashRulesSave,
+  }),
+  tool({
+    name: 'ifc_clash_rules_delete',
+    description: 'Delete a custom rule from the clash rule catalog by id. Built-in rules cannot be deleted.',
+    inputSchema: ifc.ifcClashRulesDeleteInput,
+    handler: ifc.ifcClashRulesDelete,
+  }),
+  tool({
     name: 'ifc_clash_start',
     description:
-      'Start a clash detection run on an IFC from Dalux. Returns a jobId immediately — clash meshes the whole model first and can take minutes. Poll with ifc_clash_result.',
+      'Start a clash detection run on one or more IFCs from Dalux — pass 2+ models to clash across disciplines exported as separate files. Pick rules from the catalog (ruleIds, see ifc_clash_rules_list) and/or supply one ad-hoc rule, optionally narrowed by a property filter. Returns a jobId immediately — clash meshes every model first and can take minutes. Poll with ifc_clash_result.',
     inputSchema: ifc.ifcClashStartInput,
     handler: ifc.ifcClashStart,
   }),

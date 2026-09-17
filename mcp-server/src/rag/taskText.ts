@@ -12,6 +12,13 @@
  */
 
 import { createHash } from 'node:crypto';
+import type { TextChunk } from '../extract';
+
+/** One task attachment's extracted text, as produced by rag/taskAttachments.ts. */
+export interface AttachmentText {
+  fileName: string;
+  chunks: readonly TextChunk[];
+}
 
 export function unwrapTask(raw: unknown): Record<string, unknown> {
   const record = (raw ?? {}) as Record<string, unknown>;
@@ -28,12 +35,18 @@ function nested(value: unknown, key: string): string | null {
 }
 
 /**
- * One line per task field, plus one line per change with a non-empty
- * description. `changes` may be empty — the ad-hoc search tool skips fetching
- * them by default since it doubles the API calls for a use case that is
- * usually answered by the task's own fields.
+ * One line per task field, one line per change with a non-empty description,
+ * and one line per extracted attachment passage. `changes`/`attachments` may
+ * both be empty — the ad-hoc search tool skips fetching them by default
+ * since each one is an extra round of API calls (and, for attachments,
+ * downloads + parsing) for a use case that is usually answered by the
+ * task's own fields.
  */
-export function renderTaskLines(task: Record<string, unknown>, changes: readonly Record<string, unknown>[]): string[] {
+export function renderTaskLines(
+  task: Record<string, unknown>,
+  changes: readonly Record<string, unknown>[],
+  attachments: readonly AttachmentText[] = [],
+): string[] {
   const lines: string[] = [];
 
   const header = [
@@ -71,11 +84,28 @@ export function renderTaskLines(task: Record<string, unknown>, changes: readonly
     lines.push(`Change${timestamp ? ` (${timestamp})` : ''}${action ? ` [${action}]` : ''}: ${description}`);
   }
 
+  for (const attachment of attachments) {
+    for (const chunk of attachment.chunks) {
+      const text = chunk.text.trim();
+      if (!text) continue;
+      lines.push(`Attachment "${attachment.fileName}"${chunk.location ? ` [${chunk.location}]` : ''}: ${text}`);
+    }
+  }
+
   return lines;
 }
 
-/** Changes newer than the currently-indexed revision (or any field edit) invalidate the cached chunks/vectors. */
-export function taskRevisionKey(task: Record<string, unknown>, changes: readonly Record<string, unknown>[]): string {
+/**
+ * Changes newer than the currently-indexed revision, any field edit, or the
+ * set of attachments on the task (added/removed — not re-hashed by content,
+ * since a changed attachment gets a new fileDownload URL rather than
+ * mutating in place) invalidate the cached chunks/vectors.
+ */
+export function taskRevisionKey(
+  task: Record<string, unknown>,
+  changes: readonly Record<string, unknown>[],
+  attachments: readonly Record<string, unknown>[] = [],
+): string {
   const latestChangeTimestamp = changes.reduce((latest, change) => {
     const timestamp = str(change.timestamp) ?? '';
     return timestamp > latest ? timestamp : latest;
@@ -86,6 +116,8 @@ export function taskRevisionKey(task: Record<string, unknown>, changes: readonly
     .update(String(changes.length))
     .update('|')
     .update(latestChangeTimestamp)
+    .update('|')
+    .update(JSON.stringify(attachments))
     .digest('hex')
     .slice(0, 16);
 }

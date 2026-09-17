@@ -8,8 +8,14 @@
 import type { ModelRegistry, ToolContext } from '@ifc-lite/mcp';
 
 type IfcLite = typeof import('@ifc-lite/mcp');
+type IfcClash = typeof import('@ifc-lite/clash');
+type IfcClashStep = typeof import('@ifc-lite/clash/step');
+type IfcGeometry = typeof import('@ifc-lite/geometry');
 
 let modulePromise: Promise<IfcLite> | null = null;
+let clashModulePromise: Promise<IfcClash> | null = null;
+let clashStepModulePromise: Promise<IfcClashStep> | null = null;
+let geometryModulePromise: Promise<IfcGeometry> | null = null;
 let consoleRedirected = false;
 
 /**
@@ -43,6 +49,31 @@ export function loadIfcLite(): Promise<IfcLite> {
   redirectIfcLiteLogging();
   modulePromise ??= import('@ifc-lite/mcp');
   return modulePromise;
+}
+
+/**
+ * The representation-agnostic clash engine underneath @ifc-lite/mcp's
+ * clash_check/clash_matrix tools. Reached directly (rather than through
+ * callIfcTool) for cross-model runs: ClashElement carries a `model` field and
+ * the engine takes a flat element array, so it has no single-model limit —
+ * only the MCP tool wrapper does. See ../ifc/clashEngine.ts.
+ */
+export function loadIfcClash(): Promise<IfcClash> {
+  redirectIfcLiteLogging();
+  clashModulePromise ??= import('@ifc-lite/clash');
+  return clashModulePromise;
+}
+
+/** STEP/IFC adapter (`@ifc-lite/clash/step`): turns a parsed model's meshes into ClashElements. */
+export function loadIfcClashStep(): Promise<IfcClashStep> {
+  clashStepModulePromise ??= import('@ifc-lite/clash/step');
+  return clashStepModulePromise;
+}
+
+/** Headless geometry/tessellation pipeline used to mesh a model before clashing. */
+export function loadIfcGeometry(): Promise<IfcGeometry> {
+  geometryModulePromise ??= import('@ifc-lite/geometry');
+  return geometryModulePromise;
 }
 
 /**

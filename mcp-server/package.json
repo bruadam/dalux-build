@@ -47,7 +47,7 @@
     "@modelcontextprotocol/ext-apps": "^2.0.0",
     "@types/jest": "^30.0.0",
     "@types/node": "^22.0.0",
-    "esbuild": "^0.27.0",
+    "esbuild": "^0.28.1",
     "jest": "^30.4.2",
     "ts-jest": "^29.2.5",
     "tsup": "^8.3.5",

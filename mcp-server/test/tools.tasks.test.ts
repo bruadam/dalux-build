@@ -1,4 +1,4 @@
-import { mkdtempSync, rmSync } from 'node:fs';
+import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import type { DaluxClient } from 'dalux-build-api';
@@ -400,5 +400,48 @@ describe('tools/tasks', () => {
       cacheDir,
     );
     expect(result.fileName).toBe('IMG_9740.JPG');
+  });
+
+  describe('downloadTaskAttachmentToChat', () => {
+    it('inlines the attachment content as a base64 resource alongside the cached path', async () => {
+      const filePath = `${cacheDir}/KP Test.docx`;
+      writeFileSync(filePath, 'docx bytes');
+      const downloadFileFromLink = jest.fn().mockResolvedValue(filePath);
+      const client = fakeClient({ files: { downloadFileFromLink } });
+
+      const result = (await tasks.downloadTaskAttachmentToChat(client, {
+        fileDownload:
+          'https://node1.field.dalux.com/service/FieldBinaryStore/web/Project/1/TaskAttachment/2/Token/abc/KP_Test.docx',
+        fileName: 'KP Test.docx',
+      })) as Record<string, unknown>;
+
+      expect(result).toMatchObject({ found: true, filePath, fileName: 'KP Test.docx', size: 10 });
+      const resource = result.resource as { mimeType: string; blob: string };
+      expect(resource.mimeType).toBe('application/vnd.openxmlformats-officedocument.wordprocessingml.document');
+      expect(Buffer.from(resource.blob, 'base64').toString()).toBe('docx bytes');
+    });
+
+    it('falls back to a message instead of a resource when the attachment is over the inline limit', async () => {
+      const originalLimit = process.env.DALUX_MCP_MAX_INLINE_BYTES;
+      process.env.DALUX_MCP_MAX_INLINE_BYTES = '4';
+      try {
+        const filePath = `${cacheDir}/IMG_9740.JPG`;
+        writeFileSync(filePath, 'more than four bytes');
+        const downloadFileFromLink = jest.fn().mockResolvedValue(filePath);
+        const client = fakeClient({ files: { downloadFileFromLink } });
+
+        const result = (await tasks.downloadTaskAttachmentToChat(client, {
+          fileDownload:
+            'https://node1.field.dalux.com/service/FieldBinaryStore/web/Project/1/TaskAttachment/2/Token/abc/IMG_9740.JPG',
+        })) as Record<string, unknown>;
+
+        expect(result.resource).toBeUndefined();
+        expect(result).toMatchObject({ found: true, filePath, fileName: 'IMG_9740.JPG' });
+        expect(result.message).toContain('inline limit');
+      } finally {
+        if (originalLimit === undefined) delete process.env.DALUX_MCP_MAX_INLINE_BYTES;
+        else process.env.DALUX_MCP_MAX_INLINE_BYTES = originalLimit;
+      }
+    });
   });
 });

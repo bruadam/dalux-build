@@ -294,9 +294,11 @@ almost every other tool is project-scoped.
 - \`search_files_by_name(projectId, fileAreaId, query)\` — files whose name contains \`query\`, case-insensitively;
   for locating a file by (partial) name rather than browsing a folder.
 - \`get_file\` — file metadata by ID; does **not** download content.
-- \`download_file\` — downloads into a local cache directory and returns the **local path**, not raw bytes (a
-  large file would blow the conversation's context). Pass that path along to whatever needs it next rather than
-  trying to read the file's content back inline.
+- \`download_file\` — downloads and streams the content back as part of the tool result (as well as saving it to
+  this server's local cache directory, which a remote caller cannot reach on its own). Files up to the inline
+  size limit (10 MB by default) come back as actual file content; larger ones fall back to a local path plus a
+  message — pass that path along to whatever needs it next (search_file_content, render_pdf_page) rather than
+  trying to read it back inline yourself.
 
 List tools follow Dalux pagination to completion and report \`totalCount\`/\`truncated\` — there's no need (and no
 mechanism) to page through them yourself.

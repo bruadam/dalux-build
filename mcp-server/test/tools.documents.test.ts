@@ -1,4 +1,4 @@
-import { mkdtempSync, rmSync } from 'node:fs';
+import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import type { DaluxClient } from 'dalux-build-api';
@@ -66,6 +66,62 @@ describe('tools/documents', () => {
       const client = fakeClient({ files: { getFile } });
 
       const result = await documents.downloadFile(client, {
+        projectId: 'p1',
+        fileAreaId: 'fa1',
+        fileId: 'missing',
+      });
+
+      expect(result).toEqual({ found: false, message: 'File not found' });
+    });
+  });
+
+  describe('downloadFileToChat', () => {
+    it('inlines the file content as a base64 resource alongside the cached path', async () => {
+      const filePath = path.join(cacheDir, 'spec.pdf');
+      writeFileSync(filePath, 'pdf bytes');
+      const { client } = clientServing(filePath, 'spec.pdf');
+
+      const result = await documents.downloadFileToChat(client, {
+        projectId: 'p1',
+        fileAreaId: 'fa1',
+        fileId: 'f1',
+      });
+
+      expect(result).toMatchObject({ found: true, filePath, fileName: 'spec.pdf', fileId: 'f1', size: 9 });
+      const resource = (result as Record<string, unknown>).resource as { mimeType: string; blob: string };
+      expect(resource).toMatchObject({ mimeType: 'application/pdf' });
+      expect(Buffer.from(resource.blob, 'base64').toString()).toBe('pdf bytes');
+    });
+
+    it('falls back to a message instead of a resource when the file is over the inline limit', async () => {
+      const originalLimit = process.env.DALUX_MCP_MAX_INLINE_BYTES;
+      process.env.DALUX_MCP_MAX_INLINE_BYTES = '4';
+      try {
+        const filePath = path.join(cacheDir, 'big.pdf');
+        writeFileSync(filePath, 'more than four bytes');
+        const { client } = clientServing(filePath, 'big.pdf');
+
+        const result = await documents.downloadFileToChat(client, {
+          projectId: 'p1',
+          fileAreaId: 'fa1',
+          fileId: 'f1',
+        });
+
+        const record = result as Record<string, unknown>;
+        expect(record.resource).toBeUndefined();
+        expect(result).toMatchObject({ found: true, filePath, fileName: 'big.pdf' });
+        expect(record.message).toContain('inline limit');
+      } finally {
+        if (originalLimit === undefined) delete process.env.DALUX_MCP_MAX_INLINE_BYTES;
+        else process.env.DALUX_MCP_MAX_INLINE_BYTES = originalLimit;
+      }
+    });
+
+    it('passes not-found results through unchanged', async () => {
+      const getFile = jest.fn().mockResolvedValue('File not found');
+      const client = fakeClient({ files: { getFile } });
+
+      const result = await documents.downloadFileToChat(client, {
         projectId: 'p1',
         fileAreaId: 'fa1',
         fileId: 'missing',

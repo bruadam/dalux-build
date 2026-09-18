@@ -102,9 +102,14 @@ export const TOOLS = [
   }),
   tool({
     name: 'download_file',
-    description: 'Download a file into a local cache and return its path (does not return raw bytes).',
+    description:
+      'Download a file and stream its content back as part of the tool result (as well as saving it to this ' +
+      'server\'s local cache, which callers on a different host cannot reach directly). Files up to the inline ' +
+      'size limit (10 MB by default, DALUX_MCP_MAX_INLINE_BYTES to change it) come back as actual file content; ' +
+      'larger files fall back to a local path plus a message, same as before — use search_file_content or ' +
+      'render_pdf_page for those instead of trying to read them back inline.',
     inputSchema: documents.downloadFileInput,
-    handler: documents.downloadFile,
+    handler: documents.downloadFileToChat,
   }),
   tool({
     name: 'search_file_content',
@@ -255,12 +260,13 @@ export const TOOLS = [
   tool({
     name: 'download_task_attachment',
     description:
-      'Download a task attachment\'s file content into a local cache and return its path (does not return raw ' +
-        'bytes). Pass the mediaFile.fileDownload URL from list_task_attachments or get_task (includeAttachments: ' +
-        'true) — unlike ordinary project files, task attachments have no fileId/fileArea to look up through ' +
-        'get_file/download_file; this signs the request with the same Dalux API key instead.',
+      'Download a task attachment and stream its content back as part of the tool result (as well as saving it ' +
+        'to this server\'s local cache), the same size-capped inline behaviour as download_file. Pass the ' +
+        'mediaFile.fileDownload URL from list_task_attachments or get_task (includeAttachments: true) — unlike ' +
+        'ordinary project files, task attachments have no fileId/fileArea to look up through get_file/' +
+        'download_file; this signs the request with the same Dalux API key instead.',
     inputSchema: tasks.downloadTaskAttachmentInput,
-    handler: tasks.downloadTaskAttachment,
+    handler: tasks.downloadTaskAttachmentToChat,
   }),
 
   // Projects
@@ -427,13 +433,31 @@ export const TOOLS = [
 
 type ImageContent = { type: 'image'; mimeType: string; data: string };
 type TextContent = { type: 'text'; text: string };
+type ResourceContent = { type: 'resource'; resource: { uri: string; mimeType: string; blob: string } };
 
-/** A handler result carrying an `image: { mimeType, data }` field (see tools/drawings.ts) renders as a real image content block, with the rest of the result alongside it as text — not base64 stuffed into JSON, which a multimodal client can't see as a picture. */
-function toolResultContent(result: unknown): [TextContent] | [ImageContent, TextContent] {
+/**
+ * A handler result carrying an `image: { mimeType, data }` field (see
+ * tools/drawings.ts) renders as a real image content block, and one carrying
+ * a `resource: { uri, mimeType, blob }` field (see inlineResource.ts, used by
+ * download_file/download_task_attachment) renders as an embedded-resource
+ * content block — in both cases with the rest of the result alongside it as
+ * text, not base64 stuffed into JSON, which a client can't render as an
+ * image/attachment.
+ */
+export function toolResultContent(result: unknown): [TextContent] | [ImageContent, TextContent] | [ResourceContent, TextContent] {
   if (result && typeof result === 'object' && 'image' in result && result.image) {
     const { image, ...meta } = result as { image: { mimeType: string; data: string } } & Record<string, unknown>;
     return [
       { type: 'image', mimeType: image.mimeType, data: image.data },
+      { type: 'text', text: JSON.stringify(meta) },
+    ];
+  }
+  if (result && typeof result === 'object' && 'resource' in result && result.resource) {
+    const { resource, ...meta } = result as {
+      resource: { uri: string; mimeType: string; blob: string };
+    } & Record<string, unknown>;
+    return [
+      { type: 'resource', resource },
       { type: 'text', text: JSON.stringify(meta) },
     ];
   }

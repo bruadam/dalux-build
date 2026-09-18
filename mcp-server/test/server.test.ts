@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { TOOLS } from '../src/server';
+import { TOOLS, toolResultContent } from '../src/server';
 
 describe('TOOLS registry', () => {
   it('has 55 tools with unique names', () => {
@@ -30,5 +30,28 @@ describe('TOOLS registry', () => {
       if (allowlist.has(tool.name)) continue;
       expect(tool.name).not.toMatch(/^(create|update|delete|upload|finish)_/);
     }
+  });
+});
+
+describe('toolResultContent', () => {
+  it('renders a plain result as a single text block', () => {
+    expect(toolResultContent({ found: true })).toEqual([{ type: 'text', text: '{"found":true}' }]);
+  });
+
+  it('renders an `image` field as an image content block plus the rest as text', () => {
+    const result = toolResultContent({ image: { mimeType: 'image/png', data: 'AAAA' }, page: 1 });
+    expect(result).toEqual([
+      { type: 'image', mimeType: 'image/png', data: 'AAAA' },
+      { type: 'text', text: '{"page":1}' },
+    ]);
+  });
+
+  it('renders a `resource` field as an embedded-resource content block plus the rest as text', () => {
+    const resource = { uri: 'dalux-mcp://file/spec.pdf', mimeType: 'application/pdf', blob: 'AAAA' };
+    const result = toolResultContent({ resource, found: true, filePath: '/tmp/spec.pdf' });
+    expect(result).toEqual([
+      { type: 'resource', resource },
+      { type: 'text', text: '{"found":true,"filePath":"/tmp/spec.pdf"}' },
+    ]);
   });
 });

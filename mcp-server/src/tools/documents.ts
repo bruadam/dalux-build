@@ -1,7 +1,9 @@
+import path from 'node:path';
 import { z } from 'zod';
 import type { DaluxClient } from 'dalux-build-api';
 import { cacheDirFor } from '../cachePaths';
 import { SUPPORTED_EXTENSIONS, UnsupportedFormatError, extractDocument } from '../extract';
+import { buildInlineResource } from '../inlineResource';
 import { searchChunks } from '../search/documentSearch';
 
 // ---------- download_file ----------
@@ -34,6 +36,27 @@ export async function downloadFile(client: DaluxClient, args: DownloadFileInput)
     fileName: (data as Record<string, unknown>).fileName ?? null,
     fileId: args.fileId,
   };
+}
+
+/**
+ * download_file's actual MCP handler. Downloads via `downloadFile` above
+ * (shared with search_file_content/render_pdf_page, which only ever need the
+ * local path) and additionally inlines the bytes as a base64 embedded
+ * resource, size-capped by buildInlineResource — a caller reaching this
+ * server over a remote MCP connection (HTTP transport, Docker, a hosted
+ * connector) has no filesystem access to wherever this server's cache
+ * directory lives, so the path alone would be useless to it.
+ */
+export async function downloadFileToChat(client: DaluxClient, args: DownloadFileInput) {
+  const download = await downloadFile(client, args);
+  if (!download.found || !download.filePath) return download;
+
+  const fileName = (download.fileName as string | null) ?? path.basename(download.filePath as string);
+  const inline = await buildInlineResource(download.filePath as string, fileName);
+  if (inline.inlined) {
+    return { ...download, size: inline.size, resource: inline.resource };
+  }
+  return { ...download, message: inline.reason };
 }
 
 // ---------- search_file_content ----------

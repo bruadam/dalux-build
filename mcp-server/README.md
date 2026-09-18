@@ -164,7 +164,7 @@ The same five docs are also published as `dalux-build://skill/<topic>` resources
 
 ### Document search
 
-`download_file` downloads a file into a local cache directory (`$TMPDIR/dalux-mcp/files/<fileId>/`) and returns the local path — not raw bytes, which would blow an LLM's context for anything but a tiny file.
+`download_file` downloads a file into a local cache directory (`$TMPDIR/dalux-mcp/files/<fileId>/`) *and* streams its content back in the tool result as a base64 embedded resource, up to an inline size limit (10 MB by default, `DALUX_MCP_MAX_INLINE_BYTES` to change it) — past that limit it falls back to reporting the local path only, same as before, since inlining an arbitrarily large file would blow an LLM's context. The local cache write happens either way, since `search_file_content`/`render_pdf_page`/the index builders read from it. `download_task_attachment` behaves the same way.
 
 `search_file_content` searches **one** document. It downloads (or reuses the cache), extracts the text, chunks it, and ranks the chunks against a natural-language query. Every match carries a location you can cite:
 

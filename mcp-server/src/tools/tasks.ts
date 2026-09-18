@@ -1,8 +1,10 @@
+import path from 'node:path';
 import { z } from 'zod';
 import type { DaluxClient } from 'dalux-build-api';
 import { downloadDaluxFile } from '../attachmentFetch';
 import { collectAllDaluxItems } from '../daluxPagination';
 import type { TextChunk } from '../extract';
+import { buildInlineResource } from '../inlineResource';
 import { extractAttachmentTextsByTaskId, groupAttachmentsByTaskId } from '../rag/taskAttachments';
 import { groupChangesByTaskId, renderTaskLines, str, unwrapTask, type AttachmentText } from '../rag/taskText';
 import { searchChunks } from '../search/documentSearch';
@@ -487,4 +489,23 @@ export async function downloadTaskAttachment(client: DaluxClient, args: Download
 
   const filePath = await downloadDaluxFile(client, args.fileDownload, fileName);
   return { found: true, filePath, fileName };
+}
+
+/**
+ * download_task_attachment's actual MCP handler — same reasoning as
+ * documents.downloadFileToChat: inlines the downloaded attachment as a
+ * base64 embedded resource (size-capped) on top of the local-cache path
+ * `downloadTaskAttachment` already reports, since a remote caller has no
+ * access to this server's own disk.
+ */
+export async function downloadTaskAttachmentToChat(client: DaluxClient, args: DownloadTaskAttachmentInput) {
+  const download = await downloadTaskAttachment(client, args);
+  if (!download.found || !download.filePath) return download;
+
+  const fileName = download.fileName || path.basename(download.filePath);
+  const inline = await buildInlineResource(download.filePath, fileName);
+  if (inline.inlined) {
+    return { ...download, size: inline.size, resource: inline.resource };
+  }
+  return { ...download, message: inline.reason };
 }

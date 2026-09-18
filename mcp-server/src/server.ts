@@ -103,13 +103,13 @@ export const TOOLS = [
   tool({
     name: 'download_file',
     description:
-      'Download a file and stream its content back as part of the tool result (as well as saving it to this ' +
-      'server\'s local cache, which callers on a different host cannot reach directly). Files up to the inline ' +
-      'size limit (10 MB by default, DALUX_MCP_MAX_INLINE_BYTES to change the server-wide default) come back as ' +
-      'actual file content; larger files fall back to a local path plus a message, same as before — use ' +
-      'search_file_content or render_pdf_page for those instead of trying to read them back inline. Pass ' +
-      'maxInlineBytes to raise the cap for this one call, up to a 500 MB hard ceiling — only do this when the ' +
-      'user has explicitly asked for a large file to be streamed back.',
+      'Download a file and get its content to the chat, not just a local path. Always returns downloadUrl, a ' +
+      'single-use link (valid ~15 min, only reachable from the same machine this server runs on) the user can ' +
+      'click to fetch the actual file. An image also comes back as an actual image (up to maxInlineBytes, ' +
+      'default 10 MB, hard ceiling 500 MB). A PDF/Word/Excel/Markdown/HTML file also comes back as its extracted ' +
+      'text (up to maxInlineChars, default 200,000 characters, hard ceiling 2,000,000) — raw document bytes ' +
+      'cannot usefully reach the model, so text is what streams instead. Other formats (zip, dwg, ifc, ...) get ' +
+      'the link and the local cache path only.',
     inputSchema: documents.downloadFileInput,
     handler: documents.downloadFileToChat,
   }),
@@ -262,13 +262,11 @@ export const TOOLS = [
   tool({
     name: 'download_task_attachment',
     description:
-      'Download a task attachment and stream its content back as part of the tool result (as well as saving it ' +
-        'to this server\'s local cache), the same size-capped inline behaviour as download_file — including ' +
-        'maxInlineBytes to raise the cap for this call (up to a 500 MB hard ceiling) when the user has explicitly ' +
-        'asked for a large attachment streamed back. Pass the mediaFile.fileDownload URL from ' +
-        'list_task_attachments or get_task (includeAttachments: true) — unlike ordinary project files, task ' +
-        'attachments have no fileId/fileArea to look up through get_file/download_file; this signs the request ' +
-        'with the same Dalux API key instead.',
+      'Download a task attachment and get its content to the chat — the same downloadUrl/image/extracted-text ' +
+        'behaviour as download_file (see its description for the size caps). Pass the mediaFile.fileDownload ' +
+        'URL from list_task_attachments or get_task (includeAttachments: true) — unlike ordinary project files, ' +
+        'task attachments have no fileId/fileArea to look up through get_file/download_file; this signs the ' +
+        'request with the same Dalux API key instead.',
     inputSchema: tasks.downloadTaskAttachmentInput,
     handler: tasks.downloadTaskAttachmentToChat,
   }),
@@ -437,31 +435,28 @@ export const TOOLS = [
 
 type ImageContent = { type: 'image'; mimeType: string; data: string };
 type TextContent = { type: 'text'; text: string };
-type ResourceContent = { type: 'resource'; resource: { uri: string; mimeType: string; blob: string } };
 
 /**
  * A handler result carrying an `image: { mimeType, data }` field (see
- * tools/drawings.ts) renders as a real image content block, and one carrying
- * a `resource: { uri, mimeType, blob }` field (see inlineResource.ts, used by
- * download_file/download_task_attachment) renders as an embedded-resource
- * content block — in both cases with the rest of the result alongside it as
- * text, not base64 stuffed into JSON, which a client can't render as an
- * image/attachment.
+ * tools/drawings.ts, tools/documents.ts's downloadFileToChat) renders as a
+ * real image content block, with the rest of the result alongside it as
+ * text — not base64 stuffed into JSON, which a client can't render as a
+ * picture.
+ *
+ * Deliberately does NOT special-case an MCP embedded-resource (`type:
+ * 'resource'`) content block for arbitrary binary data: that block type is
+ * spec-legal, but at least one MCP host this server is used from has no
+ * support for rendering it at all and hard-errors on any tool result that
+ * includes one, regardless of the declared mimeType. Streaming a
+ * non-image file's bytes back to the chat is handled instead by
+ * inlineText.ts, which sends extracted text through the plain JSON path
+ * below rather than a binary content block.
  */
-export function toolResultContent(result: unknown): [TextContent] | [ImageContent, TextContent] | [ResourceContent, TextContent] {
+export function toolResultContent(result: unknown): [TextContent] | [ImageContent, TextContent] {
   if (result && typeof result === 'object' && 'image' in result && result.image) {
     const { image, ...meta } = result as { image: { mimeType: string; data: string } } & Record<string, unknown>;
     return [
       { type: 'image', mimeType: image.mimeType, data: image.data },
-      { type: 'text', text: JSON.stringify(meta) },
-    ];
-  }
-  if (result && typeof result === 'object' && 'resource' in result && result.resource) {
-    const { resource, ...meta } = result as {
-      resource: { uri: string; mimeType: string; blob: string };
-    } & Record<string, unknown>;
-    return [
-      { type: 'resource', resource },
       { type: 'text', text: JSON.stringify(meta) },
     ];
   }

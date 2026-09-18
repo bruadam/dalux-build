@@ -46,12 +46,13 @@ describe('toolResultContent', () => {
     ]);
   });
 
-  it('renders a `resource` field as an embedded-resource content block plus the rest as text', () => {
-    const resource = { uri: 'dalux-mcp://file/spec.pdf', mimeType: 'application/pdf', blob: 'AAAA' };
-    const result = toolResultContent({ resource, found: true, filePath: '/tmp/spec.pdf' });
-    expect(result).toEqual([
-      { type: 'resource', resource },
-      { type: 'text', text: '{"found":true,"filePath":"/tmp/spec.pdf"}' },
-    ]);
+  it('renders a `resource` field as plain text — this MCP host has no support for embedded-resource content blocks', () => {
+    // download_file/download_task_attachment used to emit a `resource` content block for arbitrary
+    // binary content; at least one real MCP host hard-errors on it regardless of mimeType, so
+    // tools/documents.ts and tools/tasks.ts no longer produce a `resource` field at all (see
+    // inlineText.ts/downloadLinks.ts for what replaced it). This just guards against it silently
+    // coming back — an object with a `resource` field should fall through to the plain-text path.
+    const result = toolResultContent({ resource: { uri: 'x', mimeType: 'application/pdf', blob: 'AAAA' }, found: true });
+    expect(result).toEqual([{ type: 'text', text: '{"resource":{"uri":"x","mimeType":"application/pdf","blob":"AAAA"},"found":true}' }]);
   });
 });

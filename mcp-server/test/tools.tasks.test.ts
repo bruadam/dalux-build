@@ -9,6 +9,7 @@ jest.mock('../src/cachePaths', () => ({
 }));
 
 import * as tasks from '../src/tools/tasks';
+import { _resetDownloadLinksForTests } from '../src/downloadLinks';
 import { paragraph, writeDocx } from './fixtures/office';
 
 function fakeClient(overrides: Partial<Record<string, unknown>>): DaluxClient {
@@ -20,8 +21,9 @@ describe('tools/tasks', () => {
     cacheDir = mkdtempSync(path.join(tmpdir(), 'dalux-tasks-'));
   });
 
-  afterAll(() => {
+  afterAll(async () => {
     rmSync(cacheDir, { recursive: true, force: true });
+    await _resetDownloadLinksForTests();
   });
 
   it('listProjectTasks forwards filters and returns all Dalux-paginated items', async () => {
@@ -403,9 +405,8 @@ describe('tools/tasks', () => {
   });
 
   describe('downloadTaskAttachmentToChat', () => {
-    it('inlines the attachment content as a base64 resource alongside the cached path', async () => {
-      const filePath = `${cacheDir}/KP Test.docx`;
-      writeFileSync(filePath, 'docx bytes');
+    it('streams the extracted text of a Word attachment, plus a clickable download link', async () => {
+      const filePath = writeDocx(cacheDir, 'KP Test.docx', paragraph('Snag list item 12: repaint the stairwell.'));
       const downloadFileFromLink = jest.fn().mockResolvedValue(filePath);
       const client = fakeClient({ files: { downloadFileFromLink } });
 
@@ -415,28 +416,44 @@ describe('tools/tasks', () => {
         fileName: 'KP Test.docx',
       })) as Record<string, unknown>;
 
-      expect(result).toMatchObject({ found: true, filePath, fileName: 'KP Test.docx', size: 10 });
-      const resource = result.resource as { mimeType: string; blob: string };
-      expect(resource.mimeType).toBe('application/vnd.openxmlformats-officedocument.wordprocessingml.document');
-      expect(Buffer.from(resource.blob, 'base64').toString()).toBe('docx bytes');
+      expect(result).toMatchObject({ found: true, filePath, fileName: 'KP Test.docx', format: 'docx' });
+      expect(result.text as string).toContain('repaint the stairwell');
+      expect(result.downloadUrl).toMatch(/^http:\/\/127\.0\.0\.1:\d+\/download\/[a-f0-9]{48}\//);
     });
 
-    it('falls back to a message instead of a resource when the attachment is over the inline limit', async () => {
+    it('streams an image attachment back as an actual image', async () => {
+      const filePath = `${cacheDir}/IMG_9740.JPG`;
+      writeFileSync(filePath, 'fake jpeg bytes');
+      const downloadFileFromLink = jest.fn().mockResolvedValue(filePath);
+      const client = fakeClient({ files: { downloadFileFromLink } });
+
+      const result = (await tasks.downloadTaskAttachmentToChat(client, {
+        fileDownload:
+          'https://node1.field.dalux.com/service/FieldBinaryStore/web/Project/1/TaskAttachment/2/Token/abc/IMG_9740.JPG',
+      })) as Record<string, unknown>;
+
+      const image = result.image as { mimeType: string; data: string };
+      expect(image.mimeType).toBe('image/jpeg');
+      expect(Buffer.from(image.data, 'base64').toString()).toBe('fake jpeg bytes');
+    });
+
+    it('falls back to a message instead of an image when the attachment is over the inline limit', async () => {
       const originalLimit = process.env.DALUX_MCP_MAX_INLINE_BYTES;
       process.env.DALUX_MCP_MAX_INLINE_BYTES = '4';
       try {
-        const filePath = `${cacheDir}/IMG_9740.JPG`;
+        const filePath = `${cacheDir}/IMG_9742.JPG`;
         writeFileSync(filePath, 'more than four bytes');
         const downloadFileFromLink = jest.fn().mockResolvedValue(filePath);
         const client = fakeClient({ files: { downloadFileFromLink } });
 
         const result = (await tasks.downloadTaskAttachmentToChat(client, {
           fileDownload:
-            'https://node1.field.dalux.com/service/FieldBinaryStore/web/Project/1/TaskAttachment/2/Token/abc/IMG_9740.JPG',
+            'https://node1.field.dalux.com/service/FieldBinaryStore/web/Project/1/TaskAttachment/2/Token/abc/IMG_9742.JPG',
         })) as Record<string, unknown>;
 
-        expect(result.resource).toBeUndefined();
-        expect(result).toMatchObject({ found: true, filePath, fileName: 'IMG_9740.JPG' });
+        expect(result.image).toBeUndefined();
+        expect(result).toMatchObject({ found: true, filePath, fileName: 'IMG_9742.JPG' });
+        expect(result.downloadUrl).toMatch(/^http:\/\/127\.0\.0\.1:\d+\//);
         expect(result.message).toContain('inline limit');
       } finally {
         if (originalLimit === undefined) delete process.env.DALUX_MCP_MAX_INLINE_BYTES;
@@ -459,7 +476,7 @@ describe('tools/tasks', () => {
           maxInlineBytes: 1024,
         })) as Record<string, unknown>;
 
-        expect(result.resource).toBeDefined();
+        expect(result.image).toBeDefined();
         expect(result.message).toBeUndefined();
       } finally {
         if (originalLimit === undefined) delete process.env.DALUX_MCP_MAX_INLINE_BYTES;

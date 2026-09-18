@@ -3,8 +3,10 @@ import { z } from 'zod';
 import type { DaluxClient } from 'dalux-build-api';
 import { downloadDaluxFile } from '../attachmentFetch';
 import { collectAllDaluxItems } from '../daluxPagination';
+import { createDownloadLink } from '../downloadLinks';
 import type { TextChunk } from '../extract';
-import { buildInlineResource, HARD_MAX_INLINE_BYTES } from '../inlineResource';
+import { buildInlineResource, HARD_MAX_INLINE_BYTES, isRenderableImage, mimeTypeFor } from '../inlineResource';
+import { buildInlineText, HARD_MAX_INLINE_CHARS } from '../inlineText';
 import { extractAttachmentTextsByTaskId, groupAttachmentsByTaskId } from '../rag/taskAttachments';
 import { groupChangesByTaskId, renderTaskLines, str, unwrapTask, type AttachmentText } from '../rag/taskText';
 import { searchChunks } from '../search/documentSearch';
@@ -472,9 +474,20 @@ export const downloadTaskAttachmentInput = z.object({
     .max(HARD_MAX_INLINE_BYTES)
     .optional()
     .describe(
-      'Raise the inline-streaming size cap for this call (default 10 MB, hard ceiling 500 MB/524288000 bytes). ' +
-        'Only set this when the user has explicitly asked for a large attachment to be streamed back rather than ' +
-        'left as a local path — most calls should omit it.',
+      'Images only: raise the inline-streaming size cap for this call (default 10 MB, hard ceiling 500 MB/' +
+        '524288000 bytes). Only set this when the user has explicitly asked for a large image to be streamed ' +
+        'back rather than left as a local path — most calls should omit it.',
+    ),
+  maxInlineChars: z
+    .number()
+    .int()
+    .positive()
+    .max(HARD_MAX_INLINE_CHARS)
+    .optional()
+    .describe(
+      'PDF/Word/Excel/Markdown/HTML only: raise the extracted-text character cap for this call (default 200,000, ' +
+        'hard ceiling 2,000,000). Only set this when the user has explicitly asked for more of a large attachment ' +
+        'streamed back — most calls should omit it.',
     ),
 });
 export type DownloadTaskAttachmentInput = z.infer<typeof downloadTaskAttachmentInput>;
@@ -504,19 +517,31 @@ export async function downloadTaskAttachment(client: DaluxClient, args: Download
 
 /**
  * download_task_attachment's actual MCP handler — same reasoning as
- * documents.downloadFileToChat: inlines the downloaded attachment as a
- * base64 embedded resource (size-capped) on top of the local-cache path
- * `downloadTaskAttachment` already reports, since a remote caller has no
- * access to this server's own disk.
+ * documents.downloadFileToChat: a clickable single-use downloadUrl always
+ * comes back; an image attachment additionally streams back as an actual
+ * image; a PDF/Word/Excel/Markdown/HTML attachment streams its extracted
+ * text instead of raw bytes; anything else gets the link and the
+ * local-cache path `downloadTaskAttachment` already reports.
  */
 export async function downloadTaskAttachmentToChat(client: DaluxClient, args: DownloadTaskAttachmentInput) {
   const download = await downloadTaskAttachment(client, args);
   if (!download.found || !download.filePath) return download;
 
-  const fileName = download.fileName || path.basename(download.filePath);
-  const inline = await buildInlineResource(download.filePath, fileName, args.maxInlineBytes);
-  if (inline.inlined) {
-    return { ...download, size: inline.size, resource: inline.resource };
+  const filePath = download.filePath;
+  const fileName = download.fileName || path.basename(filePath);
+  const downloadUrl = await createDownloadLink(filePath, fileName);
+
+  if (isRenderableImage(mimeTypeFor(fileName))) {
+    const inline = await buildInlineResource(filePath, fileName, args.maxInlineBytes);
+    if (inline.inlined) {
+      return { ...download, downloadUrl, size: inline.size, image: { mimeType: inline.mimeType, data: inline.data } };
+    }
+    return { ...download, downloadUrl, message: inline.reason };
   }
-  return { ...download, message: inline.reason };
+
+  const text = await buildInlineText(filePath, fileName, args.maxInlineChars);
+  if (text.inlined) {
+    return { ...download, downloadUrl, format: text.format, text: text.text, truncated: text.truncated, pageCount: text.pageCount };
+  }
+  return { ...download, downloadUrl, message: `${text.reason} The file is saved locally at ${filePath}.` };
 }

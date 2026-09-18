@@ -1,16 +1,12 @@
 /**
- * Inlining a downloaded file's bytes into the MCP tool result itself, as a
- * base64 embedded resource, for download_file/download_task_attachment.
- *
- * Those tools save into this server's local cache directory (see
- * cachePaths.ts) and, until now, only ever handed back that local path. That
- * is fine when the MCP server and the calling agent share a filesystem, but
- * it is useless over a remote deployment (HTTP transport, Docker, a hosted
- * connector) where the chat client has no access to the server's disk at
- * all — the whole point of "download" silently did nothing from the
- * caller's point of view. Inlining the bytes here fixes that; the local
- * cache write stays, since search_file_content/render_pdf_page/the index
- * builders still need a path to read from.
+ * Inlining a downloaded *image* file's bytes into the MCP tool result as a
+ * real `image` content block, for download_file/download_task_attachment.
+ * This only works for images: a vision model tokenizes a picture cheaply
+ * regardless of file size, the same reason render_pdf_page already streams
+ * rendered PDF pages this way. There is no equivalent for arbitrary
+ * document bytes — see inlineText.ts for how PDF/Word/Excel/Markdown/HTML
+ * files stream instead (their extracted text), and downloadLinks.ts for the
+ * clickable-link fallback every download gets regardless of format.
  */
 
 import path from 'node:path';
@@ -85,22 +81,27 @@ export function mimeTypeFor(fileName: string): string {
   return MIME_BY_EXTENSION[path.extname(fileName).toLowerCase()] ?? 'application/octet-stream';
 }
 
-export interface InlineResource {
-  /** A stable, non-fetchable identifier for the blob — not a real fetchable URL, since it names a path on the server's own disk. */
-  uri: string;
-  mimeType: string;
-  /** Base64-encoded file content. */
-  blob: string;
+// The IANA-registered MIME type for a format isn't the same question as
+// "can a vision model actually look at this" — .dwg/.dxf are registered as
+// image/vnd.dwg and image/vnd.dxf despite being CAD vector formats no chat
+// client can decode as a picture, and .tiff/.svg aren't accepted by Claude's
+// vision input either. This is deliberately narrower than "starts with
+// image/" for that reason — see downloadFileToChat/downloadTaskAttachmentToChat.
+const RENDERABLE_IMAGE_MIME_TYPES = new Set(['image/png', 'image/jpeg', 'image/gif', 'image/webp', 'image/bmp']);
+
+/** Whether `mimeType` is a format a vision model can actually be shown as an `image` content block. */
+export function isRenderableImage(mimeType: string): boolean {
+  return RENDERABLE_IMAGE_MIME_TYPES.has(mimeType);
 }
 
 export type InlineResult =
-  | { inlined: true; size: number; resource: InlineResource }
+  | { inlined: true; size: number; mimeType: string; data: string }
   | { inlined: false; size?: number; reason: string };
 
 /**
- * Reads a file already saved to the local cache and base64-encodes it into
- * an MCP embedded-resource blob. Stats the file first so an oversized file
- * is never fully read into memory just to be discarded.
+ * Reads an image file already saved to the local cache and base64-encodes
+ * it for an MCP `image` content block. Stats the file first so an oversized
+ * file is never fully read into memory just to be discarded.
  *
  * `maxBytesOverride` raises (or lowers) the inline cap for this call alone —
  * see maxInlineBytes above — and is still clamped to HARD_MAX_INLINE_BYTES.
@@ -130,9 +131,5 @@ export async function buildInlineResource(
   }
 
   const data = await readFile(filePath);
-  return {
-    inlined: true,
-    size,
-    resource: { uri: `dalux-mcp://file/${encodeURIComponent(fileName)}`, mimeType: mimeTypeFor(fileName), blob: data.toString('base64') },
-  };
+  return { inlined: true, size, mimeType: mimeTypeFor(fileName), data: data.toString('base64') };
 }

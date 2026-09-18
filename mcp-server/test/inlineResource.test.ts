@@ -2,7 +2,7 @@ import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 
-import { buildInlineResource, HARD_MAX_INLINE_BYTES, maxInlineBytes, mimeTypeFor } from '../src/inlineResource';
+import { buildInlineResource, HARD_MAX_INLINE_BYTES, isRenderableImage, maxInlineBytes, mimeTypeFor } from '../src/inlineResource';
 
 describe('inlineResource', () => {
   let dir: string;
@@ -29,6 +29,23 @@ describe('inlineResource', () => {
     it('falls back to a generic binary type for unknown extensions', () => {
       expect(mimeTypeFor('model.dwg')).toBe('image/vnd.dwg');
       expect(mimeTypeFor('archive.rvt')).toBe('application/octet-stream');
+    });
+  });
+
+  describe('isRenderableImage', () => {
+    it('accepts formats a vision model can actually decode', () => {
+      expect(isRenderableImage('image/png')).toBe(true);
+      expect(isRenderableImage('image/jpeg')).toBe(true);
+    });
+
+    it('rejects CAD formats registered under an image/* MIME type', () => {
+      expect(isRenderableImage(mimeTypeFor('model.dwg'))).toBe(false);
+      expect(isRenderableImage(mimeTypeFor('model.dxf'))).toBe(false);
+    });
+
+    it('rejects formats not accepted by Claude vision input (tiff, svg)', () => {
+      expect(isRenderableImage(mimeTypeFor('scan.tiff'))).toBe(false);
+      expect(isRenderableImage(mimeTypeFor('icon.svg'))).toBe(false);
     });
   });
 
@@ -73,9 +90,8 @@ describe('inlineResource', () => {
       expect(result.inlined).toBe(true);
       if (!result.inlined) throw new Error('expected inlined result');
       expect(result.size).toBe(Buffer.byteLength('hello world'));
-      expect(result.resource.mimeType).toBe('application/pdf');
-      expect(Buffer.from(result.resource.blob, 'base64').toString()).toBe('hello world');
-      expect(result.resource.uri).toContain('spec.pdf');
+      expect(result.mimeType).toBe('application/pdf');
+      expect(Buffer.from(result.data, 'base64').toString()).toBe('hello world');
     });
 
     it('skips inlining and explains why when the file is over the limit', async () => {

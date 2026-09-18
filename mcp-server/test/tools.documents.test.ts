@@ -10,7 +10,9 @@ jest.mock('../src/cachePaths', () => ({
 
 import * as documents from '../src/tools/documents';
 import { cacheDirFor } from '../src/cachePaths';
+import { _resetDownloadLinksForTests } from '../src/downloadLinks';
 import { paragraph, writeDocx, writeXlsx } from './fixtures/office';
+import { writePdf } from './fixtures/pdf';
 
 function fakeClient(overrides: Partial<Record<string, unknown>>): DaluxClient {
   return overrides as unknown as DaluxClient;
@@ -34,9 +36,10 @@ describe('tools/documents', () => {
     delete process.env.OPENAI_API_KEY;
   });
 
-  afterAll(() => {
+  afterAll(async () => {
     if (originalKey !== undefined) process.env.OPENAI_API_KEY = originalKey;
     rmSync(cacheDir, { recursive: true, force: true });
+    await _resetDownloadLinksForTests();
   });
 
   afterEach(() => jest.clearAllMocks());
@@ -76,45 +79,117 @@ describe('tools/documents', () => {
   });
 
   describe('downloadFileToChat', () => {
-    it('inlines the file content as a base64 resource alongside the cached path', async () => {
-      const filePath = path.join(cacheDir, 'spec.pdf');
-      writeFileSync(filePath, 'pdf bytes');
-      const { client } = clientServing(filePath, 'spec.pdf');
+    it('streams an image back as an actual image, plus a clickable download link', async () => {
+      const filePath = path.join(cacheDir, 'photo.jpg');
+      writeFileSync(filePath, 'fake jpeg bytes');
+      const { client } = clientServing(filePath, 'photo.jpg');
 
-      const result = await documents.downloadFileToChat(client, {
+      const result = (await documents.downloadFileToChat(client, {
         projectId: 'p1',
         fileAreaId: 'fa1',
         fileId: 'f1',
-      });
+      })) as Record<string, unknown>;
 
-      expect(result).toMatchObject({ found: true, filePath, fileName: 'spec.pdf', fileId: 'f1', size: 9 });
-      const resource = (result as Record<string, unknown>).resource as { mimeType: string; blob: string };
-      expect(resource).toMatchObject({ mimeType: 'application/pdf' });
-      expect(Buffer.from(resource.blob, 'base64').toString()).toBe('pdf bytes');
+      expect(result).toMatchObject({ found: true, filePath, fileName: 'photo.jpg', fileId: 'f1', size: 15 });
+      expect(result.downloadUrl).toMatch(/^http:\/\/127\.0\.0\.1:\d+\/download\/[a-f0-9]{48}\/photo\.jpg$/);
+      const image = result.image as { mimeType: string; data: string };
+      expect(image.mimeType).toBe('image/jpeg');
+      expect(Buffer.from(image.data, 'base64').toString()).toBe('fake jpeg bytes');
     });
 
-    it('falls back to a message instead of a resource when the file is over the inline limit', async () => {
+    it('falls back to a message (still with a download link) when an image is over the inline limit', async () => {
       const originalLimit = process.env.DALUX_MCP_MAX_INLINE_BYTES;
       process.env.DALUX_MCP_MAX_INLINE_BYTES = '4';
       try {
-        const filePath = path.join(cacheDir, 'big.pdf');
+        const filePath = path.join(cacheDir, 'big.jpg');
         writeFileSync(filePath, 'more than four bytes');
-        const { client } = clientServing(filePath, 'big.pdf');
+        const { client } = clientServing(filePath, 'big.jpg');
 
-        const result = await documents.downloadFileToChat(client, {
+        const result = (await documents.downloadFileToChat(client, {
           projectId: 'p1',
           fileAreaId: 'fa1',
           fileId: 'f1',
-        });
+        })) as Record<string, unknown>;
 
-        const record = result as Record<string, unknown>;
-        expect(record.resource).toBeUndefined();
-        expect(result).toMatchObject({ found: true, filePath, fileName: 'big.pdf' });
-        expect(record.message).toContain('inline limit');
+        expect(result.image).toBeUndefined();
+        expect(result).toMatchObject({ found: true, filePath, fileName: 'big.jpg' });
+        expect(result.downloadUrl).toMatch(/^http:\/\/127\.0\.0\.1:\d+\//);
+        expect(result.message).toContain('inline limit');
       } finally {
         if (originalLimit === undefined) delete process.env.DALUX_MCP_MAX_INLINE_BYTES;
         else process.env.DALUX_MCP_MAX_INLINE_BYTES = originalLimit;
       }
+    });
+
+    it('honours a per-call maxInlineBytes above the server-wide default for images', async () => {
+      const originalLimit = process.env.DALUX_MCP_MAX_INLINE_BYTES;
+      process.env.DALUX_MCP_MAX_INLINE_BYTES = '4';
+      try {
+        const filePath = path.join(cacheDir, 'big2.jpg');
+        writeFileSync(filePath, 'more than four bytes');
+        const { client } = clientServing(filePath, 'big2.jpg');
+
+        const result = (await documents.downloadFileToChat(client, {
+          projectId: 'p1',
+          fileAreaId: 'fa1',
+          fileId: 'f1',
+          maxInlineBytes: 1024,
+        })) as Record<string, unknown>;
+
+        expect(result.image).toBeDefined();
+        expect(result.message).toBeUndefined();
+      } finally {
+        if (originalLimit === undefined) delete process.env.DALUX_MCP_MAX_INLINE_BYTES;
+        else process.env.DALUX_MCP_MAX_INLINE_BYTES = originalLimit;
+      }
+    });
+
+    it('streams a PDF back as extracted text instead of raw bytes', async () => {
+      const filePath = writePdf(cacheDir, 'spec.pdf', [['Fire rating EI60 required for all shafts.']]);
+      const { client } = clientServing(filePath, 'spec.pdf');
+
+      const result = (await documents.downloadFileToChat(client, {
+        projectId: 'p1',
+        fileAreaId: 'fa1',
+        fileId: 'f1',
+      })) as Record<string, unknown>;
+
+      expect(result).toMatchObject({ found: true, filePath, fileName: 'spec.pdf', format: 'pdf', truncated: false });
+      expect(result.image).toBeUndefined();
+      expect(result.text as string).toContain('Fire rating EI60');
+      expect(result.downloadUrl).toMatch(/^http:\/\/127\.0\.0\.1:\d+\//);
+    });
+
+    it('honours a per-call maxInlineChars for extracted text', async () => {
+      const filePath = writePdf(cacheDir, 'long.pdf', [['Fire rating EI60 required for all shafts.']]);
+      const { client } = clientServing(filePath, 'long.pdf');
+
+      const result = (await documents.downloadFileToChat(client, {
+        projectId: 'p1',
+        fileAreaId: 'fa1',
+        fileId: 'f1',
+        maxInlineChars: 5,
+      })) as Record<string, unknown>;
+
+      expect(result.truncated).toBe(true);
+      expect((result.text as string).length).toBe(5);
+    });
+
+    it('falls back to a message (with a download link) for a format with no text extraction and no image', async () => {
+      const filePath = path.join(cacheDir, 'model.dwg');
+      writeFileSync(filePath, 'binary cad bytes');
+      const { client } = clientServing(filePath, 'model.dwg');
+
+      const result = (await documents.downloadFileToChat(client, {
+        projectId: 'p1',
+        fileAreaId: 'fa1',
+        fileId: 'f1',
+      })) as Record<string, unknown>;
+
+      expect(result.image).toBeUndefined();
+      expect(result.text).toBeUndefined();
+      expect(result.downloadUrl).toMatch(/^http:\/\/127\.0\.0\.1:\d+\//);
+      expect(result.message).toContain(filePath);
     });
 
     it('passes not-found results through unchanged', async () => {
@@ -128,29 +203,6 @@ describe('tools/documents', () => {
       });
 
       expect(result).toEqual({ found: false, message: 'File not found' });
-    });
-
-    it('honours a per-call maxInlineBytes above the server-wide default', async () => {
-      const originalLimit = process.env.DALUX_MCP_MAX_INLINE_BYTES;
-      process.env.DALUX_MCP_MAX_INLINE_BYTES = '4';
-      try {
-        const filePath = path.join(cacheDir, 'big.pdf');
-        writeFileSync(filePath, 'more than four bytes');
-        const { client } = clientServing(filePath, 'big.pdf');
-
-        const result = (await documents.downloadFileToChat(client, {
-          projectId: 'p1',
-          fileAreaId: 'fa1',
-          fileId: 'f1',
-          maxInlineBytes: 1024,
-        })) as Record<string, unknown>;
-
-        expect(result.resource).toBeDefined();
-        expect(result.message).toBeUndefined();
-      } finally {
-        if (originalLimit === undefined) delete process.env.DALUX_MCP_MAX_INLINE_BYTES;
-        else process.env.DALUX_MCP_MAX_INLINE_BYTES = originalLimit;
-      }
     });
   });
 

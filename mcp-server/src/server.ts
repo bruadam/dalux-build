@@ -432,6 +432,19 @@ export const TOOLS = [
     inputSchema: ifc.ifcClashResultInput,
     handler: ifc.ifcClashResult,
   }),
+  tool({
+    name: 'ifc_volumes_start',
+    description:
+      'Start geometric volume extraction on an IFC file, optionally restricted to one type. Unlike ifc_schedule this reads no property set — it meshes the model and reads back the enclosed volume proved from the tessellated solid, in real cubic metres. Only entities the kernel can prove are a single closed solid get a volume (~71% coverage on a measured corpus); the rest report as absent, not zero. Returns a jobId immediately — meshing can take minutes on a cold model (shares a cache with ifc_clash_start). Poll ifc_volumes_result.',
+    inputSchema: ifc.ifcVolumesStartInput,
+    handler: ifc.ifcVolumesStart,
+  }),
+  tool({
+    name: 'ifc_volumes_result',
+    description: 'Poll a volume extraction job started by ifc_volumes_start; returns per-type totals (proved volumes only) plus a csvPath with the full per-element table once finished.',
+    inputSchema: ifc.ifcVolumesResultInput,
+    handler: ifc.ifcVolumesResult,
+  }),
 
   // Feedback — the one tool in this server that mutates something outside a
   // local disposable cache (see feedbackReport.ts). Confirmation-gated: an

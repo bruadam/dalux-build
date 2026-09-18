@@ -15,40 +15,11 @@
  * disciplines split out of the same coordination model). No cross-model
  * alignment/transform is applied.
  */
-import { readFile } from 'node:fs/promises';
 import type { LoadedModel } from '@ifc-lite/mcp';
 import type { ClashElement, ClashResult, ClashRule, ExclusionSet } from '@ifc-lite/clash';
-import type { MeshData } from '@ifc-lite/geometry';
 import type { ComparisonOp } from '@ifc-lite/sdk';
-import { loadIfcClash, loadIfcClashStep, loadIfcGeometry } from './runtime';
-
-/** Mesh cache keyed by LoadedModel instance, mirroring ifc-lite's own clash.ts cache. */
-const meshCache = new WeakMap<LoadedModel, MeshData[]>();
-
-async function meshModel(model: LoadedModel): Promise<MeshData[]> {
-  const cached = meshCache.get(model);
-  if (cached) return cached;
-
-  if (!model.filePath) {
-    throw new Error(`Model ${model.id} has no file path to mesh.`);
-  }
-  const bytes = await readFile(model.filePath);
-  const geometry = await loadIfcGeometry();
-  const gp = new geometry.GeometryProcessor();
-  try {
-    await gp.init();
-    const result = await gp.process(bytes);
-    if (result.meshes.length === 0) {
-      throw new Error(
-        `No mesh geometry could be produced for model ${model.id}; clash detection needs tessellated solids.`,
-      );
-    }
-    meshCache.set(model, result.meshes);
-    return result.meshes;
-  } finally {
-    gp.dispose();
-  }
-}
+import { loadIfcClash, loadIfcClashStep } from './runtime';
+import { meshModel } from './geometryCache';
 
 export interface CrossModelClashOptions {
   models: LoadedModel[];
@@ -67,7 +38,7 @@ export async function runCrossModelClash(opts: CrossModelClashOptions): Promise<
   // there is no risk of two models' element "42" colliding.
   const exclusions: ExclusionSet = new Set();
   for (const model of opts.models) {
-    const meshes = await meshModel(model);
+    const { meshes } = await meshModel(model);
     const built = step.elementsFromStep({ store: model.store, meshes, modelId: model.id });
     elements.push(...built.elements);
     for (const key of built.exclusions) exclusions.add(key);

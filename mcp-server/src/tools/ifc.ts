@@ -24,6 +24,7 @@ import { describeJob, getClashJob, startClashJob, COMMONLY_DOMINANT_TYPES } from
 import { buildToolContext, callIfcTool } from '../ifc/runtime';
 import { deleteRule, getRules, listRules, saveRule } from '../ifc/ruleCatalog';
 import { resolveModel, type ResolvedModel } from '../ifc/session';
+import { describeVolumeJob, getVolumeJob, startVolumeJob } from '../ifc/volumeJobs';
 
 const ifcRef = {
   projectId: z.string().describe('The Dalux project ID.'),
@@ -432,4 +433,48 @@ export async function ifcClashResult(_client: DaluxClient, args: IfcClashResultI
   const parsed = JSON.parse(raw) as { clashes?: unknown[] };
   const clashes = Array.isArray(parsed.clashes) ? parsed.clashes : [];
   return { ...described, topClashes: clashes.slice(0, args.topN ?? 20) };
+}
+
+// ---------- ifc_volumes_start / ifc_volumes_result ----------
+
+export const ifcVolumesStartInput = z.object({
+  ...ifcRef,
+  type: z.string().optional().describe('Restrict to one IFC type, e.g. "IfcColumn". Omit for the whole model.'),
+});
+export type IfcVolumesStartInput = z.infer<typeof ifcVolumesStartInput>;
+
+/**
+ * Start geometric volume extraction on an IFC. Returns a jobId immediately —
+ * poll ifc_volumes_result.
+ *
+ * Unlike ifc_schedule, this reads no property set: it meshes the model and
+ * reads back the enclosed volume ifc-lite's geometry kernel proves for each
+ * entity from the tessellated solid, in real-world cubic metres regardless of
+ * the file's own length unit. That proof succeeds only for entities whose
+ * geometry is a single closed, orientable, single-component solid (~71%
+ * coverage on a measured corpus) — an open shell, a layered wall, or a
+ * multi-item assembly mesh fine but yield no proved volume, which is reported
+ * as absent, never as zero.
+ *
+ * Meshing is the same expensive, unpredictable step clash uses (minutes on a
+ * cold model) and the two share one cache keyed by model, so a model already
+ * meshed by a prior ifc_clash_start or ifc_volumes_start run on this process
+ * resolves in seconds.
+ */
+export async function ifcVolumesStart(client: DaluxClient, args: IfcVolumesStartInput) {
+  const { model } = await open(client, args);
+  const job = startVolumeJob({ fileId: args.fileId, model, type: args.type });
+  return describeVolumeJob(job);
+}
+
+export const ifcVolumesResultInput = z.object({
+  jobId: z.string().describe('The jobId returned by ifc_volumes_start.'),
+});
+export type IfcVolumesResultInput = z.infer<typeof ifcVolumesResultInput>;
+
+/** Poll a volume extraction job. While running, returns status only. */
+export async function ifcVolumesResult(_client: DaluxClient, args: IfcVolumesResultInput) {
+  const job = getVolumeJob(args.jobId);
+  if (!job) throw new Error(`Unknown volumes jobId "${args.jobId}".`);
+  return describeVolumeJob(job);
 }

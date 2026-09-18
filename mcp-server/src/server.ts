@@ -105,9 +105,11 @@ export const TOOLS = [
     description:
       'Download a file and stream its content back as part of the tool result (as well as saving it to this ' +
       'server\'s local cache, which callers on a different host cannot reach directly). Files up to the inline ' +
-      'size limit (10 MB by default, DALUX_MCP_MAX_INLINE_BYTES to change it) come back as actual file content; ' +
-      'larger files fall back to a local path plus a message, same as before — use search_file_content or ' +
-      'render_pdf_page for those instead of trying to read them back inline.',
+      'size limit (10 MB by default, DALUX_MCP_MAX_INLINE_BYTES to change the server-wide default) come back as ' +
+      'actual file content; larger files fall back to a local path plus a message, same as before — use ' +
+      'search_file_content or render_pdf_page for those instead of trying to read them back inline. Pass ' +
+      'maxInlineBytes to raise the cap for this one call, up to a 500 MB hard ceiling — only do this when the ' +
+      'user has explicitly asked for a large file to be streamed back.',
     inputSchema: documents.downloadFileInput,
     handler: documents.downloadFileToChat,
   }),
@@ -261,10 +263,12 @@ export const TOOLS = [
     name: 'download_task_attachment',
     description:
       'Download a task attachment and stream its content back as part of the tool result (as well as saving it ' +
-        'to this server\'s local cache), the same size-capped inline behaviour as download_file. Pass the ' +
-        'mediaFile.fileDownload URL from list_task_attachments or get_task (includeAttachments: true) — unlike ' +
-        'ordinary project files, task attachments have no fileId/fileArea to look up through get_file/' +
-        'download_file; this signs the request with the same Dalux API key instead.',
+        'to this server\'s local cache), the same size-capped inline behaviour as download_file — including ' +
+        'maxInlineBytes to raise the cap for this call (up to a 500 MB hard ceiling) when the user has explicitly ' +
+        'asked for a large attachment streamed back. Pass the mediaFile.fileDownload URL from ' +
+        'list_task_attachments or get_task (includeAttachments: true) — unlike ordinary project files, task ' +
+        'attachments have no fileId/fileArea to look up through get_file/download_file; this signs the request ' +
+        'with the same Dalux API key instead.',
     inputSchema: tasks.downloadTaskAttachmentInput,
     handler: tasks.downloadTaskAttachmentToChat,
   }),

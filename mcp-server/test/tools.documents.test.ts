@@ -129,6 +129,29 @@ describe('tools/documents', () => {
 
       expect(result).toEqual({ found: false, message: 'File not found' });
     });
+
+    it('honours a per-call maxInlineBytes above the server-wide default', async () => {
+      const originalLimit = process.env.DALUX_MCP_MAX_INLINE_BYTES;
+      process.env.DALUX_MCP_MAX_INLINE_BYTES = '4';
+      try {
+        const filePath = path.join(cacheDir, 'big.pdf');
+        writeFileSync(filePath, 'more than four bytes');
+        const { client } = clientServing(filePath, 'big.pdf');
+
+        const result = (await documents.downloadFileToChat(client, {
+          projectId: 'p1',
+          fileAreaId: 'fa1',
+          fileId: 'f1',
+          maxInlineBytes: 1024,
+        })) as Record<string, unknown>;
+
+        expect(result.resource).toBeDefined();
+        expect(result.message).toBeUndefined();
+      } finally {
+        if (originalLimit === undefined) delete process.env.DALUX_MCP_MAX_INLINE_BYTES;
+        else process.env.DALUX_MCP_MAX_INLINE_BYTES = originalLimit;
+      }
+    });
   });
 
   describe('searchFileContent', () => {

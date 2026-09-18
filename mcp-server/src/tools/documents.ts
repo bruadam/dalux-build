@@ -3,7 +3,7 @@ import { z } from 'zod';
 import type { DaluxClient } from 'dalux-build-api';
 import { cacheDirFor } from '../cachePaths';
 import { SUPPORTED_EXTENSIONS, UnsupportedFormatError, extractDocument } from '../extract';
-import { buildInlineResource } from '../inlineResource';
+import { buildInlineResource, HARD_MAX_INLINE_BYTES } from '../inlineResource';
 import { searchChunks } from '../search/documentSearch';
 
 // ---------- download_file ----------
@@ -12,6 +12,17 @@ export const downloadFileInput = z.object({
   projectId: z.string().describe('The Dalux project ID.'),
   fileAreaId: z.string().describe('The file area ID.'),
   fileId: z.string().describe('The file ID.'),
+  maxInlineBytes: z
+    .number()
+    .int()
+    .positive()
+    .max(HARD_MAX_INLINE_BYTES)
+    .optional()
+    .describe(
+      'Raise the inline-streaming size cap for this call (default 10 MB, hard ceiling 500 MB/524288000 bytes). ' +
+        'Only set this when the user has explicitly asked for a large file to be streamed back rather than left ' +
+        'as a local path — most calls should omit it.',
+    ),
 });
 export type DownloadFileInput = z.infer<typeof downloadFileInput>;
 
@@ -52,7 +63,7 @@ export async function downloadFileToChat(client: DaluxClient, args: DownloadFile
   if (!download.found || !download.filePath) return download;
 
   const fileName = (download.fileName as string | null) ?? path.basename(download.filePath as string);
-  const inline = await buildInlineResource(download.filePath as string, fileName);
+  const inline = await buildInlineResource(download.filePath as string, fileName, args.maxInlineBytes);
   if (inline.inlined) {
     return { ...download, size: inline.size, resource: inline.resource };
   }

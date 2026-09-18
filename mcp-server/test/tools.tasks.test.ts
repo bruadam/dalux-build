@@ -443,5 +443,28 @@ describe('tools/tasks', () => {
         else process.env.DALUX_MCP_MAX_INLINE_BYTES = originalLimit;
       }
     });
+
+    it('honours a per-call maxInlineBytes above the server-wide default', async () => {
+      const originalLimit = process.env.DALUX_MCP_MAX_INLINE_BYTES;
+      process.env.DALUX_MCP_MAX_INLINE_BYTES = '4';
+      try {
+        const filePath = `${cacheDir}/IMG_9741.JPG`;
+        writeFileSync(filePath, 'more than four bytes');
+        const downloadFileFromLink = jest.fn().mockResolvedValue(filePath);
+        const client = fakeClient({ files: { downloadFileFromLink } });
+
+        const result = (await tasks.downloadTaskAttachmentToChat(client, {
+          fileDownload:
+            'https://node1.field.dalux.com/service/FieldBinaryStore/web/Project/1/TaskAttachment/2/Token/abc/IMG_9741.JPG',
+          maxInlineBytes: 1024,
+        })) as Record<string, unknown>;
+
+        expect(result.resource).toBeDefined();
+        expect(result.message).toBeUndefined();
+      } finally {
+        if (originalLimit === undefined) delete process.env.DALUX_MCP_MAX_INLINE_BYTES;
+        else process.env.DALUX_MCP_MAX_INLINE_BYTES = originalLimit;
+      }
+    });
   });
 });

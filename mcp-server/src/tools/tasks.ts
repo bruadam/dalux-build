@@ -4,7 +4,7 @@ import type { DaluxClient } from 'dalux-build-api';
 import { downloadDaluxFile } from '../attachmentFetch';
 import { collectAllDaluxItems } from '../daluxPagination';
 import type { TextChunk } from '../extract';
-import { buildInlineResource } from '../inlineResource';
+import { buildInlineResource, HARD_MAX_INLINE_BYTES } from '../inlineResource';
 import { extractAttachmentTextsByTaskId, groupAttachmentsByTaskId } from '../rag/taskAttachments';
 import { groupChangesByTaskId, renderTaskLines, str, unwrapTask, type AttachmentText } from '../rag/taskText';
 import { searchChunks } from '../search/documentSearch';
@@ -465,6 +465,17 @@ export const downloadTaskAttachmentInput = z.object({
       'The attachment\'s `mediaFile.name`, used to name the cached file (and, for search_file_content, to infer ' +
         'its format from the extension). Defaults to the URL\'s last path segment if omitted.',
     ),
+  maxInlineBytes: z
+    .number()
+    .int()
+    .positive()
+    .max(HARD_MAX_INLINE_BYTES)
+    .optional()
+    .describe(
+      'Raise the inline-streaming size cap for this call (default 10 MB, hard ceiling 500 MB/524288000 bytes). ' +
+        'Only set this when the user has explicitly asked for a large attachment to be streamed back rather than ' +
+        'left as a local path — most calls should omit it.',
+    ),
 });
 export type DownloadTaskAttachmentInput = z.infer<typeof downloadTaskAttachmentInput>;
 
@@ -503,7 +514,7 @@ export async function downloadTaskAttachmentToChat(client: DaluxClient, args: Do
   if (!download.found || !download.filePath) return download;
 
   const fileName = download.fileName || path.basename(download.filePath);
-  const inline = await buildInlineResource(download.filePath, fileName);
+  const inline = await buildInlineResource(download.filePath, fileName, args.maxInlineBytes);
   if (inline.inlined) {
     return { ...download, size: inline.size, resource: inline.resource };
   }

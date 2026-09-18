@@ -2,7 +2,7 @@ import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 
-import { buildInlineResource, maxInlineBytes, mimeTypeFor } from '../src/inlineResource';
+import { buildInlineResource, HARD_MAX_INLINE_BYTES, maxInlineBytes, mimeTypeFor } from '../src/inlineResource';
 
 describe('inlineResource', () => {
   let dir: string;
@@ -47,6 +47,20 @@ describe('inlineResource', () => {
       process.env.DALUX_MCP_MAX_INLINE_BYTES = 'not-a-number';
       expect(maxInlineBytes()).toBe(10 * 1024 * 1024);
     });
+
+    it('honours a per-call override', () => {
+      delete process.env.DALUX_MCP_MAX_INLINE_BYTES;
+      expect(maxInlineBytes(50 * 1024 * 1024)).toBe(50 * 1024 * 1024);
+    });
+
+    it('clamps a per-call override to the 500 MiB hard ceiling', () => {
+      expect(maxInlineBytes(10 * 1024 * 1024 * 1024)).toBe(HARD_MAX_INLINE_BYTES);
+    });
+
+    it('clamps an env-configured default to the hard ceiling too', () => {
+      process.env.DALUX_MCP_MAX_INLINE_BYTES = String(10 * 1024 * 1024 * 1024);
+      expect(maxInlineBytes()).toBe(HARD_MAX_INLINE_BYTES);
+    });
   });
 
   describe('buildInlineResource', () => {
@@ -76,6 +90,16 @@ describe('inlineResource', () => {
       expect(result.size).toBeGreaterThan(4);
       expect(result.reason).toContain(filePath);
       expect(result.reason).toContain('4-byte inline limit');
+    });
+
+    it('accepts a per-call maxBytesOverride above the file size', async () => {
+      process.env.DALUX_MCP_MAX_INLINE_BYTES = '4';
+      const filePath = path.join(dir, 'bigger.pdf');
+      writeFileSync(filePath, 'this is more than four bytes');
+
+      const result = await buildInlineResource(filePath, 'bigger.pdf', 1024);
+
+      expect(result.inlined).toBe(true);
     });
 
     it('reports an error instead of throwing when the file cannot be read', async () => {

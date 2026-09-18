@@ -2,8 +2,8 @@ import { z } from 'zod';
 import { TOOLS, toolResultContent } from '../src/server';
 
 describe('TOOLS registry', () => {
-  it('has 55 tools with unique names', () => {
-    expect(TOOLS).toHaveLength(55);
+  it('has 56 tools with unique names', () => {
+    expect(TOOLS).toHaveLength(56);
     const names = TOOLS.map((t) => t.name);
     expect(new Set(names).size).toBe(names.length);
   });
@@ -18,7 +18,10 @@ describe('TOOLS registry', () => {
 
   it('does not expose any mutating (create/update/delete) operation', () => {
     // These write to (or delete from) the local disposable cache, not to
-    // Dalux — no project data is mutated by any of them.
+    // Dalux — no project data is mutated by any of them. report_feedback is
+    // the one deliberate exception (a real GitHub issue on this server's own
+    // repo, not Dalux) — it doesn't match this naming pattern, but see the
+    // dedicated test below for its confirmation gate.
     const allowlist = new Set([
       'download_file',
       'search_pdf_content',
@@ -30,6 +33,13 @@ describe('TOOLS registry', () => {
       if (allowlist.has(tool.name)) continue;
       expect(tool.name).not.toMatch(/^(create|update|delete|upload|finish)_/);
     }
+  });
+
+  it('gates report_feedback\'s input schema on an optional confirmed flag', () => {
+    const tool = TOOLS.find((t) => t.name === 'report_feedback');
+    expect(tool).toBeDefined();
+    const shape = (tool!.inputSchema as z.ZodObject<z.ZodRawShape>).shape;
+    expect(shape.confirmed).toBeInstanceOf(z.ZodOptional);
   });
 });
 

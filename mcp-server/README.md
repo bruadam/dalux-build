@@ -8,6 +8,8 @@ Built on the MCP TypeScript SDK v2 (`@modelcontextprotocol/server`) and the [`da
 
 Every structured-data tool wraps `list*`/`get*` Dalux Build API methods only — nothing that creates, updates, or deletes project data. `download_file`, `search_file_content`, `render_pdf_page` and the `*_file_area_index` tools write to (and delete from) a local cache directory, but that's a local, disposable side effect, not a mutation of anything in Dalux.
 
+The one deliberate exception is `report_feedback`, which files a bug/enhancement report as a GitHub issue on this server's own repo — not Dalux. It's confirmation-gated (a call without `confirmed: true` only returns a preview, never posts) and refuses to post anything that looks like it carries Dalux project data or personal data — see [Feedback reporting](#feedback-reporting) below.
+
 ## Install
 
 From the repo root (this is an npm workspace package):
@@ -36,6 +38,11 @@ Reads the same environment variables as the rest of the Dalux Build clients:
 | `HOST` | HTTP transport only | Address to bind (default `127.0.0.1`; use `0.0.0.0` for Docker/remote — see below) |
 | `PUBLIC_URL` | HTTP transport only, optional | Externally-reachable `https://` base URL of this deployment. Set it to enable OAuth for Claude.ai/ChatGPT custom connectors — see below |
 | `DALUX_MCP_LOG_DISCOVERY` | HTTP transport only, optional | Set to `1` to log each client's `initialize` (client name/version, negotiated protocol version) and `tools/list` (tool count, `nextCursor`, payload size) to stderr. For diagnosing a host that shows fewer tools than the server registers — it distinguishes "served a short list" from "shortened a full list client-side". Logs no credentials |
+| `DALUX_MCP_MAX_INLINE_BYTES` | no | Server-wide default for how many bytes of an image `download_file`/`download_task_attachment` will stream back inline (default 10 MB, hard ceiling 500 MB) — see [Document search](#document-search) |
+| `DALUX_MCP_MAX_INLINE_CHARS` | no | Server-wide default for how many characters of extracted text those same tools will stream back inline for PDF/Word/Excel/Markdown/HTML (default 200,000, hard ceiling 2,000,000) |
+| `DALUX_MCP_FEEDBACK_REPO` | no | `owner/repo` that `report_feedback` files issues against (default `bruadam/dalux-build`) — set this on a fork |
+| `DALUX_MCP_FEEDBACK_GITHUB_TOKEN` (or `GITHUB_TOKEN`) | only to enable `report_feedback` | Token with Issues: write (or `public_repo`) access that `report_feedback` uses to create the issue. Without this (or the gh CLI flag below), `report_feedback` still previews reports but refuses to post them |
+| `DALUX_MCP_FEEDBACK_USE_GH_CLI` | no | Set to `1` to have `report_feedback` post via the local `gh` CLI's own login instead of a token — a dev-machine-only alternative; ignored once a token is set |
 
 A `.env` file in the working directory is picked up automatically (via the underlying `dalux-build-api` client).
 
@@ -141,6 +148,8 @@ This is fully additive: deployments that never set `PUBLIC_URL` behave exactly a
 **Scheduling**: `list_work_packages`, `list_version_sets`
 
 **3D viewer**: `view_model_3d` (renders an interactive MCP App in supporting hosts — see below; requires `PUBLIC_URL`)
+
+**Feedback**: `report_feedback` (files a bug/enhancement report on this server's own GitHub repo — see [Feedback reporting](#feedback-reporting) below)
 
 List tools report `totalCount`/`truncated` and follow Dalux pagination to completion, returning all matching items. There is no extra MCP-side list cap.
 
@@ -266,6 +275,19 @@ Details worth knowing:
 This only works on the **HTTP transport with `PUBLIC_URL` set** (see [OAuth](#oauth-claudeai--chatgpt-custom-connectors) above) — the embed viewer needs a real `https://` URL it can fetch cross-origin, which stdio can't offer. Without `PUBLIC_URL`, the tool still appears in `tools/list` (so its presence doesn't depend on how the server happens to be deployed) but returns a message explaining to use `download_file` instead, rather than erroring.
 
 Mechanics, if you're curious: calling the tool issues a random, in-memory, 15-minute ticket (`src/modelLinks.ts`) bound to the request's Dalux credentials and file, and returns `https://<PUBLIC_URL>/models/<ticket>` as `modelUrl` in `structuredContent`. `GET /models/<ticket>` (handled in `http.ts`, ahead of the localhost Host/Origin checks that guard the main `/mcp` endpoint, since this route carries its own auth and is fetched cross-origin from `embed.ifclite.com` by design) resolves the ticket, downloads (or reuses the cache for) the file, and streams it back with CORS scoped to `https://embed.ifclite.com` and `Range` support. The Dalux API key itself never reaches the browser. Selecting an element in the viewer reports its IFC properties back to the model via `ui/update-model-context`.
+
+### Feedback reporting
+
+`report_feedback` files a bug or enhancement report against this MCP server's own GitHub repo — the only tool in this server that mutates anything outside a local disposable cache (see [Why read-only](#why-read-only) above).
+
+It's a two-step, confirmation-gated tool by design:
+
+1. Called without `confirmed` (or `confirmed: false`), it posts nothing — it returns a preview of the exact `title`/`body`/`repo` that would be filed. The calling agent is expected to show this to the user verbatim.
+2. Only once the user has explicitly approved that exact content does the agent call it again with `confirmed: true`, which actually creates the issue.
+
+There is no server-side way to verify a human really approved a given call — this rests on the calling agent following the tool's description. What the server *does* enforce, on both the preview and the confirmed call: it scans the title and body for content that shouldn't leave the caller's own environment (email addresses, API keys/tokens, `Authorization`/API-key headers, Dalux project/file/task identifiers, a Dalux base URL, IP addresses) and refuses to post — even if `confirmed: true` — when it finds any, asking for the report to be rewritten in general terms instead. This is a best-effort safety net on top of, not a substitute for, the confirmation step and the tool's own instructions to describe only the MCP server's behavior, never Dalux project data.
+
+Posting requires GitHub credentials, configured the same two ways as the [docs-repo integration](#docs-repo-search-laws-guidelines-standards-procedures): `DALUX_MCP_FEEDBACK_GITHUB_TOKEN` (or `GITHUB_TOKEN`) as a real token with Issues:write access, or `DALUX_MCP_FEEDBACK_USE_GH_CLI=1` to shell out to a locally logged-in `gh` CLI instead. Without either, the tool still previews reports but reports itself as unconfigured rather than posting once confirmed.
 
 ## Docker
 

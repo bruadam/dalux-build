@@ -14,6 +14,7 @@ import * as drawings from './tools/drawings';
 import * as fileAreaIndex from './tools/fileAreaIndex';
 import * as taskIndex from './tools/taskIndex';
 import * as docsIndex from './tools/docsIndex';
+import * as feedback from './tools/feedback';
 import * as ifc from './tools/ifc';
 import { registerIfcViewer, type IfcHostingOptions } from './ui/ifcViewer';
 import { registerTaskTimeline } from './ui/taskTimeline';
@@ -430,6 +431,24 @@ export const TOOLS = [
     description: 'Poll a clash job started by ifc_clash_start; returns a summary plus the deepest clashes once finished.',
     inputSchema: ifc.ifcClashResultInput,
     handler: ifc.ifcClashResult,
+  }),
+
+  // Feedback — the one tool in this server that mutates something outside a
+  // local disposable cache (see feedbackReport.ts). Confirmation-gated: an
+  // unconfirmed call only returns a preview of what would be posted.
+  tool({
+    name: 'report_feedback',
+    description:
+      'File a bug report or feature request about this MCP server/tool set as a GitHub issue. Two-step: call ' +
+        'without confirmed (or confirmed: false) first — nothing is posted, you just get back the exact title ' +
+        'and body that would be filed. Show that to the user verbatim and get their explicit approval, then call ' +
+        'again with confirmed: true to actually file it; never set confirmed: true without having done that. ' +
+        'Never include Dalux project data (project/file/task names or IDs, document content, company or user ' +
+        'names) or personal data in the report — describe only the tool/server behavior. The call is refused ' +
+        '(even if confirmed) if the content looks like it contains an email, an API key, an IP address, or a ' +
+        'Dalux identifier.',
+    inputSchema: feedback.reportFeedbackInput,
+    handler: feedback.reportFeedback,
   }),
 ] as const;
 

@@ -1,26 +1,48 @@
 /**
- * IFC analysis tools over models pulled from Dalux.
+ * IFC analysis and editing tools over models pulled from Dalux.
  *
  * Every tool is keyed by Dalux identifiers (projectId / fileAreaId / fileId) —
  * callers never see or supply a local cache path. The model is downloaded and
  * parsed on first use and kept resident (see ../ifc/session.ts).
  *
- * This surface is deliberately narrow. ifc-lite ships 85 tools including
- * entity_delete, entity_create and model_save, and because we invoke handlers
- * directly its scope gating never runs — so what is re-exported here is the
- * only boundary. Keep it read-only.
+ * This surface is deliberately narrow. ifc-lite ships 85 tools, and because we
+ * invoke handlers directly its scope gating never runs — so what is re-exported
+ * here is the only boundary.
+ *
+ * **Everything except the ifc_edit_* group is read-only, and the edit group is
+ * read-only with respect to Dalux.** An edit session mutates a private,
+ * in-process parse of a downloaded file (../ifc/editSession.ts) and
+ * ifc_edit_save writes a NEW local .ifc. No tool here writes to Dalux, and the
+ * client's upload API is deliberately not reachable from this module — putting
+ * an edited revision back into the project is a manual step the user takes.
+ *
+ * Every write is marked as AI-authored in the exported file itself; that rule
+ * is not a caller option. See ../ifc/aiMarking.ts for what it does and why it
+ * does not simply prefix values.
  */
 import { writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { z } from 'zod';
 import type { DaluxClient } from 'dalux-build-api';
 import type { ClashRule } from '@ifc-lite/clash';
+import type { LoadedModel } from '@ifc-lite/mcp';
 import type { ComparisonOp } from '@ifc-lite/sdk';
 
 import { derivedDirFor } from '../cachePaths';
+import { createDownloadLink } from '../downloadLinks';
+import { AI_PSET_PREFIX, PROVENANCE_PSET } from '../ifc/aiMarking';
 import { buildCatalogue, splitPath, validateColumns } from '../ifc/catalogue';
 import { resolveMembers } from '../ifc/clashEngine';
 import { describeJob, getClashJob, startClashJob, COMMONLY_DOMINANT_TYPES } from '../ifc/clashJobs';
+import { propertyDeltas, runModelDiff } from '../ifc/diffEngine';
+import { applyOperation, DEFAULT_MAX_ELEMENTS, type EditOperation, type OperationResult } from '../ifc/editEngine';
+import {
+  discardEditSession,
+  getEditSession,
+  openEditSession,
+  pendingMutations,
+  saveEditSession,
+} from '../ifc/editSession';
 import { buildToolContext, callIfcTool } from '../ifc/runtime';
 import { deleteRule, getRules, listRules, saveRule } from '../ifc/ruleCatalog';
 import { resolveModel, type ResolvedModel } from '../ifc/session';
@@ -477,4 +499,343 @@ export async function ifcVolumesResult(_client: DaluxClient, args: IfcVolumesRes
   const job = getVolumeJob(args.jobId);
   if (!job) throw new Error(`Unknown volumes jobId "${args.jobId}".`);
   return describeVolumeJob(job);
+}
+
+// ---------- ifc_diff ----------
+
+const diffSide = z.object({
+  fileAreaId: z.string().describe('The file area ID.'),
+  fileId: z.string().describe('The file ID of an .ifc file.'),
+});
+
+export const ifcDiffInput = z.object({
+  projectId: z.string().describe('The Dalux project ID both files belong to.'),
+  base: diffSide.describe('The older/reference revision.'),
+  head: diffSide
+    .optional()
+    .describe('The newer revision. Omit and pass editId instead to compare an open edit session against `base`.'),
+  editId: z
+    .string()
+    .optional()
+    .describe('Compare an open ifc_edit_start session (with its queued edits) against `base`, instead of a second Dalux file.'),
+  byContent: z
+    .boolean()
+    .optional()
+    .describe(
+      'Also match entities by content, for revisions re-exported from scratch with new GlobalIds — without it a ' +
+        're-GUID reads as the whole model deleted and re-added. Costs a full fingerprint pass. Default false.',
+    ),
+  propertyChanges: z
+    .boolean()
+    .optional()
+    .describe('Also list which properties changed per element (same-GlobalId pairs only). Extracts property sets for every common entity, so it is the expensive option. Default false.'),
+  type: z.string().optional().describe('Restrict propertyChanges to one IFC type, e.g. "IfcWall".'),
+  maxElements: z.number().int().min(1).max(500).optional().describe('Cap on elements listed in propertyChanges (default 50). Totals are always reported whole.'),
+});
+export type IfcDiffInput = z.infer<typeof ifcDiffInput>;
+
+/**
+ * Compare two revisions of a model.
+ *
+ * Data scope only — see ../ifc/diffEngine.ts. An element that moved but kept
+ * every attribute and property reads as unchanged here, because the geometry
+ * fingerprint ifc-lite compares for that lives behind a WASM mesh pass this
+ * path does not run. Say so when reporting a clean diff on a model somebody
+ * expects to have moved.
+ */
+export async function ifcDiff(client: DaluxClient, args: IfcDiffInput) {
+  if (!args.head && !args.editId) throw new Error('Provide `head` (a second Dalux file) or `editId` (an open edit session).');
+  if (args.head && args.editId) throw new Error('Provide `head` or `editId`, not both — they are two different right-hand sides.');
+
+  const baseResolved = await resolveModel(client, { projectId: args.projectId, fileAreaId: args.base.fileAreaId, fileId: args.base.fileId });
+
+  let headModel: LoadedModel;
+  let headLabel: string;
+  if (args.editId) {
+    const session = await getEditSession(client, args.editId);
+    headModel = session.model;
+    headLabel = `edit session ${session.id} on ${session.fileName} (${session.ops.length} pending operation(s))`;
+  } else {
+    const resolved = await resolveModel(client, { projectId: args.projectId, fileAreaId: args.head!.fileAreaId, fileId: args.head!.fileId });
+    headModel = resolved.model;
+    headLabel = resolved.fileName;
+  }
+
+  const diff = await runModelDiff(baseResolved.model, headModel, {
+    byContent: args.byContent ?? false,
+    byEntity: true,
+  });
+
+  const detail = args.propertyChanges
+    ? propertyDeltas(baseResolved.model, headModel, { limit: args.maxElements ?? 50, type: args.type })
+    : null;
+
+  return {
+    base: baseResolved.fileName,
+    head: headLabel,
+    scope: 'data',
+    summary: diff.summary,
+    typeDiffs: diff.typeDiffs,
+    entityDiff: diff.entityDiff,
+    ...(diff.contentDiff ? { contentDiff: diff.contentDiff } : {}),
+    ...(detail
+      ? {
+          propertyChanges: {
+            comparedElements: detail.comparedElements,
+            changedElements: detail.changedElements,
+            listed: detail.deltas.length,
+            truncated: detail.changedElements > detail.deltas.length,
+            elements: detail.deltas,
+          },
+        }
+      : {}),
+    note:
+      'Data scope: attributes, property sets, quantity sets and IFC type. Geometry is not fingerprinted here, so an ' +
+      'element that only moved or changed shape reads as unchanged.' +
+      (args.byContent ? '' : ' Set byContent when the two revisions may have been re-exported with new GlobalIds.'),
+  };
+}
+
+// ---------- ifc_edit_start / _apply / _review / _save ----------
+
+export const ifcEditStartInput = z.object({ ...ifcRef });
+export type IfcEditStartInput = z.infer<typeof ifcEditStartInput>;
+
+/**
+ * Open an in-memory edit session on a Dalux IFC.
+ *
+ * Nothing in Dalux is touched, now or later: the session holds a private
+ * parse of the downloaded file, edits queue in memory, and ifc_edit_save
+ * writes a NEW local .ifc. Uploading a revision back to Dalux is a manual
+ * step the user does themselves.
+ */
+export async function ifcEditStart(client: DaluxClient, args: IfcEditStartInput) {
+  const session = await openEditSession(client, args);
+  const cat = buildCatalogue(session.model);
+
+  return {
+    editId: session.id,
+    fileName: session.fileName,
+    schema: session.model.store.schemaVersion,
+    totalProducts: cat.totalProducts,
+    productsWithProperties: cat.productsWithProperties,
+    marking: {
+      newPsetPrefix: AI_PSET_PREFIX,
+      provenancePset: PROVENANCE_PSET,
+      note:
+        `Every property set this session creates is named "${AI_PSET_PREFIX}<name>", and every change — including ` +
+        `an edit to an existing, unprefixed pset — is also recorded on the element in "${PROVENANCE_PSET}" with the ` +
+        'old value, the new value and a timestamp. This is not optional and cannot be turned off.',
+    },
+    note:
+      'Edits live only in this server\'s memory until ifc_edit_save writes a new local .ifc. The file in Dalux is ' +
+      'never modified. The session is dropped after 2h idle or when the process restarts — queued edits are not persisted.',
+  };
+}
+
+const editSelector = z
+  .object({
+    globalIds: z.array(z.string()).optional().describe('Explicit element GlobalIds. Use this or type/where, not both.'),
+    type: z.string().optional().describe('IFC type, e.g. "IfcWall". Includes subtypes.'),
+    where: z
+      .object({
+        pset: z.string().describe('Property set name (exact, as reported by ifc_discover_properties).'),
+        property: z.string(),
+        op: z.enum(['=', '!=', '>', '<', '>=', '<=', 'contains', 'exists', 'matches']),
+        value: z.union([z.string(), z.number(), z.boolean()]).optional().describe('Omit only for "exists".'),
+      })
+      .optional()
+      .describe('Narrow a type selection by a property value.'),
+  })
+  .describe('Which elements this operation targets.');
+
+const editOperation = z.discriminatedUnion('kind', [
+  z.object({
+    kind: z.literal('set_property'),
+    select: editSelector,
+    pset: z.string().describe('Property set name. If the element does not already carry it, the set is created as "AI_<pset>".'),
+    property: z.string(),
+    value: z.union([z.string(), z.number(), z.boolean(), z.null()]),
+    markValue: z
+      .boolean()
+      .optional()
+      .describe('Also prefix the value itself with "AI: ". String values only — refused (and reported) on a number or boolean, where it would change the IFC value type and break quantity totals.'),
+  }),
+  z.object({
+    kind: z.literal('delete_property'),
+    select: editSelector,
+    pset: z.string().describe('Exact existing pset name (not AI_-prefixed unless the set really is).'),
+    property: z.string(),
+  }),
+  z.object({
+    kind: z.literal('delete_pset'),
+    select: editSelector,
+    pset: z.string().describe('Exact existing property set name to remove in full.'),
+  }),
+  z.object({
+    kind: z.literal('set_attribute'),
+    select: editSelector,
+    attribute: z.enum(['Name', 'Description', 'ObjectType', 'Tag']),
+    value: z.string(),
+  }),
+  z.object({
+    kind: z.literal('undo'),
+    count: z.number().int().min(1).optional().describe('How many previous operations to revert (default 1). Counted in operations, not in underlying mutations.'),
+  }),
+]);
+
+export const ifcEditApplyInput = z.object({
+  editId: z.string().describe('The editId from ifc_edit_start.'),
+  operations: z.array(editOperation).min(1).describe('Operations, applied in order. Not atomic: a failure is reported in results[] and does not roll back the ones before it.'),
+  maxElements: z
+    .number()
+    .int()
+    .min(1)
+    .max(5000)
+    .optional()
+    .describe(`Cap on elements one operation may touch (default ${DEFAULT_MAX_ELEMENTS}). A selector matching more is refused with its count rather than applied.`),
+});
+export type IfcEditApplyInput = z.infer<typeof ifcEditApplyInput>;
+
+/**
+ * Queue edits onto an open session.
+ *
+ * Deliberately not atomic, and says so on the tool: operations run in order
+ * and each records its own outcome. Rolling back a partially-applied batch
+ * would mean undoing operations the caller may have wanted kept, so the
+ * choice is left to them — `{ kind: 'undo' }` is an operation.
+ */
+export async function ifcEditApply(client: DaluxClient, args: IfcEditApplyInput) {
+  const session = await getEditSession(client, args.editId);
+  const max = args.maxElements ?? DEFAULT_MAX_ELEMENTS;
+
+  const results: OperationResult[] = [];
+  for (const operation of args.operations) {
+    try {
+      results.push(await applyOperation(session, operation as EditOperation, max));
+    } catch (err) {
+      results.push({
+        kind: operation.kind,
+        ok: false,
+        summary: `${operation.kind} failed.`,
+        error: err instanceof Error ? err.message : String(err),
+      });
+    }
+  }
+
+  const failed = results.filter((r) => !r.ok).length;
+  return {
+    editId: session.id,
+    applied: results.length - failed,
+    failed,
+    results,
+    pendingOperations: session.ops.length,
+    note: failed > 0 ? 'Operations before a failure stayed queued — nothing was rolled back.' : undefined,
+  };
+}
+
+export const ifcEditReviewInput = z.object({
+  editId: z.string().describe('The editId from ifc_edit_start.'),
+  maxMutations: z.number().int().min(1).max(500).optional().describe('Cap on raw mutation entries listed (default 50). Counts are always whole.'),
+});
+export type IfcEditReviewInput = z.infer<typeof ifcEditReviewInput>;
+
+/** What is queued on a session, in caller operations and in ifc-lite mutations. */
+export async function ifcEditReview(client: DaluxClient, args: IfcEditReviewInput) {
+  const session = await getEditSession(client, args.editId);
+  const mutations = pendingMutations(session);
+  const limit = args.maxMutations ?? 50;
+
+  return {
+    editId: session.id,
+    fileName: session.fileName,
+    operations: session.ops,
+    pendingMutations: mutations.length,
+    mutations: mutations.slice(0, limit),
+    truncated: mutations.length > limit,
+    lastSave: session.lastSave,
+    note:
+      `One operation produces several mutations — the change plus its ${PROVENANCE_PSET} rows. Undo counts in ` +
+      'operations (ifc_edit_apply with kind "undo"), not in mutations.',
+  };
+}
+
+export const ifcEditSaveInput = z.object({
+  editId: z.string().describe('The editId from ifc_edit_start.'),
+  fileName: z.string().optional().describe('Base name for the written file. Defaults to the source name; "-AI-edited-<timestamp>.ifc" is always appended.'),
+  confirmed: z
+    .boolean()
+    .optional()
+    .describe(
+      'Leave unset to preview exactly what would be written without writing it. Only set true after showing the ' +
+        'user the operation list from the preview and getting their explicit agreement to write that set of changes.',
+    ),
+  discard: z.boolean().optional().describe('Drop the session and everything queued on it instead of saving. Requires confirmed: true.'),
+});
+export type IfcEditSaveInput = z.infer<typeof ifcEditSaveInput>;
+
+/**
+ * Write the edited model to a new local .ifc, or discard the session.
+ *
+ * Confirmation-gated in the same shape as report_feedback: an unconfirmed
+ * call only describes what would happen. Writing a model whose provenance
+ * says "AI" is a thing somebody will hand to a contractor, so the user should
+ * have seen the change list before it exists as a file.
+ *
+ * The result is a local file plus a download link. It is NOT uploaded to
+ * Dalux — this server does not write to Dalux project data.
+ */
+export async function ifcEditSave(client: DaluxClient, args: IfcEditSaveInput) {
+  const session = await getEditSession(client, args.editId);
+
+  if (args.discard) {
+    if (!args.confirmed) {
+      return {
+        discarded: false,
+        editId: session.id,
+        operations: session.ops,
+        message: `Not discarded. This would drop ${session.ops.length} queued operation(s), unrecoverably. Confirm with the user, then call again with confirmed: true.`,
+      };
+    }
+    discardEditSession(session.id);
+    return { discarded: true, editId: session.id, droppedOperations: session.ops.length };
+  }
+
+  if (session.ops.length === 0) {
+    return { saved: false, editId: session.id, message: 'Nothing queued on this session — no file written.' };
+  }
+
+  if (!args.confirmed) {
+    return {
+      saved: false,
+      editId: session.id,
+      preview: {
+        sourceFile: session.fileName,
+        operations: session.ops,
+        pendingMutations: pendingMutations(session).length,
+        marking: { newPsetPrefix: AI_PSET_PREFIX, provenancePset: PROVENANCE_PSET },
+      },
+      message:
+        'Not written yet. Show the user this operation list and confirm it is what they want written, then call ' +
+        'again with confirmed: true. The output is a new local file — the model in Dalux is not modified either way.',
+    };
+  }
+
+  const saved = await saveEditSession(session, args.fileName);
+  const downloadUrl = await createDownloadLink(saved.filePath, path.basename(saved.filePath));
+
+  return {
+    saved: true,
+    editId: session.id,
+    fileName: path.basename(saved.filePath),
+    schema: saved.schema,
+    bytes: saved.bytes,
+    localPath: saved.filePath,
+    downloadUrl,
+    operations: session.ops,
+    note:
+      'Written locally only — nothing was uploaded to Dalux. The link is single-use, valid ~15 minutes, and only ' +
+      `reachable from the machine this server runs on. Edits are marked: new psets are "${AI_PSET_PREFIX}…" and ` +
+      `every change is recorded in "${PROVENANCE_PSET}" on the element. The session stays open, so you can keep editing and save again.`,
+  };
 }

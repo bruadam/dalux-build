@@ -34,7 +34,9 @@ This server wraps the Dalux Build REST API (construction project management: fil
 inspections, work packages, users, companies, test/quality plans) as **read-only** tools for an LLM. Every
 structured-data tool wraps a \`list*\`/\`get*\` Dalux endpoint — nothing here creates, updates, or deletes anything
 in Dalux. \`download_file\`, \`search_file_content\`, \`render_pdf_page\`, and the \`*_file_area_index\` tools do write
-to a local cache directory, but that's a disposable local side effect, not a mutation of project data.
+to a local cache directory, but that's a disposable local side effect, not a mutation of project data. The
+\`ifc_edit_*\` tools are the one group that edits *model content* — and they do it on a private in-process copy,
+saving a **new local .ifc** the user uploads to Dalux themselves if they want to; see \`models_and_quality\`.
 
 ## Read this first, then drill in
 
@@ -45,7 +47,7 @@ Call \`get_skill\` again with one of these topics for the full doc on that area 
 | \`tasks\` | \`list_project_tasks\` filtering — OData \`$filter\`/\`$select\`/\`$orderby\` syntax, field paths, examples |
 | \`documents\` | \`search_file_content\`, \`render_pdf_page\`, cross-document search (\`build_file_area_index\`/\`search_file_area\`), and docs-repo search over GitHub (\`search_docs\`/\`list_docs_indexes\`) |
 | \`files\` | Navigating file areas/folders/files, path-based lookups, projects, directory (users/companies) |
-| \`models_and_quality\` | IFC model tools, the 3D viewer, forms, quality plans, scheduling |
+| \`models_and_quality\` | IFC model tools (incl. \`ifc_diff\` and the \`ifc_edit_*\` group), the 3D viewer, forms, quality plans, scheduling |
 
 ## Principles that apply everywhere
 
@@ -330,6 +332,74 @@ const MODELS_AND_QUALITY: SkillDoc = {
 - \`ifc_clash_start\` / \`ifc_clash_result\` — clash detection is asynchronous: \`ifc_clash_start\` kicks off a job
   and returns a job handle, \`ifc_clash_result\` polls it (call again if not yet finished) and returns a summary
   plus the deepest clashes once done.
+- \`ifc_volumes_start\` / \`ifc_volumes_result\` — geometric volume extraction, also asynchronous.
+
+## \`ifc_diff\` — comparing two revisions
+
+Compares two IFC files from the same project (or an open edit session against its source), reporting per-type
+count deltas, added/removed GlobalIds, and — with \`propertyChanges: true\` — which properties actually changed
+on each common element.
+
+Two things decide whether the answer is useful:
+
+- **\`byContent\`.** Off by default. Leave it off when the two files are genuine revisions of one model, where
+  GlobalIds carry across. Turn it on when they may have been re-exported from scratch: a re-GUID otherwise
+  reads as every element deleted and an equal number added, which is technically true and completely useless.
+  It costs a full content-fingerprint pass.
+- **Scope is data only.** Attributes, property sets, quantity sets and IFC type. There is no geometry
+  fingerprint on this path, so an element that was *moved* or *reshaped* but keeps all its data reads as
+  unchanged. Say so when reporting a clean diff on a model somebody expects to have changed geometrically —
+  don't let "no differences" be read as "nothing moved".
+
+## \`ifc_edit_*\` — editing property sets and properties
+
+\`ifc_edit_start\` → \`ifc_edit_apply\` → \`ifc_edit_review\` → \`ifc_edit_save\`.
+
+**Nothing is written to Dalux, ever.** An edit session is a private in-process copy of the downloaded file;
+\`ifc_edit_save\` writes a **new local .ifc** plus a single-use download link. Putting a revision back into the
+project is a manual step the user takes in Dalux. Say this plainly when a user asks you to "update the model" —
+they may be expecting the project file to change, and it will not.
+
+### Everything written is marked as AI-authored
+
+Not a setting, not a flag — it always happens:
+
+- a property set this server **creates** is named \`AI_<name>\` (so an unprefixed pset is always the authoring
+  tool's);
+- **every** change, including an edit to an existing unprefixed pset and every deletion, is recorded on the same
+  element in an \`AI_Provenance\` pset: one property per changed path, carrying the old value, the new value and
+  an ISO timestamp, plus \`ModifiedBy\` / \`ModifiedAt\`.
+
+\`set_property\` takes an optional \`markValue\` that additionally prefixes the *value* with \`AI: \`. It applies to
+strings only and is **refused, with a reason in the result, on numbers and booleans** — prefixing \`0.18\` into
+\`"AI: 0.18"\` turns a real into a label, and \`ifc_schedule\` would then silently drop it from every total. Don't
+reach for it as the default way to make an edit visible; the pset prefix and the provenance pset already do that
+without corrupting the data.
+
+### Operations
+
+\`ifc_edit_apply\` takes a list, applied in order, **not atomic** — a failure is reported per operation and
+earlier ones stay queued.
+
+| kind | does |
+| --- | --- |
+| \`set_property\` | set or create \`pset.property\`. Element already carries that pset → edited in place; doesn't → created as \`AI_<pset>\` |
+| \`delete_property\` | remove one property from a pset (elements not carrying it are reported as skipped, not failed) |
+| \`delete_pset\` | remove a whole property set; the names it held are captured into the provenance record first |
+| \`set_attribute\` | Name / Description / ObjectType / Tag |
+| \`undo\` | revert the last N **operations** — not the last N mutations, which would strip provenance off edits that stayed |
+
+Target elements with \`select\`: either explicit \`globalIds\`, or a \`type\` optionally narrowed by
+\`where: { pset, property, op, value }\`. **Run \`ifc_discover_properties\` first** — pset names are
+exporter-specific ("Tekla Quantity", "i-Theses TSB_PlateBase") and a wrong one silently matches nothing. A
+selector matching more than \`maxElements\` (default 500) is refused *with its count*, so widen deliberately.
+
+### Saving
+
+\`ifc_edit_save\` is confirmation-gated like \`report_feedback\`: call it without \`confirmed\` first, show the user
+the returned operation list, and only call again with \`confirmed: true\` once they have agreed to that exact set
+of changes. \`discard: true\` (also confirmed) throws the session away instead. Sessions are dropped after 2h
+idle or on restart, and queued edits are **not** persisted.
 
 ## \`view_model_3d\` — interactive 3D viewer
 
@@ -353,8 +423,9 @@ this deployment, not a bug.
 - \`list_work_packages\` — work packages on a project.
 - \`list_version_sets\` — version sets (grouped file/model revisions) on a project.
 
-All of the above are plain \`list*\`/\`get*\` wrappers — same pagination and error-handling behaviour as every
-other tool on this server (see the \`overview\` topic).
+The forms, quality and scheduling tools are plain \`list*\`/\`get*\` wrappers — same pagination and
+error-handling behaviour as every other tool on this server (see the \`overview\` topic). The IFC tools above are
+not: they download and parse the model locally, and \`ifc_clash_*\` / \`ifc_volumes_*\` are asynchronous jobs.
 `,
 };
 

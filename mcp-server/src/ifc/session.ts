@@ -86,7 +86,7 @@ async function downloadIfc(client: DaluxClient, ref: IfcRef): Promise<string> {
  * path; that is one request against a download, and keeping the check
  * unconditional here means no branch below can forget it.
  */
-async function assertReadable(client: DaluxClient, ref: IfcRef): Promise<void> {
+export async function assertReadable(client: DaluxClient, ref: IfcRef): Promise<void> {
   const result = await client.files.getFile(ref.projectId, ref.fileAreaId, ref.fileId);
   if (result == null || typeof result === 'string') {
     throw new Error(
@@ -110,6 +110,26 @@ function evictIdle(): void {
     if (!oldestKey) break;
     entries.delete(oldestKey);
   }
+}
+
+/** The local .ifc for `ref`, downloading it only if the shared cache has none. Assumes authorization is already checked. */
+async function localIfcPath(client: DaluxClient, ref: IfcRef): Promise<string> {
+  return (await cachedIfcPath(ref.fileId)) ?? (await downloadIfc(client, ref));
+}
+
+/**
+ * Authorize `ref` and return the local path of its .ifc, downloading it if
+ * needed — the file half of `resolveModel` without the resident-model half.
+ *
+ * Exported for the edit path (editSession.ts), which needs the same file and
+ * the same authorization check but must parse its own private copy: the
+ * resident models here are shared process-wide across every credential this
+ * process serves, so queueing a mutation onto one would show another caller's
+ * reads an edit they never made.
+ */
+export async function ensureLocalIfc(client: DaluxClient, ref: IfcRef): Promise<string> {
+  await assertReadable(client, ref);
+  return localIfcPath(client, ref);
 }
 
 export interface ResolvedModel {
@@ -140,7 +160,7 @@ export async function resolveModel(client: DaluxClient, ref: IfcRef): Promise<Re
     };
   }
 
-  const filePath = (await cachedIfcPath(ref.fileId)) ?? (await downloadIfc(client, ref));
+  const filePath = await localIfcPath(client, ref);
   const ifc = await loadIfcLite();
   const model = await ifc.loadIfcModel(filePath, { modelId: ref.fileId });
 

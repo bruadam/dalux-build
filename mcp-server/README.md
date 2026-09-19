@@ -1,6 +1,6 @@
 # dalux-build-mcp
 
-An [MCP](https://modelcontextprotocol.io) server exposing read-only [Dalux Build](https://www.dalux.com/) API access — files, folders, tasks, projects, forms, users, companies, test/inspection plans, work packages, version sets — plus file download, in-document search (PDF/Word/Excel) and cross-document search over a file area, as tools for an LLM (Claude Code, Claude Desktop, Cursor, or your own agent).
+An [MCP](https://modelcontextprotocol.io) server exposing read-only [Dalux Build](https://www.dalux.com/) API access — files, folders, tasks, projects, forms, users, companies, test/inspection plans, work packages, version sets — plus file download, in-document search (PDF/Word/Excel), cross-document search over a file area, and IFC/BIM analysis, comparison and local editing, as tools for an LLM (Claude Code, Claude Desktop, Cursor, or your own agent).
 
 Built on the MCP TypeScript SDK v2 (`@modelcontextprotocol/server`) and the [`dalux-build-api`](../javascript) client.
 
@@ -9,6 +9,8 @@ Built on the MCP TypeScript SDK v2 (`@modelcontextprotocol/server`) and the [`da
 Every structured-data tool wraps `list*`/`get*` Dalux Build API methods only — nothing that creates, updates, or deletes project data. `download_file`, `search_file_content`, `render_pdf_page` and the `*_file_area_index` tools write to (and delete from) a local cache directory, but that's a local, disposable side effect, not a mutation of anything in Dalux.
 
 The one deliberate exception is `report_feedback`, which files a bug/enhancement report as a GitHub issue on this server's own repo — not Dalux. It's confirmation-gated (a call without `confirmed: true` only returns a preview, never posts) and refuses to post anything that looks like it carries Dalux project data or personal data — see [Feedback reporting](#feedback-reporting) below.
+
+The `ifc_edit_*` tools do edit *model content* — property sets, properties, and the Name/Description/ObjectType/Tag attributes — but not in Dalux. An edit session parses a **private in-process copy** of the downloaded file (never the resident model the read tools share), queues changes in memory, and `ifc_edit_save` writes a **new local `.ifc`** returned as a download link. The client's `FileUploadApi` is deliberately not reachable from the tool layer: putting a revision back into a project stays a manual step the user takes in Dalux. See [IFC editing](#ifc-editing-ifc_edit_) below.
 
 ## Install
 
@@ -147,6 +149,10 @@ This is fully additive: deployments that never set `PUBLIC_URL` behave exactly a
 
 **Scheduling**: `list_work_packages`, `list_version_sets`
 
+**IFC / BIM analysis**: `ifc_model_info`, `ifc_discover_properties`, `ifc_property_values`, `ifc_query_elements`, `ifc_schedule`, `ifc_diff`, `ifc_clash_rules_list`, `ifc_clash_rules_save`, `ifc_clash_rules_delete`, `ifc_clash_start`, `ifc_clash_result`, `ifc_volumes_start`, `ifc_volumes_result`
+
+**IFC editing** (local only — see [IFC editing](#ifc-editing-ifc_edit_) below): `ifc_edit_start`, `ifc_edit_apply`, `ifc_edit_review`, `ifc_edit_save`
+
 **3D viewer**: `view_model_3d` (renders an interactive MCP App in supporting hosts — see below; requires `PUBLIC_URL`)
 
 **Feedback**: `report_feedback` (files a bug/enhancement report on this server's own GitHub repo — see [Feedback reporting](#feedback-reporting) below)
@@ -167,7 +173,7 @@ The server bundles its own usage documentation and serves it over MCP, so any co
 | `tasks` | `list_project_tasks` filtering — OData `$filter`/`$select`/`$orderby` syntax, field paths, worked examples |
 | `documents` | `search_file_content`, `render_pdf_page`, cross-document search (`build_file_area_index`/`search_file_area`) |
 | `files` | file areas/folders/files navigation, path-based lookups, projects, directory (users/companies) |
-| `models_and_quality` | IFC model tools, the 3D viewer, forms, quality plans, scheduling |
+| `models_and_quality` | IFC model tools (incl. `ifc_diff` and the `ifc_edit_*` group), the 3D viewer, forms, quality plans, scheduling |
 
 The same five docs are also published as `dalux-build://skill/<topic>` resources (`text/markdown`), for hosts that surface MCP resources directly (Claude Code's resource tools, Claude Desktop's resource picker) rather than relying on the model to call a tool. Both paths read from the same content in `src/tools/skills.ts` — there is only one copy to keep in sync.
 
@@ -275,6 +281,52 @@ Details worth knowing:
 This only works on the **HTTP transport with `PUBLIC_URL` set** (see [OAuth](#oauth-claudeai--chatgpt-custom-connectors) above) — the embed viewer needs a real `https://` URL it can fetch cross-origin, which stdio can't offer. Without `PUBLIC_URL`, the tool still appears in `tools/list` (so its presence doesn't depend on how the server happens to be deployed) but returns a message explaining to use `download_file` instead, rather than erroring.
 
 Mechanics, if you're curious: calling the tool issues a random, in-memory, 15-minute ticket (`src/modelLinks.ts`) bound to the request's Dalux credentials and file, and returns `https://<PUBLIC_URL>/models/<ticket>` as `modelUrl` in `structuredContent`. `GET /models/<ticket>` (handled in `http.ts`, ahead of the localhost Host/Origin checks that guard the main `/mcp` endpoint, since this route carries its own auth and is fetched cross-origin from `embed.ifclite.com` by design) resolves the ticket, downloads (or reuses the cache for) the file, and streams it back with CORS scoped to `https://embed.ifclite.com` and `Range` support. The Dalux API key itself never reaches the browser. Selecting an element in the viewer reports its IFC properties back to the model via `ui/update-model-context`.
+
+### `ifc_diff` (revision comparison)
+
+`ifc_diff` compares two IFC files from the same project — or an open edit session against the file it came from — using [`@ifc-lite/diff`](https://ifclite.dev/docs/guide/model-diff/). It reports per-type count deltas, added/removed GlobalIds, and optionally (`propertyChanges: true`) exactly which properties changed on each element present in both.
+
+Two flags decide whether the answer is useful:
+
+- **`byContent`** (default off). Leave it off for genuine revisions of one model, where GlobalIds carry across. Turn it on when a revision may have been re-exported from scratch — a re-GUID otherwise reads as every element deleted and an equal number added. It costs a full content-fingerprint pass.
+- **Scope is data only**: attributes, property sets, quantity sets, IFC type. There is no geometry fingerprint on this path (that lives behind ifc-lite's WASM mesh pass), so an element that only *moved* or *reshaped* reads as unchanged. The tool says so in its `note`; don't let a clean diff be reported as "nothing moved".
+
+### IFC editing (`ifc_edit_*`)
+
+`ifc_edit_start` → `ifc_edit_apply` → `ifc_edit_review` → `ifc_edit_save`. Built on [`@ifc-lite/mutations`](https://ifclite.dev/docs/guide/mutations/)'s overlay model: the original parse stays read-only and changes materialise on export.
+
+**Nothing reaches Dalux.** The edited model exists only in this process until `ifc_edit_save` writes a new local file. Sessions are isolated per `editId` — deliberately *not* the resident models `src/ifc/session.ts` keeps, which are keyed by fileId and shared by every credential the process serves; queueing a mutation onto one of those would show unrelated callers an edit they never made. Authorization is re-checked against Dalux on every call, so a session cannot outlive the permission it was opened under. Sessions are dropped after 2h idle or on restart, and queued edits are **not** persisted.
+
+#### Everything written is marked as AI-authored
+
+This is not a setting (`src/ifc/aiMarking.ts`):
+
+- a property set the server **creates** is named `AI_<name>`, so an unprefixed pset is always the authoring tool's;
+- **every** change — including an edit to an existing unprefixed pset, and every deletion — is also recorded on the element in an `AI_Provenance` pset: one property per changed path carrying the old value, the new value and an ISO timestamp, plus `ModifiedBy`/`ModifiedAt`.
+
+So a wall whose `FireRating` was changed keeps one unambiguous `Pset_WallCommon.FireRating`, and `AI_Provenance."Pset_WallCommon.FireRating"` reads `AI set "REI 120" (was "REI 60") 2026-09-18T10:22:00Z`.
+
+`set_property` also takes `markValue`, which prefixes the *value* with `AI: `. It applies to strings only and is **refused, with the reason in the result, on numbers and booleans** — `0.18` becoming `"AI: 0.18"` turns a real into a label, and this server's own `ifc_schedule` would then silently drop it from every total. Marking data must not corrupt the data it marks, which is why value-prefixing is the opt-in and the pset/provenance marking is the mandatory part.
+
+#### Operations
+
+`ifc_edit_apply` takes a list applied in order. It is **not atomic**: a failure is reported per operation and earlier ones stay queued.
+
+| kind | does |
+| --- | --- |
+| `set_property` | set or create `pset.property`; edited in place if the element already carries that pset, created as `AI_<pset>` if not |
+| `delete_property` | remove one property (elements not carrying it are reported as *skipped*, not failed) |
+| `delete_pset` | remove a whole property set; the names it held are captured into the provenance record first |
+| `set_attribute` | `Name` / `Description` / `ObjectType` / `Tag` |
+| `undo` | revert the last N **operations** |
+
+Target elements with `select`: explicit `globalIds`, or a `type` narrowed by `where: { pset, property, op, value }`. Run `ifc_discover_properties` first — pset names are exporter-specific and a wrong one silently matches nothing. A selector matching more than `maxElements` (default 500) is refused *with its count*.
+
+Undo counts in operations, not in mutations: one operation queues the change plus its provenance rows, so undoing "1 mutation" would strip the provenance off an edit that stayed. One limitation is surfaced rather than hidden — ifc-lite has no inverse for a pset deletion, and its `mutation_undo` discovers this mid-walk, after partially reverting. `undoOperations` therefore checks the span first and **refuses, having changed nothing**, naming the blocking operation and pointing at the alternatives (re-add the properties, or discard the session).
+
+#### Saving
+
+`ifc_edit_save` is confirmation-gated in the same shape as `report_feedback`: without `confirmed` it only returns the exact operation list that would be baked in. With `confirmed: true` it writes `<name>-AI-edited-<timestamp>.ifc` into the derived-artifact cache and returns a single-use download link. `discard: true` (also confirmed) throws the session away instead. IFC5 models are refused at save: ifc-lite's STEP exporter writes IFC2X3/IFC4/IFC4X3, and exporting an IFC5 model under a schema it wasn't authored in would be a lie about the file.
 
 ### Feedback reporting
 

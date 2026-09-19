@@ -11,11 +11,13 @@ type IfcLite = typeof import('@ifc-lite/mcp');
 type IfcClash = typeof import('@ifc-lite/clash');
 type IfcClashStep = typeof import('@ifc-lite/clash/step');
 type IfcGeometry = typeof import('@ifc-lite/geometry');
+type IfcSdk = typeof import('@ifc-lite/sdk');
 
 let modulePromise: Promise<IfcLite> | null = null;
 let clashModulePromise: Promise<IfcClash> | null = null;
 let clashStepModulePromise: Promise<IfcClashStep> | null = null;
 let geometryModulePromise: Promise<IfcGeometry> | null = null;
+let sdkModulePromise: Promise<IfcSdk> | null = null;
 let consoleRedirected = false;
 
 /**
@@ -77,13 +79,31 @@ export function loadIfcGeometry(): Promise<IfcGeometry> {
 }
 
 /**
- * Build the context ifc-lite tool handlers expect.
+ * The SDK proper (`@ifc-lite/sdk`), for the handful of runtime helpers the
+ * edit path needs — `propertyValueTypeOf` in particular, which classifies a
+ * JS value into the `PropertyValueType` `MutablePropertyView.setProperty`
+ * records. Using the SDK's own classifier rather than a local one keeps the
+ * value types this server writes identical to the ones ifc-lite's own
+ * `entity_set_property` writes.
+ */
+export function loadIfcSdk(): Promise<IfcSdk> {
+  sdkModulePromise ??= import('@ifc-lite/sdk');
+  return sdkModulePromise;
+}
+
+/**
+ * Build the read-only context ifc-lite tool handlers expect.
  *
  * We call `tool.handler()` directly instead of standing up an ifc-lite
  * MCPServer, which means ifc-lite's scope gating never runs — a handler
  * executes whatever `scope` this context carries. The curated tool surface in
- * ../tools/ifc.ts is therefore the only thing keeping entity_delete /
- * model_save / entity_create out of reach. Do not widen it.
+ * ../tools/ifc.ts is therefore the only thing bounding what is reachable.
+ *
+ * Every analysis tool uses this context, and a model opened through
+ * ../ifc/session.ts must only ever be touched through it: those models are
+ * resident process-wide and shared across credentials, so a mutation queued on
+ * one leaks into every other caller's reads. Editing has its own models and
+ * its own context — see `buildEditToolContext`.
  */
 export async function buildToolContext(
   registry: ModelRegistry,
@@ -97,6 +117,37 @@ export async function buildToolContext(
     log: ifc.SILENT_LOGGER,
     signal,
     config: { ...ifc.DEFAULT_CONFIG, readOnly: true },
+  };
+}
+
+/**
+ * The same context with mutation permitted — for edit sessions only.
+ *
+ * `registry` must be an edit session's own private registry (see
+ * ../ifc/editSession.ts), never the shared one `buildToolContext` is handed.
+ * A mutate-capable handler pointed at a resident read model would queue an
+ * edit that every other caller of that fileId then reads back as fact.
+ *
+ * `readOnly: false` is what ifc-lite's own write tools check, and the caller
+ * is trusted here for the same reason the read context is: this server picks
+ * which handlers run, and the edit path only ever reaches `mutation_undo`
+ * through it. Note that ifc-lite's `model_save` / `export_ifc` are
+ * deliberately NOT used — they resolve a caller-supplied output path through
+ * ifc-lite's own allowlist, whereas this server writes only into its own
+ * derived-artifact directory (`saveEditSession`).
+ */
+export async function buildEditToolContext(
+  registry: ModelRegistry,
+  signal: AbortSignal,
+): Promise<ToolContext> {
+  const ifc = await loadIfcLite();
+  return {
+    registry,
+    scope: ifc.FULL_ACCESS,
+    progress: ifc.NOOP_PROGRESS,
+    log: ifc.SILENT_LOGGER,
+    signal,
+    config: { ...ifc.DEFAULT_CONFIG, readOnly: false },
   };
 }
 

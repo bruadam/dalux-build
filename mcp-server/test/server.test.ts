@@ -2,8 +2,8 @@ import { z } from 'zod';
 import { TOOLS, toolResultContent } from '../src/server';
 
 describe('TOOLS registry', () => {
-  it('has 58 tools with unique names', () => {
-    expect(TOOLS).toHaveLength(58);
+  it('has 63 tools with unique names', () => {
+    expect(TOOLS).toHaveLength(63);
     const names = TOOLS.map((t) => t.name);
     expect(new Set(names).size).toBe(names.length);
   });

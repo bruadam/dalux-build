@@ -445,6 +445,63 @@ export const TOOLS = [
     inputSchema: ifc.ifcVolumesResultInput,
     handler: ifc.ifcVolumesResult,
   }),
+  tool({
+    name: 'ifc_diff',
+    description:
+      'Compare two IFC revisions from Dalux — or an open ifc_edit_start session against the file it came from. ' +
+      'Reports per-type count deltas, added/removed GlobalIds, and optionally (propertyChanges) which properties ' +
+      'changed on each common element. Set byContent when the revisions may have been re-exported from scratch ' +
+      'with new GlobalIds, or a re-GUID reads as the whole model deleted and re-added. Data scope only: ' +
+      'attributes, property sets, quantity sets and type — an element that only moved reads as unchanged.',
+    inputSchema: ifc.ifcDiffInput,
+    handler: ifc.ifcDiff,
+  }),
+
+  // IFC editing (see tools/ifc.ts). Read-only with respect to Dalux: edits are
+  // queued on a private in-process copy and ifc_edit_save writes a NEW local
+  // .ifc. Every write is marked AI-authored in the file itself.
+  tool({
+    name: 'ifc_edit_start',
+    description:
+      'Open an in-memory edit session on an IFC from Dalux, so its property sets and properties can be changed, ' +
+      'added or deleted. Nothing in Dalux is modified — ever: edits queue in this server\'s memory and ' +
+      'ifc_edit_save writes a new local file the user uploads themselves if they want to. Every property set this ' +
+      'creates is named "AI_<name>" and every change is also recorded on the element in an "AI_Provenance" pset ' +
+      'with the old value, the new value and a timestamp; that marking is mandatory and cannot be disabled. ' +
+      'Returns an editId for ifc_edit_apply / ifc_edit_review / ifc_edit_save.',
+    inputSchema: ifc.ifcEditStartInput,
+    handler: ifc.ifcEditStart,
+  }),
+  tool({
+    name: 'ifc_edit_apply',
+    description:
+      'Queue edits onto an open session: set_property (creates the pset as "AI_<name>" if the element lacks it, ' +
+      'edits in place if it has it), delete_property, delete_pset, set_attribute, and undo. Target elements by ' +
+      'explicit globalIds or by type narrowed with a property filter — run ifc_discover_properties first, since ' +
+      'pset names are exporter-specific. Operations run in order and are NOT atomic: a failure is reported per ' +
+      'operation and does not roll back earlier ones. Nothing is written to disk or to Dalux until ifc_edit_save.',
+    inputSchema: ifc.ifcEditApplyInput,
+    handler: ifc.ifcEditApply,
+  }),
+  tool({
+    name: 'ifc_edit_review',
+    description:
+      'List what is queued on an edit session — the caller-level operation journal plus the underlying ifc-lite ' +
+      'mutations. Use before ifc_edit_save to show the user exactly what they are about to get.',
+    inputSchema: ifc.ifcEditReviewInput,
+    handler: ifc.ifcEditReview,
+  }),
+  tool({
+    name: 'ifc_edit_save',
+    description:
+      'Write an edit session to a NEW local .ifc (with a single-use download link), or discard the session. ' +
+      'Two-step, like report_feedback: call without confirmed first — nothing is written, you get back the exact ' +
+      'list of operations that would be baked in. Show that to the user, get their explicit agreement, then call ' +
+      'again with confirmed: true. The file is never uploaded to Dalux; the source model there is untouched ' +
+      'either way. Set discard: true (also confirmed) to drop the session and its queued edits instead.',
+    inputSchema: ifc.ifcEditSaveInput,
+    handler: ifc.ifcEditSave,
+  }),
 
   // Feedback — the one tool in this server that mutates something outside a
   // local disposable cache (see feedbackReport.ts). Confirmation-gated: an
@@ -514,9 +571,11 @@ export function buildServer(client: DaluxClient, options: BuildServerOptions = {
     },
     {
       instructions:
-        'Read-only Dalux Build API access. Call get_skill (no arguments) first — before browsing an ' +
-        'unfamiliar project or writing an OData filter for list_project_tasks — for this server\'s own ' +
-        'usage guide and links to deeper topics (tasks/documents/files/models_and_quality).',
+        'Read-only Dalux Build API access — no tool here creates, updates or deletes anything in a Dalux ' +
+        'project. (The ifc_edit_* tools do edit IFC property sets, but only on a private in-process copy, ' +
+        'saved as a new local file the user uploads themselves.) Call get_skill (no arguments) first — ' +
+        'before browsing an unfamiliar project or writing an OData filter for list_project_tasks — for this ' +
+        'server\'s own usage guide and links to deeper topics (tasks/documents/files/models_and_quality).',
     },
   );
 

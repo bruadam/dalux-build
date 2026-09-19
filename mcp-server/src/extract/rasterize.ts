@@ -11,6 +11,19 @@
  * rendering — masks, patterns, meshes — so no custom CanvasFactory needs to
  * be wired in here; only the page's own output canvas is created by hand.
  *
+ * That sharing is also why the canvas module is resolved through pdfjs rather
+ * than from here: @napi-rs/canvas is a NATIVE addon, and a canvas built by one
+ * copy of it is an opaque pointer the other copy cannot read. pdfjs declares
+ * `@napi-rs/canvas: ^0.1.80` as an optionalDependency; this package declared
+ * `^1.0.9`, an incompatible major, so npm installed BOTH — pdfjs resolving
+ * 0.1.80 from the workspace root and this file resolving 1.0.9 from
+ * mcp-server/node_modules. Handing a 1.0.9 canvas to a 0.1.80 renderer
+ * segfaulted the whole process inside `page.render()`, on every PDF, with no
+ * JS error to catch: the MCP server simply died mid-call and the client saw a
+ * hang. Resolving through pdfjs keeps the two on one binding whatever the
+ * install layout hoists, which is the invariant that actually matters — the
+ * version pin below is aligned too, so only one copy is installed at all.
+ *
  * pdfjs-dist's legacy build is ESM-only (pdf.mjs, no CJS entry point), so
  * it's loaded with `createRequire` rather than a static import: Node's own
  * require() has handled synchronous require-of-ESM since 22.12, but both
@@ -26,6 +39,13 @@ import { readFileSync } from 'node:fs';
 import path from 'node:path';
 
 const nodeRequire = createRequire(__filename);
+
+/**
+ * `require` rooted at pdfjs's own package, so `@napi-rs/canvas` resolves to the
+ * copy pdfjs will render with. See the note at the top of this file: the two
+ * must be one native binding or `page.render()` segfaults.
+ */
+const pdfjsRequire = createRequire(nodeRequire.resolve('pdfjs-dist/package.json'));
 
 // pdfjs joins this with a font filename by plain string concatenation, so it
 // needs the trailing separator; without it, non-embedded standard fonts (a
@@ -55,7 +75,21 @@ function loadPdfjs(): PdfjsModule {
 
 let canvasLib: CanvasModule | undefined;
 function loadCanvas(): CanvasModule {
-  canvasLib ??= nodeRequire('@napi-rs/canvas') as CanvasModule;
+  if (canvasLib) return canvasLib;
+  // By specifier first: that is what a test's module mock intercepts, and in a
+  // correctly-deduplicated tree it already resolves to pdfjs's copy. The
+  // pdfjs-rooted resolution is the guard for a tree where it does not.
+  const own = nodeRequire('@napi-rs/canvas') as CanvasModule;
+  let resolved: CanvasModule = own;
+  try {
+    const ownPath = nodeRequire.resolve('@napi-rs/canvas');
+    const pdfjsPath = pdfjsRequire.resolve('@napi-rs/canvas');
+    if (pdfjsPath !== ownPath) resolved = nodeRequire(pdfjsPath) as CanvasModule;
+  } catch {
+    // pdfjs's optional native dep is absent (it is optional); `own` is all
+    // there is, and pdfjs will fall back to whatever it can find too.
+  }
+  canvasLib = resolved;
   return canvasLib;
 }
 

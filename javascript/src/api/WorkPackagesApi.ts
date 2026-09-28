@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { ApiClient } from '../apiClient';
+import type { DaluxHttpClient } from '../http/client';
 import { convertToModel } from '../models/convert';
 import { WorkPackagesListResponseSchema } from '../models/workPackages';
 
@@ -7,9 +7,9 @@ import { WorkPackagesListResponseSchema } from '../models/workPackages';
  * API methods for work packages on a project.
  */
 export class WorkPackagesApi {
-  private _client: ApiClient;
+  private _client: DaluxHttpClient;
 
-  constructor(apiClient: ApiClient) {
+  constructor(apiClient: DaluxHttpClient) {
     this._client = apiClient;
   }
 

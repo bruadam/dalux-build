@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { ApiClient } from '../apiClient';
+import type { DaluxHttpClient } from '../http/client';
 import { convertToModel } from '../models/convert';
 import { VersionSetsListResponseSchema, VersionSetResponseSchema } from '../models/versionSets';
 import { FilesListResponseSchema } from '../models/files';
@@ -8,9 +8,9 @@ import { FilesListResponseSchema } from '../models/files';
  * API methods for version sets.
  */
 export class VersionSetsApi {
-  private _client: ApiClient;
+  private _client: DaluxHttpClient;
 
-  constructor(apiClient: ApiClient) {
+  constructor(apiClient: DaluxHttpClient) {
     this._client = apiClient;
   }
 

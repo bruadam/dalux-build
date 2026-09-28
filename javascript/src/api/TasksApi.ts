@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { ApiClient } from '../apiClient';
+import type { DaluxHttpClient } from '../http/client';
 import { convertToModel, convertToModelList } from '../models/convert';
 import { paginate } from '../utils/pagination';
 import {
@@ -33,11 +33,11 @@ function normalizeTaskParams(params: Record<string, unknown> = {}): Record<strin
  * API methods for tasks, approvals, safety issues, observations and good practices.
  */
 export class TasksApi {
-  private _client: ApiClient;
+  private _client: DaluxHttpClient;
 
   static normalizeTaskParams = normalizeTaskParams;
 
-  constructor(apiClient: ApiClient) {
+  constructor(apiClient: DaluxHttpClient) {
     this._client = apiClient;
   }
 

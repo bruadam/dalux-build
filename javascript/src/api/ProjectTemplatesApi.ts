@@ -1,14 +1,14 @@
 import { z } from 'zod';
-import { ApiClient } from '../apiClient';
+import type { DaluxHttpClient } from '../http/client';
 import { ProjectTemplateSchema } from '../models/projectTemplates';
 
 /**
  * API methods for project templates.
  */
 export class ProjectTemplatesApi {
-  private _client: ApiClient;
+  private _client: DaluxHttpClient;
 
-  constructor(apiClient: ApiClient) {
+  constructor(apiClient: DaluxHttpClient) {
     this._client = apiClient;
   }
 

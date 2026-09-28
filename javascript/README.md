@@ -202,6 +202,58 @@ const result = await dalux.fileUpload.finishUpload(
 console.log("New file ID:", result.fileId);
 ```
 
+## Browser and plugin hosts (`/web`)
+
+When the API key legitimately lives where the code runs — a desktop app, an extension, a plugin
+host that already proxies Dalux — `dalux-build-api/web` gives you every endpoint group over a
+`fetch` you supply:
+
+```ts
+import { createWebClient } from "dalux-build-api/web";
+
+const dalux = createWebClient({
+  baseUrl: "https://node1.field.dalux.com/service/api",
+  apiKey,
+  fetch: ctx.fetch,                      // the host's own fetch
+  defaultParams: { daluxNode: "node2" }, // base-origin requests only
+});
+
+const sets = await dalux.versionSets.getVersionSets(projectId);
+```
+
+`fetch` is required and never falls back to `globalThis.fetch`. A sandboxed host hands its own
+fetch down because that wrapper is where the outbound-host allow-list, the same-origin relay for
+an API that sends no CORS headers, redirect refusal and credential omission are enforced; silently
+using the global would take all of that off without the caller noticing. `defaultParams` are added
+only to requests on the configured base URL, and never override a parameter the caller or the URL
+already set — a `downloadLink` can carry a signature computed over its query string.
+
+This entry reaches no Axios, no `fs`/`path`/`readline`, no `process.env` — enforced by a test over
+the module graph, not by a build flag. The one omission is `FilesApi`: its bulk-download and
+interactive-selection helpers stream to disk and read stdin. Its pure HTTP reads, including
+`downloadFileBytes`, are on `FilesReadApi` and exposed as `dalux.files`.
+
+### Bringing your own HTTP client
+
+If your host already has a Dalux client — with its own relay, retries, logging or pagination rules
+— implement `DaluxHttpClient` over it and keep all of that while still getting the endpoint
+catalogue and its zod models:
+
+```ts
+import { createWebClientFrom, type DaluxHttpClient } from "dalux-build-api/web";
+
+const http: DaluxHttpClient = {
+  configuration: { baseUrl, apiKey },
+  get: (path, params, config) => host.get(path, params, config?.signal),
+  post: (path, body, params) => host.post(path, body, params),
+  patch: (path, body, params) => host.patch(path, body, params),
+  delete: (path, params) => host.delete(path, params),
+  binary: async (url, config) => ({ bytes: await host.getBinary(url, config?.signal) }),
+};
+
+const dalux = createWebClientFrom(http);
+```
+
 ## Authentication
 
 Every request automatically includes the `X-API-KEY` header with the API key supplied to `createClient`. No additional configuration is required.

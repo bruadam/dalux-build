@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { ApiClient } from '../apiClient';
+import type { DaluxHttpClient } from '../http/client';
 import { paginate } from '../utils/pagination';
 import { findByField } from '../utils/search';
 import { validateProjectId, validateFileAreaId } from '../utils/validation';
@@ -34,9 +34,9 @@ export interface FolderTreeNode {
  * API methods for folders within a file area.
  */
 export class FoldersApi {
-  private _client: ApiClient;
+  private _client: DaluxHttpClient;
 
-  constructor(apiClient: ApiClient) {
+  constructor(apiClient: DaluxHttpClient) {
     this._client = apiClient;
   }
 

@@ -1,12 +1,12 @@
-import { ApiClient } from '../apiClient';
+import type { DaluxHttpClient } from '../http/client';
 
 /**
  * API methods for chunked file uploads.
  */
 export class FileUploadApi {
-  private _client: ApiClient;
+  private _client: DaluxHttpClient;
 
-  constructor(apiClient: ApiClient) {
+  constructor(apiClient: DaluxHttpClient) {
     this._client = apiClient;
   }
 

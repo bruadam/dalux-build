@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { ApiClient } from '../apiClient';
+import type { DaluxHttpClient } from '../http/client';
 import { findByField } from '../utils/search';
 import { convertToModel } from '../models/convert';
 import { FileAreaSchema, FileAreasListResponseSchema } from '../models/fileAreas';
@@ -8,9 +8,9 @@ import { FileAreaSchema, FileAreasListResponseSchema } from '../models/fileAreas
  * API methods for file areas on a project.
  */
 export class FileAreasApi {
-  private _client: ApiClient;
+  private _client: DaluxHttpClient;
 
-  constructor(apiClient: ApiClient) {
+  constructor(apiClient: DaluxHttpClient) {
     this._client = apiClient;
   }
 

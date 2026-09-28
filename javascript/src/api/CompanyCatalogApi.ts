@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { ApiClient } from '../apiClient';
+import type { DaluxHttpClient } from '../http/client';
 import { findByField } from '../utils/search';
 import { convertToModel } from '../models/convert';
 import { CompaniesListResponseSchema, CompanyResponseSchema } from '../models/companies';
@@ -11,9 +11,9 @@ type CompanyResponse = z.infer<typeof CompanyResponseSchema>;
  * API methods for the company catalog.
  */
 export class CompanyCatalogApi {
-  private _client: ApiClient;
+  private _client: DaluxHttpClient;
 
-  constructor(apiClient: ApiClient) {
+  constructor(apiClient: DaluxHttpClient) {
     this._client = apiClient;
   }
 

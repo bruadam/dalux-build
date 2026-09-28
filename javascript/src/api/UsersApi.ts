@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { ApiClient } from '../apiClient';
+import type { DaluxHttpClient } from '../http/client';
 import { convertToModel } from '../models/convert';
 import { UserResponseSchema, UsersListResponseSchema } from '../models/users';
 
@@ -10,9 +10,9 @@ type UsersListResponse = z.infer<typeof UsersListResponseSchema>;
  * API methods for users.
  */
 export class UsersApi {
-  private _client: ApiClient;
+  private _client: DaluxHttpClient;
 
-  constructor(apiClient: ApiClient) {
+  constructor(apiClient: DaluxHttpClient) {
     this._client = apiClient;
   }
 

@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { ApiClient } from '../apiClient';
+import type { DaluxHttpClient } from '../http/client';
 import { convertToModel } from '../models/convert';
 import { CompaniesListResponseSchema, CompanyResponseSchema } from '../models/companies';
 
@@ -7,9 +7,9 @@ import { CompaniesListResponseSchema, CompanyResponseSchema } from '../models/co
  * API methods for managing companies on a project.
  */
 export class CompaniesApi {
-  private _client: ApiClient;
+  private _client: DaluxHttpClient;
 
-  constructor(apiClient: ApiClient) {
+  constructor(apiClient: DaluxHttpClient) {
     this._client = apiClient;
   }
 

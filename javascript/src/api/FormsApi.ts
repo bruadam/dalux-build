@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { ApiClient } from '../apiClient';
+import type { DaluxHttpClient } from '../http/client';
 import { convertToModel } from '../models/convert';
 import { FormsListResponseSchema, FormResponseSchema } from '../models/forms';
 
@@ -7,9 +7,9 @@ import { FormsListResponseSchema, FormResponseSchema } from '../models/forms';
  * API methods for forms on a project.
  */
 export class FormsApi {
-  private _client: ApiClient;
+  private _client: DaluxHttpClient;
 
-  constructor(apiClient: ApiClient) {
+  constructor(apiClient: DaluxHttpClient) {
     this._client = apiClient;
   }
 

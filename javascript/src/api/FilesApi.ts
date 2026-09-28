@@ -1,41 +1,23 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import * as readline from 'readline';
+// Node-only, and deliberately still here: `downloadFileFromLink` STREAMS to
+// disk, and the observed models run to hundreds of megabytes — buffering one
+// through `downloadFileBytes` to save it would be a memory cliff. Everything
+// that does not need a stream now goes through the transport instead, which
+// is what let `FilesReadApi` become browser-safe.
 import axios from 'axios';
 import { z } from 'zod';
-import { ApiClient } from '../apiClient';
+import { FilesReadApi, unwrapFile, type FileData, type MaybeWrappedFile } from './FilesReadApi';
 import { findByField } from '../utils/search';
 import { resolveFolderIdFromNamedPath, ResolvedFolderPath } from '../utils/pathResolver';
 import { validateProjectId, validateFileAreaId, validateFolderId } from '../utils/validation';
 import { convertToModel, convertToModelList } from '../models/convert';
-import { FileSchema, FileResponseSchema, FilesListResponseSchema } from '../models/files';
-
-type FileData = z.infer<typeof FileSchema>;
-
-/**
- * Some call sites defensively unwrap a `{ data: FileData }` wrapper before
- * reading fields (matching the original JS's dynamic duck-typing across both
- * wrapped and bare item shapes). `getAllFiles`/`getFile` already return flat,
- * unwrapped items, so `.data` is normally absent here, but the shape is kept
- * for parity with the original loosely-typed JS.
- */
-type MaybeWrappedFile = FileData & { data?: FileData };
-
-/** Unwraps a possible `{ data: FileData }` wrapper into a loosely-typed record,
- * mirroring the original `f.data || f` idiom (also tolerates ad hoc / legacy
- * fields like `file_name` or `id` that aren't part of the FileSchema). */
-function unwrapFile(f: MaybeWrappedFile): Record<string, unknown> {
-  return (f.data || f) as unknown as Record<string, unknown>;
-}
+import { FileSchema, FileResponseSchema } from '../models/files';
+import { ApiError } from '../utils/errors';
 
 type FileWithDownload = FileData & { downloadedFilePath?: string };
 type FileResponseWithDownload = z.infer<typeof FileResponseSchema> & { downloadedFilePath?: string };
-
-interface FilesPageResponse {
-  items?: unknown[];
-  metadata?: { totalRemainingItems?: number | null };
-  links?: { rel: string; href: string }[];
-}
 
 interface FileTreeNode {
   id: string | null;
@@ -91,129 +73,13 @@ type DownloadResult = { fileName: string; downloadedFilePath: string };
 
 /**
  * API methods for files within a file area.
+ *
+ * NODE ONLY — it imports `fs`, `path`, `readline` and `axios` for its
+ * bulk-download and interactive-selection helpers. The pure HTTP reads live
+ * on {@link FilesReadApi}, which this extends, so a browser or plugin host
+ * gets those without any of this.
  */
-export class FilesApi {
-  private readonly _client: ApiClient;
-
-  constructor(apiClient: ApiClient) {
-    this._client = apiClient;
-  }
-
-  /**
-   * Browse all files on the given project and file area.
-   * GET /6.1/projects/{projectId}/file_areas/{fileAreaId}/files
-   * params - Optional documented params such as includeProperties. The files endpoint does not support OData $filter.
-   */
-  async listFiles(
-    projectId: string,
-    fileAreaId: string,
-    params: Record<string, unknown> = {},
-  ): Promise<z.infer<typeof FilesListResponseSchema>> {
-    const response = await this._client.get(
-      `/6.1/projects/${projectId}/file_areas/${fileAreaId}/files`,
-      params,
-    );
-    return convertToModel(
-      response,
-      FilesListResponseSchema,
-      'FilesListResponse',
-    ) as z.infer<typeof FilesListResponseSchema>;
-  }
-
-  /**
-   * Retrieve all files by following bookmark pagination (metadata.totalRemainingItems).
-   */
-  async getAllFiles(
-    projectId: string,
-    fileAreaId: string,
-    params: Record<string, unknown> = {},
-    verbose = false,
-  ): Promise<FileData[]> {
-    validateProjectId(projectId);
-    validateFileAreaId(fileAreaId);
-    const allItems: unknown[] = [];
-    let currentParams: Record<string, unknown> = { ...params };
-    let hasNextPage = true;
-    const urlPath = `/6.1/projects/${projectId}/file_areas/${fileAreaId}/files`;
-
-    while (hasNextPage) {
-      const response = await this._client.get<FilesPageResponse>(urlPath, currentParams);
-      const items = response && response.items;
-      if (items && items.length) {
-        allItems.push(...items);
-      }
-      const remaining = ((response && response.metadata) || {}).totalRemainingItems ?? 0;
-      if (verbose) {
-        console.log(`Retrieved ${allItems.length} files so far, ${remaining} remaining...`);
-      }
-      if (!items || !items.length || remaining === 0) {
-        hasNextPage = false;
-      } else {
-        const nextLink = (response.links || []).find((l) => l.rel === 'nextPage');
-        if (nextLink) {
-          const bookmark = new URL(nextLink.href).searchParams.get('bookmark');
-          currentParams = { ...params, bookmark };
-        } else {
-          hasNextPage = false;
-        }
-      }
-    }
-    if (verbose) {
-      console.log(`Done. Total files retrieved: ${allItems.length}`);
-    }
-    return convertToModelList(allItems, FileSchema, 'File');
-  }
-
-  /**
-   * All files in a folder.
-   *
-   * Supports two call styles matching the Python client:
-   * - `getAllFilesInFolder(projectId, fileAreaId, folderId, params?, verbose?)` — explicit IDs
-   * - `getAllFilesInFolder(projectId, fileAreaIdOrPath, null, params?, verbose?)` — full path
-   *   (e.g. ``"Files/4_Design/C07_Geometry"``)
-   *
-   * fileAreaIdOrPath - File area ID, OR a full path starting with the file area name.
-   * folderId - Folder ID. When null, fileAreaIdOrPath is treated as a path.
-   */
-  async getAllFilesInFolder(
-    projectId: string,
-    fileAreaIdOrPath: string,
-    folderId: string | null = null,
-    params: Record<string, unknown> = {},
-    verbose = false,
-  ): Promise<FileData[]> {
-    validateProjectId(projectId);
-
-    let fileAreaId: string;
-    let resolvedFolderId: string;
-
-    if (folderId == null) {
-      const resolved = await resolveFolderIdFromNamedPath(
-        this._client, projectId, fileAreaIdOrPath, { verbose },
-      );
-      if (!resolved.fileAreaId || !resolved.folderId) {
-        if (verbose) console.log(`Could not resolve folder path: ${fileAreaIdOrPath}`);
-        return [];
-      }
-      fileAreaId = resolved.fileAreaId;
-      resolvedFolderId = resolved.folderId;
-    } else {
-      fileAreaId = fileAreaIdOrPath;
-      resolvedFolderId = folderId;
-      validateFileAreaId(fileAreaId);
-      validateFolderId(resolvedFolderId);
-    }
-
-    const allFiles = await this.getAllFiles(projectId, fileAreaId, params, verbose);
-    const filtered = allFiles.filter((f) => {
-      const data = unwrapFile(f);
-      return data.folderId === resolvedFolderId;
-    });
-    if (verbose) {
-      console.log(`Files matching folder '${resolvedFolderId}': ${filtered.length}`);
-    }
-    return filtered;
-  }
+export class FilesApi extends FilesReadApi {
 
   /**
    * Download a file from a direct download URL using X-API-KEY (same as Python client).
@@ -222,6 +88,12 @@ export class FilesApi {
    */
   async downloadFileFromLink(downloadLink: string, fileName: string, savePath?: string): Promise<string> {
     const apiKey = this._client.configuration.apiKey;
+    if (!apiKey) {
+      // Only reachable with a hand-built client that left `apiKey` out; this
+      // method streams the download itself rather than going through the
+      // client, so it cannot borrow the transport's own authentication.
+      throw new ApiError('downloadFileFromLink requires an apiKey on the client configuration');
+    }
     const dir = savePath || '.';
     await fs.promises.mkdir(dir, { recursive: true });
     const filePath = path.join(dir, fileName);
@@ -250,19 +122,10 @@ export class FilesApi {
    * (e.g. as an HTTP response body) rather than save it to a local filesystem.
    */
   async downloadFileBuffer(downloadLink: string): Promise<{ buffer: Buffer; contentType: string | undefined }> {
-    const apiKey = this._client.configuration.apiKey;
-    const response = await axios.get(downloadLink, {
-      headers: { 'X-API-KEY': apiKey },
-      responseType: 'arraybuffer',
-      validateStatus: () => true,
-    });
-    if (response.status !== 200) {
-      throw new Error(`Failed to download file. Status code: ${response.status}`);
-    }
-    return {
-      buffer: Buffer.from(response.data),
-      contentType: response.headers['content-type'] as string | undefined,
-    };
+    // Node convenience over the transport-level `downloadFileBytes`, so
+    // there is one place that knows how a download is authenticated.
+    const { bytes, contentType } = await this.downloadFileBytes(downloadLink);
+    return { buffer: Buffer.from(bytes), contentType };
   }
 
   /**
@@ -775,25 +638,5 @@ export class FilesApi {
 
     console.log(`\n  Done. ${selectedIds.length} file(s) selected.`);
     return selectedIds;
-  }
-
-  /**
-   * Retrieve properties mapping for a specific file.
-   * GET /1.0/projects/{projectId}/file_areas/{fileAreaId}/files/{fileId}/properties/1.0/mappings
-   */
-  getFilePropertiesMapping(projectId: string, fileAreaId: string, fileId: string): Promise<unknown> {
-    return this._client.get(
-      `/1.0/projects/${projectId}/file_areas/${fileAreaId}/files/${fileId}/properties/1.0/mappings`,
-    );
-  }
-
-  /**
-   * Retrieve valid property values for a specific file property mapping.
-   * GET /1.0/projects/{projectId}/file_areas/{fileAreaId}/files/properties/1.0/mappings/{filePropertyId}/values
-   */
-  getFilePropertyMappingValues(projectId: string, fileAreaId: string, filePropertyId: string): Promise<unknown> {
-    return this._client.get(
-      `/1.0/projects/${projectId}/file_areas/${fileAreaId}/files/properties/1.0/mappings/${filePropertyId}/values`,
-    );
   }
 }

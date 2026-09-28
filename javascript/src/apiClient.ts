@@ -1,6 +1,8 @@
-import axios, { AxiosError, AxiosInstance, AxiosRequestConfig, AxiosResponse } from 'axios';
+import axios, { AxiosError, AxiosInstance, AxiosResponse } from 'axios';
 import { NotFoundError, AuthenticationError, RateLimitError, ApiError } from './utils/errors';
 import { Configuration } from './configuration';
+import type { DaluxHttpClient } from './http/client';
+import type { DaluxBinaryResponse, DaluxRequestConfig } from './http/transport';
 
 // Load .env file when dotenv is available (optional peer dep)
 try {
@@ -16,7 +18,7 @@ try {
  * When `configuration` is omitted the client reads `DALUX_BASE_URL` and
  * `DALUX_API_KEY` from the environment, matching the Python client behaviour.
  */
-export class ApiClient {
+export class ApiClient implements DaluxHttpClient {
   readonly configuration: Configuration;
   /** Not TS-`private` (unlike the class's other internals) because tests inject axios-mock-adapter via `client._axios`, matching the original JS's convention-only privacy. */
   readonly _axios: AxiosInstance;
@@ -85,7 +87,7 @@ export class ApiClient {
   async get<T = unknown>(
     path: string,
     params: Record<string, unknown> = {},
-    config: AxiosRequestConfig = {},
+    config: DaluxRequestConfig = {},
   ): Promise<T> {
     try {
       const response = await this._axios.get(path, { params, ...config });
@@ -102,7 +104,7 @@ export class ApiClient {
     path: string,
     body: unknown = {},
     params: Record<string, unknown> = {},
-    config: AxiosRequestConfig = {},
+    config: DaluxRequestConfig = {},
   ): Promise<T> {
     try {
       const response = await this._axios.post(path, body, { params, ...config });
@@ -126,6 +128,36 @@ export class ApiClient {
     } catch (err) {
       this._handleAxiosError(err as AxiosError, path);
     }
+  }
+
+  /**
+   * Raw bytes from an absolute URL — a Dalux `downloadLink`.
+   *
+   * Part of {@link DaluxHttpClient} so an API class can fetch file content
+   * without reaching for axios itself, which is what previously made
+   * `FilesApi` unusable anywhere but Node.
+   *
+   * Goes through the bare `axios`, not `this._axios`: a download link points
+   * at whatever host Dalux hands back (a storage node, possibly a CDN), and
+   * the instance would put its `baseURL`, `Content-Type: application/json`
+   * and `User-Agent` defaults on a request to a third party. Only the API
+   * key — which the link needs — is sent.
+   */
+  async binary(url: string, config: DaluxRequestConfig = {}): Promise<DaluxBinaryResponse> {
+    const response = await axios.get(url, {
+      headers: { 'X-API-KEY': this.configuration.apiKey, ...config.headers },
+      responseType: 'arraybuffer',
+      validateStatus: () => true,
+      ...(config.signal ? { signal: config.signal } : {}),
+    });
+    if (response.status !== 200) {
+      throw new ApiError(`Failed to download file. Status code: ${response.status}`);
+    }
+    const contentType = response.headers['content-type'] as string | undefined;
+    return {
+      bytes: response.data as ArrayBuffer,
+      ...(contentType ? { contentType } : {}),
+    };
   }
 
   /**

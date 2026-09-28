@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { ApiClient } from '../apiClient';
+import type { DaluxHttpClient } from '../http/client';
 import { convertToModel, convertToModelList } from '../models/convert';
 import { paginate } from '../utils/pagination';
 import {
@@ -17,9 +17,9 @@ import {
  * API methods for test plans.
  */
 export class TestPlansApi {
-  private _client: ApiClient;
+  private _client: DaluxHttpClient;
 
-  constructor(apiClient: ApiClient) {
+  constructor(apiClient: DaluxHttpClient) {
     this._client = apiClient;
   }
 

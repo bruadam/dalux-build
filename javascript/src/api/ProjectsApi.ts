@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { ApiClient } from '../apiClient';
+import type { DaluxHttpClient } from '../http/client';
 import { findByField } from '../utils/search';
 import { convertToModel } from '../models/convert';
 import { ProjectsListResponseSchema, ProjectResponseSchema } from '../models/projects';
@@ -11,9 +11,9 @@ type ProjectResponse = z.infer<typeof ProjectResponseSchema>;
  * API methods for project management.
  */
 export class ProjectsApi {
-  private _client: ApiClient;
+  private _client: DaluxHttpClient;
 
-  constructor(apiClient: ApiClient) {
+  constructor(apiClient: DaluxHttpClient) {
     this._client = apiClient;
   }
 

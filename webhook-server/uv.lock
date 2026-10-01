@@ -325,7 +325,7 @@ wheels = [
 
 [[package]]
 name = "dalux-build"
-version = "2.1.4"
+version = "2.5.0"
 source = { editable = "../python" }
 dependencies = [
     { name = "fastapi" },
@@ -349,29 +349,49 @@ webhook = [
 requires-dist = [
     { name = "anthropic", marker = "extra == 'ai'", specifier = ">=0.28.0" },
     { name = "build", marker = "extra == 'dev'", specifier = ">=1.2" },
+    { name = "chromadb", marker = "extra == 'rag'", specifier = ">=0.5" },
     { name = "croniter", marker = "extra == 'webhook'", specifier = ">=2" },
     { name = "cryptography", marker = "extra == 'webhook'", specifier = ">=42" },
+    { name = "deepagents", marker = "extra == 'rag'", specifier = ">=0.1" },
     { name = "fastapi", specifier = ">=0.141.1" },
     { name = "fastapi", marker = "extra == 'webhook'", specifier = ">=0.110" },
+    { name = "firecrawl-py", marker = "extra == 'rag'", specifier = ">=1" },
     { name = "httpx", marker = "extra == 'webhook'", specifier = ">=0.27" },
     { name = "httpx2", marker = "extra == 'dev'", specifier = ">=2.9.1" },
     { name = "ipykernel", marker = "extra == 'dev'", specifier = ">=7.3.0" },
+    { name = "langchain", extras = ["openai"], marker = "extra == 'rag'", specifier = ">=0.3" },
+    { name = "langchain-chroma", marker = "extra == 'rag'", specifier = ">=0.2" },
+    { name = "langchain-community", marker = "extra == 'rag'", specifier = ">=0.3" },
+    { name = "langchain-huggingface", marker = "extra == 'rag'", specifier = ">=0.1" },
+    { name = "langchain-mcp-adapters", marker = "extra == 'rag'", specifier = ">=0.1" },
+    { name = "langchain-mistralai", marker = "extra == 'rag'", specifier = ">=0.2" },
+    { name = "langchain-openrouter", marker = "extra == 'rag'", specifier = ">=0.2.8" },
+    { name = "langchain-text-splitters", marker = "extra == 'rag'", specifier = ">=0.3" },
+    { name = "langgraph-cli", extras = ["inmem"], marker = "extra == 'rag'", specifier = ">=0.2" },
     { name = "mistralai", marker = "extra == 'ai'", specifier = ">=0.0.11" },
     { name = "mypy", marker = "extra == 'dev'", specifier = ">=1.15" },
     { name = "openai", marker = "extra == 'ai'", specifier = ">=1.3.0" },
     { name = "pandas", specifier = ">=2.3.3" },
     { name = "pandas", marker = "extra == 'dev'", specifier = ">=2.0" },
     { name = "pandas-stubs", marker = "extra == 'dev'", specifier = ">=2.3.3.260113" },
+    { name = "pdf2image", marker = "extra == 'ai'", specifier = ">=1.17.0" },
+    { name = "pillow", marker = "extra == 'ai'", specifier = ">=11.0.0" },
+    { name = "platformdirs", marker = "extra == 'dev'", specifier = ">=4" },
+    { name = "platformdirs", marker = "extra == 'rag'", specifier = ">=4" },
     { name = "plotly", marker = "extra == 'dashboard'", specifier = ">=6.9.0" },
     { name = "plotly", marker = "extra == 'dev'", specifier = ">=6.9.0" },
     { name = "pre-commit", marker = "extra == 'dev'", specifier = ">=4.6.1" },
     { name = "pydantic", extras = ["email"], specifier = ">=2.13.4" },
+    { name = "pypdf", marker = "extra == 'rag'", specifier = ">=5" },
     { name = "pytest", marker = "extra == 'dev'", specifier = ">=7.4" },
     { name = "pytest-cov", marker = "extra == 'dev'", specifier = ">=7.1.0" },
     { name = "python-dotenv", specifier = ">=1.2.2" },
+    { name = "pyyaml", marker = "extra == 'dev'", specifier = ">=6" },
+    { name = "pyyaml", marker = "extra == 'rag'", specifier = ">=6" },
     { name = "requests", specifier = ">=2.34.2" },
     { name = "responses", marker = "extra == 'dev'", specifier = ">=0.26.2" },
     { name = "ruff", marker = "extra == 'dev'", specifier = ">=0.14" },
+    { name = "sentence-transformers", marker = "extra == 'rag'", specifier = ">=3" },
     { name = "streamlit", marker = "extra == 'dashboard'", specifier = ">=1.61.1" },
     { name = "streamlit", marker = "extra == 'dev'", specifier = ">=1.61.1" },
     { name = "tqdm", specifier = ">=4.66.0" },
@@ -379,7 +399,7 @@ requires-dist = [
     { name = "types-tqdm", marker = "extra == 'dev'", specifier = ">=4.70.0.20260731" },
     { name = "uvicorn", extras = ["standard"], marker = "extra == 'webhook'", specifier = ">=0.52.0" },
 ]
-provides-extras = ["ai", "dev", "dashboard", "webhook"]
+provides-extras = ["ai", "dev", "dashboard", "webhook", "rag"]
 
 [[package]]
 name = "dalux-build-webhook-server"
@@ -1076,11 +1096,11 @@ wheels = [
 
 [[package]]
 name = "urllib3"
-version = "2.7.0"
+version = "2.8.0"
 source = { registry = "https://pypi.org/simple" }
-sdist = { url = "https://files.pythonhosted.org/packages/53/0c/06f8b233b8fd13b9e5ee11424ef85419ba0d8ba0b3138bf360be2ff56953/urllib3-2.7.0.tar.gz", hash = "sha256:231e0ec3b63ceb14667c67be60f2f2c40a518cb38b03af60abc813da26505f4c", size = 433602, upload-time = "2026-05-07T16:13:18.596Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/e3/05/b17359e1cefb4f909b5e40b1b90a496d987258916dbbf88e842c729f510e/urllib3-2.8.0.tar.gz", hash = "sha256:63bf2ead4c879426ebf22ef2a781eeb4aa3b4ae798a0435506f8687fd5bb9b63", size = 458972, upload-time = "2026-09-15T19:29:36.253Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/7f/3e/5db95bcf282c52709639744ca2a8b149baccf648e39c8cc87553df9eae0c/urllib3-2.7.0-py3-none-any.whl", hash = "sha256:9fb4c81ebbb1ce9531cce37674bbc6f1360472bc18ca9a553ede278ef7276897", size = 131087, upload-time = "2026-05-07T16:13:17.151Z" },
+    { url = "https://files.pythonhosted.org/packages/92/9d/c4e665119135114480843e7ab388fa94d8480650450e6f8e26b70d323a4c/urllib3-2.8.0-py3-none-any.whl", hash = "sha256:0cf3cae568d36aa9576b28dfb35f11328f1cb974ca7647d9475ebb86c75ac6e3", size = 135717, upload-time = "2026-09-15T19:29:34.577Z" },
 ]
 
 [[package]]

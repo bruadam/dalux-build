@@ -37,7 +37,7 @@
     "dalux-build-api": "*",
     "fflate": "^0.8.3",
     "pdf-parse": "^2.4.5",
-    "pdfjs-dist": "5.4.296",
+    "pdfjs-dist": "6.4.299",
     "zod": "^4.6.5"
   },
   "devDependencies": {

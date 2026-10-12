@@ -46,7 +46,7 @@
     "@modelcontextprotocol/core": "^2.0.0",
     "@modelcontextprotocol/ext-apps": "^2.0.3",
     "@types/jest": "^30.0.0",
-    "@types/node": "^22.0.0",
+    "@types/node": "^26.6.5",
     "esbuild": "^0.28.2",
     "jest": "^30.5.2",
     "ts-jest": "^29.4.14",

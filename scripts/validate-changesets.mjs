@@ -31,16 +31,29 @@ if (workspaceNames.size === 0) {
 
 const changesetDir = join(rootDir, ".changeset");
 const errors = [];
+const empties = [];
 
 for (const file of readdirSync(changesetDir).filter((f) => f.endsWith(".md"))) {
   if (file.toLowerCase() === "readme.md") continue;
   const text = readFileSync(join(changesetDir, file), "utf8");
-  const frontmatter = /^---\r?\n([\s\S]*?)\r?\n---/.exec(text)?.[1];
+  // `\n?` so a fence written straight onto the next line (`---\n---`) parses
+  // as an empty block too, not as "no frontmatter found".
+  const frontmatter = /^---\r?\n([\s\S]*?)\r?\n?---/.exec(text)?.[1];
   if (frontmatter === undefined) {
     errors.push(`${file}: no frontmatter block found`);
     continue;
   }
   const named = [...frontmatter.matchAll(/^\s*["']([^"']+)["']\s*:/gm)].map((m) => m[1]);
+  // An *empty* frontmatter block is the sanctioned "this change needs no
+  // release" marker that `npx changeset add --empty` writes, and that
+  // ci.yml's changeset-check error message tells contributors to use. It is
+  // not a malformed changeset, so don't reject it — otherwise the only
+  // documented way to satisfy changeset-check for a non-releasing change to
+  // javascript/ (a dependency bump, say) fails this job instead.
+  if (frontmatter.trim() === "") {
+    empties.push(file);
+    continue;
+  }
   if (named.length === 0) errors.push(`${file}: frontmatter names no packages`);
   for (const name of named) {
     if (!workspaceNames.has(name)) errors.push(`${file}: "${name}" is not a workspace package`);
@@ -56,3 +69,6 @@ if (errors.length > 0) {
 }
 
 console.log(`All changesets reference valid workspace packages (${known}).`);
+if (empties.length > 0) {
+  console.log(`Empty (no-release) changesets: ${empties.join(", ")}`);
+}

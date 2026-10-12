@@ -54,7 +54,9 @@
     "build": "tsup",
     "typecheck": "tsc --noEmit",
     "test": "jest --coverage",
-    "pack:check": "npm run build && npm pack --dry-run",
+    "verify:exports": "node ../scripts/verify-exports.mjs",
+    "prepack": "npm run build && npm run verify:exports",
+    "pack:check": "npm pack --dry-run",
     "release:check": "npm run typecheck && npm test && npm run pack:check"
   },
   "keywords": [

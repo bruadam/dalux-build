@@ -9,7 +9,7 @@
   "scripts": {
     "changeset": "changeset",
     "version": "changeset version && node scripts/sync-python-version.mjs",
-    "release": "npm test --workspace=javascript && node scripts/publish-if-needed.mjs"
+    "release": "npm test --workspace=javascript && npm run build --workspace=javascript && npm run verify:exports --workspace=javascript && node scripts/publish-if-needed.mjs"
   },
   "repository": {
     "type": "git",

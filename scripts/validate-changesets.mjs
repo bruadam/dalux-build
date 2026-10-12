@@ -36,7 +36,9 @@ const empties = [];
 for (const file of readdirSync(changesetDir).filter((f) => f.endsWith(".md"))) {
   if (file.toLowerCase() === "readme.md") continue;
   const text = readFileSync(join(changesetDir, file), "utf8");
-  const frontmatter = /^---\r?\n([\s\S]*?)\r?\n---/.exec(text)?.[1];
+  // `\n?` so a fence written straight onto the next line (`---\n---`) parses
+  // as an empty block too, not as "no frontmatter found".
+  const frontmatter = /^---\r?\n([\s\S]*?)\r?\n?---/.exec(text)?.[1];
   if (frontmatter === undefined) {
     errors.push(`${file}: no frontmatter block found`);
     continue;

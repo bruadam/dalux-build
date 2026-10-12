@@ -22,8 +22,8 @@ dependencies = [
     "requests>=2.34.2",
     "pydantic[email]>=2.13.4",
     "tqdm>=4.66.0",
-    "fastapi>=0.141.1",
-    "pandas>=2.3.3",
+    "fastapi>=0.110",
+    "pandas>=2.0",
     "python-dotenv>=1.2.2",
 ]
 

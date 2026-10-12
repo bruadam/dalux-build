@@ -42,7 +42,7 @@
   },
   "devDependencies": {
     "@ifc-lite/embed-sdk": "^1.15.0",
-    "@modelcontextprotocol/client": "^2.0.0",
+    "@modelcontextprotocol/client": "^2.2.0",
     "@modelcontextprotocol/core": "^2.0.0",
     "@modelcontextprotocol/ext-apps": "^2.0.0",
     "@types/jest": "^30.0.0",

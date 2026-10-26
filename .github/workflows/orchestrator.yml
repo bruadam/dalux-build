@@ -1,0 +1,71 @@
+name: Orchestrator
+
+# Turns observable repo state into issues agents can claim.
+#
+# Read-only by default on a schedule? No -- the point is to file work, so the
+# scheduled run applies. But it NEVER labels `ready`: admitting work stays a
+# maintainer decision, which is what keeps parallel agents from inventing tasks.
+# See docs/orchestrator.md.
+
+on:
+  schedule:
+    # Twice a day. Signals here change on the order of hours, not minutes, and
+    # a chatty orchestrator is one people mute.
+    - cron: '0 7,19 * * *'
+  workflow_dispatch:
+    inputs:
+      apply:
+        description: 'File issues (unchecked = dry run report only)'
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+  issues: write
+
+concurrency:
+  # Two concurrent runs would race on the idempotency check and file duplicates.
+  group: orchestrator
+  cancel-in-progress: false
+
+jobs:
+  orchestrate:
+    name: Collect signals
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 22
+
+      - name: Self-test the signal extractors
+        # If the parity extractors are broken, the findings are fiction. Fail
+        # here rather than file nonsense.
+        run: node --test scripts/orchestrator/parity.test.mjs
+
+      - name: Orchestrate
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          ORCHESTRATOR_REPO: ${{ github.repository }}
+        run: |
+          if [ "${{ github.event_name }}" = "schedule" ] || [ "${{ inputs.apply }}" = "true" ]; then
+            node scripts/orchestrator/orchestrate.mjs --apply
+          else
+            node scripts/orchestrator/orchestrate.mjs
+          fi
+
+  queue-gate:
+    name: Issue queue
+    # Advisory while the queue fills. Flip to enforcing by adding --enforce.
+    if: github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 22
+      - env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          ORCHESTRATOR_REPO: ${{ github.repository }}
+        run: node scripts/check-issue-queue.mjs --pr "${{ github.event.pull_request.number }}"

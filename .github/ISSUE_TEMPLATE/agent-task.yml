@@ -1,0 +1,44 @@
+name: Agent task
+description: A unit of work an agent or human can claim and finish in one PR
+labels: ["agent-task"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Work is admitted through this queue so parallel contributors do not
+        invent overlapping tasks. A maintainer applies `ready` when the task is
+        agreed; until then it is a proposal. See AGENTS.md, *Working in parallel*.
+  - type: textarea
+    id: outcome
+    attributes:
+      label: Outcome
+      description: What is true when this is done? One sentence, observable.
+      placeholder: The Python client exposes get_file_area_tree with the same behaviour as the Node client.
+    validations:
+      required: true
+  - type: textarea
+    id: evidence
+    attributes:
+      label: Evidence this is needed
+      description: A command and its output, a failing test, a link. Not a description of a feeling.
+      placeholder: "node scripts/orchestrator/parity.mjs → only-js:files.get_file_area_tree"
+    validations:
+      required: true
+  - type: dropdown
+    id: parity
+    attributes:
+      label: Does this touch the client API surface?
+      description: If yes, both clients change in the same PR and a changeset is required.
+      options:
+        - "No"
+        - "Yes — Node and Python both"
+        - "Yes — deliberately one client only (explain below)"
+    validations:
+      required: true
+  - type: textarea
+    id: verification
+    attributes:
+      label: How a reviewer verifies it
+      description: The command they run. "Tests pass" is not a verification.
+    validations:
+      required: true

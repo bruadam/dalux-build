@@ -1,0 +1,20 @@
+{
+  "recorded": "2026-10-26",
+  "accepted": [
+    "group-missing-python:files_read",
+    "only-js:files.bulk_download_by_ids",
+    "only-js:files.download_file_buffer",
+    "only-py:files.get_all_files",
+    "only-py:files.get_all_files_in_folder",
+    "only-py:files.get_file_properties_mapping",
+    "only-py:files.get_file_property_mapping_values",
+    "only-py:files.get_files",
+    "only-py:files.get_files_in_folder",
+    "only-py:files.list_files",
+    "only-py:folders.get_folders",
+    "only-py:projects.get_all_projects",
+    "only-py:projects.get_projects",
+    "only-py:version_sets.download_files",
+    "only-py:version_sets.get_files_missing_from_version_sets"
+  ]
+}

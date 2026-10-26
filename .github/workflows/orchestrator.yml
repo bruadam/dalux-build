@@ -22,6 +22,10 @@ on:
 permissions:
   contents: read
   issues: write
+  # Dependabot alerts. The default GITHUB_TOKEN may still be refused these; if
+  # so the security signal degrades loudly rather than reporting "no alerts",
+  # and a PAT with `security_events` is needed in the env as GH_TOKEN.
+  security-events: read
 
 concurrency:
   # Two concurrent runs would race on the idempotency check and file duplicates.

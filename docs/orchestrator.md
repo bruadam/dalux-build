@@ -25,6 +25,7 @@ So the design borrowed from `ifc-lite` is three rules, not a framework:
 | Signal | Priority | Source |
 | --- | --- | --- |
 | Our own workflow failing on `main`, latest run | P1 | `gh run list` |
+| Open security advisories | P1 if any critical, else P2 | `dependabot/alerts` |
 | New JS/Python parity drift beyond baseline | P2 | `parity.mjs`, local |
 | Open PR touching published clients with no changeset | P2 | `gh pr list` |
 | AGENTS.md referencing paths that do not resolve | P3 | local |
@@ -38,6 +39,18 @@ and a judgement call, and a signal that invites argument gets muted.
 
 The last row is reported to the run log and **never filed**: an issue about
 unclaimed issues is noise.
+
+### The dependency backlog was measuring the wrong thing
+
+"22 dependency PRs open" reads as hygiene and sorts as P3. The same repo had
+**7 critical and 44 high** open advisories, which is not hygiene. The backlog is
+the symptom; the advisories are the condition. So the security signal carries
+the priority, and the backlog signal now points at it — merging the batch is
+usually the fastest way to close advisories.
+
+This is the clearest case in the set for watching *outcomes* rather than
+*activity*. Counting PRs is easy and nearly meaningless; counting critical
+advisories is the thing someone would actually act on.
 
 ## The four properties that keep it trustworthy
 
@@ -74,6 +87,16 @@ Recorded because it is the argument for running a new signal before trusting it:
   number, and this repo's batched dependency PRs close other PRs. It now reads
   through `repos/:owner/:repo/issues/:n`, which answers for both and marks pull
   requests, and treats an all-PR reference set as a superseding PR.
+- **The security signal took three attempts to count correctly.**
+  `gh api --paginate` hung past a two-minute timeout while a single page
+  answered in ~1.3s. Adding `&page=N` failed outright —
+  `Pagination using the 'page' parameter is not supported` — because this
+  endpoint paginates by **cursor** (`after=` in the `Link` header), not by page
+  number. Following cursors means unbounded round trips inside a scheduled job
+  to refine a number already actionable at "100+", so it makes one request at
+  the maximum page size and reports **"at least N"** when the page fills. The
+  uncertainty is in the title rather than hidden, because silently
+  under-reporting is the one failure mode a security signal must not have.
 
 ## Running it
 
@@ -117,6 +140,14 @@ not file.
 - **The baseline is a choice, not a clean slate.** Fifteen asymmetries were
   accepted when it was recorded. Everything in `parity-baseline.json` is a
   parity gap someone is choosing to keep.
+- **The advisory count saturates at 100** and says "at least" when it does, for
+  the cursor-pagination reason above. It also does not yet distinguish runtime
+  from dev-only dependencies, which matters for a published library: an
+  advisory in a runtime dependency reaches every consumer, a dev-only one does
+  not. Check scope before prioritising within the issue.
+- **Reading advisories needs a token with security access.** The default
+  `GITHUB_TOKEN` in Actions may be refused; the signal then degrades loudly
+  rather than reporting "no alerts".
 - **It cannot see upstream API drift.** The Dalux SwaggerHub docs are
   client-rendered behind SSO and cannot be fetched headlessly, which AGENTS.md
   already records. Detecting that Dalux changed an endpoint remains manual, and

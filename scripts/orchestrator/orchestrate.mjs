@@ -256,6 +256,86 @@ function signalMissingChangeset() {
   }];
 }
 
+/**
+ * Open Dependabot security alerts, by severity.
+ *
+ * Added after the dependency-backlog signal proved to be measuring the wrong
+ * thing. "22 dependency PRs open" reads as hygiene and sorts as P3; the same
+ * repo had 7 critical and 41 high open advisories, which is not hygiene. The
+ * backlog is the symptom and this is the condition, so this signal carries the
+ * priority and the backlog one now points at it.
+ *
+ * NOTE: reading these needs a token with security-events access. The default
+ * GITHUB_TOKEN in Actions may not have it, in which case this signal degrades
+ * (see the `gh` wrapper) rather than silently reporting "no alerts" — which
+ * would be the dangerous failure here.
+ */
+function signalSecurityAlerts() {
+  // One request at the maximum page size, and say "at least" if it fills.
+  //
+  // Two wrong turns got here, both worth recording. `gh api --paginate` hung
+  // past a two-minute timeout on this repo while a single page answers in
+  // ~1.3s. Adding `&page=N` then failed outright:
+  //
+  //   {"message":"Pagination using the `page` parameter is not supported."}
+  //
+  // This endpoint paginates by CURSOR (`after=` from the Link header), not by
+  // page number. Following cursors would mean parsing response headers for an
+  // unbounded number of round trips inside a scheduled job, to refine a number
+  // that is already actionable at "100+". So: one call, and the uncertainty is
+  // stated in the title rather than hidden. Under-reporting silently is the
+  // one failure mode this signal must not have.
+  const PER_PAGE = 100;
+  const alerts = ghJson(['api', `repos/${REPO}/dependabot/alerts?state=open&per_page=${PER_PAGE}`,
+    '--jq', '[.[] | {severity: .security_advisory.severity, pkg: .dependency.package.name, eco: .dependency.package.ecosystem}]']);
+  if (!alerts || !alerts.length) return [];
+  const truncated = alerts.length >= PER_PAGE;
+
+  const bySeverity = new Map();
+  for (const a of alerts) bySeverity.set(a.severity, (bySeverity.get(a.severity) ?? 0) + 1);
+  const critical = bySeverity.get('critical') ?? 0;
+  const high = bySeverity.get('high') ?? 0;
+
+  const byPkg = new Map();
+  for (const a of alerts) {
+    const key = `${a.eco}:${a.pkg}`;
+    if (!byPkg.has(key)) byPkg.set(key, { worst: a.severity, count: 0 });
+    const e = byPkg.get(key);
+    e.count += 1;
+    const rank = { critical: 0, high: 1, medium: 2, moderate: 2, low: 3 };
+    if ((rank[a.severity] ?? 9) < (rank[e.worst] ?? 9)) e.worst = a.severity;
+  }
+  const worstFirst = [...byPkg.entries()]
+    .sort((a, b) => ({ critical: 0, high: 1, medium: 2, moderate: 2, low: 3 }[a[1].worst] ?? 9) - ({ critical: 0, high: 1, medium: 2, moderate: 2, low: 3 }[b[1].worst] ?? 9) || b[1].count - a[1].count)
+    .slice(0, 15);
+
+  const order = ['critical', 'high', 'medium', 'moderate', 'low'];
+  const summary = order.filter((k) => bySeverity.has(k)).map((k) => `${bySeverity.get(k)} ${k}`).join(', ');
+
+  return [{
+    key: 'security-alerts',
+    priority: critical > 0 ? P1 : high > 0 ? P2 : P3,
+    title: `${truncated ? 'At least ' : ''}${alerts.length} open security advisories (${summary})`,
+    body: [
+      `Dependabot reports ${truncated ? 'at least ' : ''}${alerts.length} open advisories against the default branch${truncated ? ' (page cap reached — the real figure is higher)' : ''}:`,
+      '',
+      ...order.filter((k) => bySeverity.has(k)).map((k) => `- **${k}**: ${bySeverity.get(k)}`),
+      '',
+      'Worst-affected packages:',
+      '',
+      ...worstFirst.map(([k, v]) => `- \`${k}\` — ${v.worst}${v.count > 1 ? ` (${v.count} advisories)` : ''}`),
+      byPkg.size > worstFirst.length ? `- …and ${byPkg.size - worstFirst.length} more packages` : '',
+      '',
+      `Full list: https://github.com/${REPO}/security/dependabot`,
+      '',
+      'This library is published to npm and PyPI, so an advisory in a runtime',
+      'dependency reaches every consumer that installs it. Dev-only advisories',
+      'matter less and the list above does not yet distinguish them — check the',
+      'scope before prioritising within this issue.',
+    ].filter(Boolean).join('\n'),
+  }];
+}
+
 /** Dependency update PRs accumulating. */
 function signalDependabotBacklog() {
   const prs = ghJson(['pr', 'list', '--repo', REPO, '--state', 'open', '--limit', '60', '--json', 'number,title,author,createdAt']);
@@ -271,6 +351,9 @@ function signalDependabotBacklog() {
       `There are ${bots.length} open automated dependency PRs. Individually they are`,
       'noise; collectively they are a supply-chain lag and they crowd the PR list so',
       'real review gets lost.',
+      '',
+      'This is the symptom, not the condition — see the open security-advisory issue',
+      'for severity. Merging the batch is usually the fastest way to close advisories.',
       '',
       'The repo has batched these before — see the history around "batch the',
       'patch/minor dependency bumps". Batching patch and minor into one PR, and',
@@ -300,6 +383,7 @@ function signalUnclaimedReady() {
 
 const SIGNALS = [
   signalCiRed,
+  signalSecurityAlerts,
   signalParityDrift,
   signalMissingChangeset,
   signalAgentsDocDrift,

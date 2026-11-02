@@ -59,6 +59,9 @@
     "preset": "ts-jest",
     "testMatch": [
       "**/test/**/*.test.ts"
+    ],
+    "setupFiles": [
+      "<rootDir>/test/setupNapiCanvas.ts"
     ]
   }
 }

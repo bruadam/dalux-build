@@ -5,8 +5,24 @@ import { resolveFolderIdFromNamedPath } from '../utils/pathResolver';
 import { validateProjectId, validateFileAreaId, validateFolderId } from '../utils/validation';
 import { convertToModel, convertToModelList } from '../models/convert';
 import { FileSchema, FilesListResponseSchema } from '../models/files';
+import { UsersApi } from './UsersApi';
+import { CompaniesApi } from './CompaniesApi';
+import {
+  createUserMapping,
+  createCompanyMapping,
+  enrichResponseWithUsers,
+  enrichUsersWithCompanies,
+} from '../utils/userMapping';
 
 export type FileData = z.infer<typeof FileSchema>;
+
+/** `fieldMappings` argument shared by every `recursivelyPopulate` call site
+ * across `FilesReadApi`/`FilesApi` — kept in one place so they can't drift
+ * to different field names for the same two ids. */
+const USER_ID_FIELD_MAPPINGS = {
+  uploadedByUserId: 'uploadedByUser',
+  lastModifiedByUserId: 'lastModifiedByUser',
+} as const;
 
 /**
  * Some call sites defensively unwrap a `{ data: FileData }` wrapper before
@@ -46,6 +62,56 @@ export class FilesReadApi {
   }
 
   /**
+   * Fetches a project's users and companies and returns `userId`/`companyId`
+   * lookups, or an empty result when `recursivelyPopulate` is false. Mirrors
+   * the inline setup at the top of `files.py::get_files` and `get_file`,
+   * pulled into one helper so `getAllFiles` and `FilesApi.getFile` fetch and
+   * build it exactly once each, the same way.
+   */
+  protected async _buildEnrichmentMappings(
+    projectId: string,
+    recursivelyPopulate: boolean,
+  ): Promise<{
+    userMapping?: ReturnType<typeof createUserMapping>;
+    companyMapping?: ReturnType<typeof createCompanyMapping>;
+  }> {
+    if (!recursivelyPopulate) return {};
+
+    const usersApi = new UsersApi(this._client);
+    const usersResponse = await usersApi.listProjectUsers(projectId);
+    const userMapping = createUserMapping(usersResponse?.items ?? []);
+
+    const companiesApi = new CompaniesApi(this._client);
+    const companiesResponse = await companiesApi.listProjectCompanies(projectId);
+    const companyMapping = createCompanyMapping(companiesResponse?.items ?? []);
+
+    return { userMapping, companyMapping };
+  }
+
+  /**
+   * Applies the mappings `_buildEnrichmentMappings` returned to one raw
+   * item. Users first, then — same order as `files.py` — nest a company
+   * under whichever user field enriching with users just added, rather than
+   * adding a second, separate `companyId`-keyed field alongside it.
+   */
+  protected _enrichFileItem(
+    item: unknown,
+    userMapping?: ReturnType<typeof createUserMapping>,
+    companyMapping?: ReturnType<typeof createCompanyMapping>,
+  ): unknown {
+    let result = item;
+    if (userMapping) {
+      result = enrichResponseWithUsers(result, userMapping, USER_ID_FIELD_MAPPINGS);
+    }
+    if (companyMapping) {
+      result = userMapping
+        ? enrichUsersWithCompanies(result, companyMapping)
+        : enrichResponseWithUsers(result, companyMapping, { companyId: 'company' });
+    }
+    return result;
+  }
+
+  /**
    * One page of a file area's files.
    * GET /6.1/projects/{projectId}/file_areas/{fileAreaId}/files
    *
@@ -69,15 +135,32 @@ export class FilesReadApi {
     ) as z.infer<typeof FilesListResponseSchema>;
   }
 
-  /** Every file in a file area, following bookmark pagination to the end. */
+  /**
+   * Every file in a file area, following bookmark pagination to the end.
+   *
+   * `recursivelyPopulate` — when true, resolves `uploadedByUserId`/
+   * `lastModifiedByUserId` on every returned file against the project's
+   * users (and, through them, companies), adding `uploadedByUser`/
+   * `lastModifiedByUser` next to the id fields. Costs two extra requests
+   * (one project-wide users list, one companies list) up front, win or lose
+   * — mirrors `files.py::get_files`, except defaulted to `false` here rather
+   * than Python's `true`: this is an additive feature on an already
+   * -published client, and flipping on two unconditional extra requests for
+   * every existing caller would be a behavior change, not a bug fix.
+   */
   async getAllFiles(
     projectId: string,
     fileAreaId: string,
     params: Record<string, unknown> = {},
     verbose = false,
+    recursivelyPopulate = false,
   ): Promise<FileData[]> {
     validateProjectId(projectId);
     validateFileAreaId(fileAreaId);
+    const { userMapping, companyMapping } = await this._buildEnrichmentMappings(
+      projectId,
+      recursivelyPopulate,
+    );
     const allItems: unknown[] = [];
     let currentParams: Record<string, unknown> = { ...params };
     let hasNextPage = true;
@@ -108,7 +191,10 @@ export class FilesReadApi {
     if (verbose) {
       console.log(`Done. Total files retrieved: ${allItems.length}`);
     }
-    return convertToModelList(allItems, FileSchema, 'File');
+    const enrichedItems = allItems.map((item) =>
+      this._enrichFileItem(item, userMapping, companyMapping),
+    );
+    return convertToModelList(enrichedItems, FileSchema, 'File');
   }
 
   /**

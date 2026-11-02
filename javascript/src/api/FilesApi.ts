@@ -38,6 +38,15 @@ interface GetFileOptions {
   savePath?: string;
   verbose?: boolean;
   params?: Record<string, unknown>;
+  /**
+   * Resolve `uploadedByUserId`/`lastModifiedByUserId` against the project's
+   * users (and, through them, companies). ID-based lookups only — mirrors
+   * `files.py::get_file`, whose path-based branch doesn't thread this
+   * through to `get_all_files_in_folder` either. Defaults to `false`; see
+   * `FilesReadApi.getAllFiles`'s doc comment for why that default differs
+   * from Python's.
+   */
+  recursivelyPopulate?: boolean;
 }
 
 interface FileNameFilterOptions {
@@ -181,9 +190,13 @@ export class FilesApi extends FilesReadApi {
     }
 
     // ID-based lookup (original behaviour)
-    const rawResponse = await this._client.get(
+    let rawResponse = await this._client.get(
       `/5.0/projects/${projectId}/file_areas/${fileAreaIdOrPath}/files/${fileId}`,
     );
+    if (options.recursivelyPopulate && rawResponse && typeof rawResponse === 'object') {
+      const { userMapping, companyMapping } = await this._buildEnrichmentMappings(projectId, true);
+      rawResponse = this._enrichFileItem(rawResponse, userMapping, companyMapping);
+    }
     const fileInfo = convertToModel(rawResponse, FileResponseSchema, 'FileResponse') as FileResponseWithDownload | null;
     if (options.download && fileInfo && fileInfo.data && fileInfo.data.downloadLink) {
       const name = fileInfo.data.fileName || fileId;

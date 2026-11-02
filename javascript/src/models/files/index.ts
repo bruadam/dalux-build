@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import { listResponseSchema, singleResponseSchema, nullableDefault } from '../helpers';
+import { ProjectUserSchema } from '../users';
 
 /** Mirrors models/files/models.py::Reference. */
 export const ReferenceSchema = z.object({
@@ -55,6 +56,12 @@ export const FileNameFilterSchema = z.object({
  * Mirrors models/files/models.py::File. `uploaded`/`lastModified` are kept
  * as ISO date strings (not coerced to JS Date) so JSON round-tripping and
  * existing string-based consumer code keeps working.
+ *
+ * `uploadedByUser`/`lastModifiedByUser` are absent from every raw Dalux
+ * response — Dalux's files endpoint hands back only the bare id fields next
+ * to them. They're populated locally, by `FilesApi`'s `recursivelyPopulate`
+ * option resolving the id against a project's users (`userMapping.ts`), the
+ * same way Python's `File.uploaded_by_user`/`last_modified_by_user` do.
  */
 export const FileSchema = z.object({
   fileId: z.string(),
@@ -63,8 +70,10 @@ export const FileSchema = z.object({
   fileAreaId: z.string(),
   folderId: z.string().nullish(),
   uploadedByUserId: z.string().nullish(),
+  uploadedByUser: ProjectUserSchema.nullish(),
   uploaded: z.string().nullish(),
   lastModifiedByUserId: z.string().nullish(),
+  lastModifiedByUser: ProjectUserSchema.nullish(),
   lastModified: z.string().nullish(),
   version: z.string().nullish(),
   deleted: nullableDefault(z.boolean(), false),

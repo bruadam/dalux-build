@@ -490,6 +490,74 @@ describe('FilesApi', () => {
     expect(all[1].fileId).toBe('b');
   });
 
+  it('getAllFiles(recursivelyPopulate=true) resolves uploadedByUserId/lastModifiedByUserId into full users, nesting their company', async () => {
+    mock.onGet('/6.1/projects/p1/file_areas/fa1/files', { params: {} }).reply(200, {
+      items: [
+        {
+          data: {
+            fileId: 'a',
+            fileName: 'a.txt',
+            fileAreaId: 'fa1',
+            uploadedByUserId: 'u1',
+            lastModifiedByUserId: 'u2',
+          },
+        },
+      ],
+      metadata: { totalRemainingItems: 0 },
+      links: [],
+    });
+    mock.onGet('/1.2/projects/p1/users').reply(200, {
+      items: [
+        { userId: 'u1', userType: 'human', email: 'a@example.com', companyId: 'c1' },
+        { userId: 'u2', userType: 'human', email: 'b@example.com' },
+      ],
+    });
+    mock.onGet('/3.1/projects/p1/companies').reply(200, {
+      items: [{ companyId: 'c1', name: 'Acme' }],
+    });
+
+    const all = await api.getAllFiles('p1', 'fa1', {}, false, true);
+    expect(all).toHaveLength(1);
+    expect(all[0].uploadedByUser).toEqual(
+      expect.objectContaining({ userId: 'u1', email: 'a@example.com', company: expect.objectContaining({ companyId: 'c1', name: 'Acme' }) }),
+    );
+    // u2 has no companyId, so no `company` is added — not even `undefined`'s absence masked as a match.
+    expect(all[0].lastModifiedByUser).toEqual(
+      expect.objectContaining({ userId: 'u2', email: 'b@example.com' }),
+    );
+    expect((all[0].lastModifiedByUser as Record<string, unknown>).company).toBeUndefined();
+    // The id fields survive enrichment rather than being replaced by it.
+    expect(all[0].uploadedByUserId).toBe('u1');
+    expect(all[0].lastModifiedByUserId).toBe('u2');
+  });
+
+  it('getAllFiles(recursivelyPopulate=false) makes no users/companies request and leaves ids bare', async () => {
+    mock.onGet('/6.1/projects/p1/file_areas/fa1/files', { params: {} }).reply(200, {
+      items: [{ data: { fileId: 'a', fileName: 'a.txt', fileAreaId: 'fa1', uploadedByUserId: 'u1' } }],
+      metadata: { totalRemainingItems: 0 },
+      links: [],
+    });
+    // No mock registered for /1.2/projects/p1/users or /3.1/projects/p1/companies:
+    // axios-mock-adapter throws if either is requested, so a passing test here
+    // is itself proof that the default makes no such request.
+    const all = await api.getAllFiles('p1', 'fa1');
+    expect(all[0].uploadedByUserId).toBe('u1');
+    expect(all[0].uploadedByUser).toBeUndefined();
+  });
+
+  it('getFile(recursivelyPopulate=true) resolves the same fields for a single ID-based lookup', async () => {
+    mock.onGet('/5.0/projects/p1/file_areas/fa1/files/f1').reply(200, {
+      data: { fileId: 'f1', fileName: 'test.ifc', fileAreaId: 'fa1', uploadedByUserId: 'u1' },
+    });
+    mock.onGet('/1.2/projects/p1/users').reply(200, {
+      items: [{ userId: 'u1', userType: 'human', email: 'a@example.com' }],
+    });
+    mock.onGet('/3.1/projects/p1/companies').reply(200, { items: [] });
+
+    const result = (await api.getFile('p1', 'fa1', 'f1', { recursivelyPopulate: true })) as any;
+    expect(result.data.uploadedByUser).toEqual(expect.objectContaining({ userId: 'u1', email: 'a@example.com' }));
+  });
+
   it('getFile with download streams to disk', async () => {
     const dlSpy = jest.spyOn(axios, 'get').mockResolvedValue({
       status: 200,

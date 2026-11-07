@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import type { McpServer } from '@modelcontextprotocol/server';
+import { BUNDLED_SKILLS } from './skillsBundle.generated';
 
 /**
  * Self-hosted usage documentation ("skills"), served over MCP itself so any
@@ -429,7 +430,7 @@ not: they download and parse the model locally, and \`ifc_clash_*\` / \`ifc_volu
 `,
 };
 
-const DOCS: Record<SkillTopic, SkillDoc> = {
+const BUILT_IN_DOCS: Record<SkillTopic, SkillDoc> = {
   overview: OVERVIEW,
   tasks: TASKS,
   documents: DOCUMENTS,
@@ -437,9 +438,89 @@ const DOCS: Record<SkillTopic, SkillDoc> = {
   models_and_quality: MODELS_AND_QUALITY,
 };
 
+export interface MarkdownSkill {
+  name: string;
+  description: string;
+  tags: string[];
+  /** The whole SKILL.md body, frontmatter stripped. */
+  content: string;
+}
+
+function unquote(value: string): string {
+  const trimmed = value.trim();
+  if (/^(['"]).*\1$/.test(trimmed)) return trimmed.slice(1, -1);
+  return trimmed;
+}
+
+/**
+ * Reads the Agent Skills frontmatter fields this server uses: `name`,
+ * `description` (plain, quoted or a `>`/`|` block) and `metadata.tags`
+ * (flow `[a, b]` or block list). Not a general YAML parser.
+ */
+export function parseSkillMarkdown(markdown: string, fallbackName: string): MarkdownSkill {
+  const match = /^---\r?\n([\s\S]*?)\r?\n---\r?\n?/.exec(markdown);
+  const frontmatter = match ? match[1].split(/\r?\n/) : [];
+  const content = (match ? markdown.slice(match[0].length) : markdown).trim();
+
+  const fields: Record<string, string> = {};
+  let tags: string[] = [];
+  for (let i = 0; i < frontmatter.length; i += 1) {
+    const line = frontmatter[i];
+    const top = /^([A-Za-z_-]+):\s*(.*)$/.exec(line);
+    if (top && (top[2] === '>' || top[2] === '|' || top[2] === '>-' || top[2] === '|-')) {
+      const block: string[] = [];
+      while (i + 1 < frontmatter.length && /^\s+\S|^\s*$/.test(frontmatter[i + 1])) {
+        block.push(frontmatter[(i += 1)].trim());
+      }
+      fields[top[1]] = block.join(top[2].startsWith('>') ? ' ' : '\n').trim();
+    } else if (top) {
+      fields[top[1]] = unquote(top[2]);
+    }
+    const tagLine = /^\s+tags:\s*(.*)$/.exec(line);
+    if (tagLine) {
+      if (tagLine[1].startsWith('[')) {
+        tags = tagLine[1].replace(/^\[|\]$/g, '').split(',').map(unquote).filter(Boolean);
+      } else {
+        while (i + 1 < frontmatter.length && /^\s+-\s+/.test(frontmatter[i + 1])) {
+          tags.push(unquote(frontmatter[(i += 1)].replace(/^\s+-\s+/, '')));
+        }
+      }
+    }
+  }
+
+  return {
+    name: fields.name || fallbackName,
+    description: fields.description ?? '',
+    tags,
+    content,
+  };
+}
+
+/** Every skills/<name>/SKILL.md, bundled at build time by scripts/build-skills.mjs. */
+export const MARKDOWN_SKILLS: MarkdownSkill[] = BUNDLED_SKILLS.map((skill) =>
+  parseSkillMarkdown(skill.markdown, skill.directory),
+).filter((skill) => !(SKILL_TOPICS as readonly string[]).includes(skill.name));
+
+export function markdownSkill(name: string): MarkdownSkill | undefined {
+  return MARKDOWN_SKILLS.find((skill) => skill.name === name);
+}
+
+const DOCS: Record<string, SkillDoc> = {
+  ...BUILT_IN_DOCS,
+  ...Object.fromEntries(
+    MARKDOWN_SKILLS.map((skill) => [
+      skill.name,
+      { title: skill.name, content: skill.content.startsWith('#') ? skill.content : `# ${skill.name}\n\n${skill.content}` },
+    ]),
+  ),
+};
+
+/** Built-in usage topics followed by the bundled markdown skills. */
+export const ALL_TOPICS = [...SKILL_TOPICS, ...MARKDOWN_SKILLS.map((skill) => skill.name)] as [string, ...string[]];
+
 export const getSkillInput = z.object({
   topic: z
-    .enum(SKILL_TOPICS)
+    .enum(ALL_TOPICS)
     .optional()
     .describe(
       'Which usage doc to fetch. Omit on the first call of a conversation to get the overview, which lists every other topic.',
@@ -448,20 +529,39 @@ export const getSkillInput = z.object({
 export type GetSkillInput = z.infer<typeof getSkillInput>;
 
 const getSkillOutput = z.object({
-  topic: z.enum(SKILL_TOPICS),
+  topic: z.enum(ALL_TOPICS),
   title: z.string(),
   content: z.string().describe('Full usage doc for this topic, as markdown.'),
-  availableTopics: z.array(z.enum(SKILL_TOPICS)).describe('Every topic get_skill accepts.'),
+  availableTopics: z.array(z.enum(ALL_TOPICS)).describe('Every topic get_skill accepts.'),
 });
 export type GetSkillOutput = z.infer<typeof getSkillOutput>;
+
+function overviewWithSkills(): string {
+  if (!MARKDOWN_SKILLS.length) return OVERVIEW.content;
+  const rows = MARKDOWN_SKILLS.map((skill) => `| \`${skill.name}\` | ${skill.description.replace(/\|/g, '\\|')} |`);
+  return `${OVERVIEW.content}
+## Domain skills
+
+Also fetchable with \`get_skill\` (or as \`dalux-build://skill/<name>\` resources):
+
+| topic | covers |
+| --- | --- |
+${rows.join('\n')}
+`;
+}
 
 export function getSkill(args: GetSkillInput): GetSkillOutput {
   const topic = args.topic ?? 'overview';
   const doc = DOCS[topic];
-  return { topic, title: doc.title, content: doc.content, availableTopics: [...SKILL_TOPICS] };
+  return {
+    topic,
+    title: doc.title,
+    content: topic === 'overview' ? overviewWithSkills() : doc.content,
+    availableTopics: [...ALL_TOPICS],
+  };
 }
 
-function resourceUri(topic: SkillTopic): string {
+function resourceUri(topic: string): string {
   return `dalux-build://skill/${topic}`;
 }
 
@@ -474,18 +574,18 @@ function resourceUri(topic: SkillTopic): string {
  * `server`).
  */
 export function registerSkills(server: McpServer): void {
-  for (const topic of SKILL_TOPICS) {
-    const doc = DOCS[topic];
+  for (const topic of ALL_TOPICS) {
+    const skill = markdownSkill(topic);
     server.registerResource(
       `skill-${topic}`,
       resourceUri(topic),
       {
-        title: doc.title,
-        description: `dalux-build MCP usage doc: ${topic}`,
+        title: DOCS[topic].title,
+        description: skill?.description || `dalux-build MCP usage doc: ${topic}`,
         mimeType: 'text/markdown',
       },
       async (uri) => ({
-        contents: [{ uri: uri.href, mimeType: 'text/markdown', text: doc.content }],
+        contents: [{ uri: uri.href, mimeType: 'text/markdown', text: getSkill({ topic }).content }],
       }),
     );
   }
@@ -497,7 +597,7 @@ export function registerSkills(server: McpServer): void {
       description:
         "Read this server's own usage documentation — call it first, with no arguments, before exploring an " +
         'unfamiliar project or writing an OData filter for list_project_tasks. Returns the overview topic by ' +
-        'default, which lists every other topic (tasks, documents, files, models_and_quality) to fetch next.',
+        `default, which lists every other topic (${ALL_TOPICS.filter((t) => t !== 'overview').join(', ')}) to fetch next.`,
       inputSchema: getSkillInput,
       outputSchema: getSkillOutput,
     },

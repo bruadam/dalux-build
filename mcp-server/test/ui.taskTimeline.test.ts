@@ -108,4 +108,18 @@ describe('registerTaskTimeline', () => {
     expect(result.isError).toBe(true);
     expect(result.structuredContent).toMatchObject({ available: false, skipped: ['missing'] });
   });
+  it('keeps the largest allowed result well under the app result size cap', async () => {
+    const getTask = jest.fn().mockImplementation((_projectId: string, taskId: string) =>
+      Promise.resolve({ data: { number: `TASK-${taskId}`, title: 'x'.repeat(5_000), status: 'Waiting for approval', created: '2026-01-02T08:00:00.000Z', deadline: '2026-01-10T08:00:00.000Z' } }));
+    const server = new McpServer({ name: 'test', version: '0.0.0' });
+    registerTaskTimeline(server, fakeClient({ tasks: { getTask } }));
+    const client = await connectedClient(server);
+    const taskIds = Array.from({ length: 200 }, (_, i) => `S3135780168883${String(i).padStart(5, '0')}`);
+
+    const result = await client.callTool({ name: 'view_tasks_timeline', arguments: { projectId: 'p1', taskIds } });
+
+    expect(JSON.stringify(result).length).toBeLessThanOrEqual(100_000);
+    const tooMany = await client.callTool({ name: 'view_tasks_timeline', arguments: { projectId: 'p1', taskIds: [...taskIds, 'one-more'] } });
+    expect(tooMany.isError).toBe(true);
+  });
 });

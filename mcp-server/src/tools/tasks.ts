@@ -11,80 +11,15 @@ import { extractAttachmentTextsByTaskId, groupAttachmentsByTaskId } from '../rag
 import { groupChangesByTaskId, renderTaskLines, str, unwrapTask, type AttachmentText } from '../rag/taskText';
 import { searchChunks } from '../search/documentSearch';
 import { fieldsInput, pageInput, paginateForLlm, pickFields, type PaginatedForLlm } from '../serialize';
+import {
+  collectProjectTasks,
+  odataPathToField,
+  resolveTaskQuery,
+  taskFilterConditionSchema,
+} from '../taskFilter';
 
 /** Task fields list_project_tasks returns by default; userDefinedFields, location, ... via `fields` or get_task. */
 const TASK_FIELDS = ['taskId', 'number', 'subject', 'type', 'usage', 'workflow', 'created'] as const;
-
-const taskConditionOps = ['eq', 'ne', 'gt', 'ge', 'lt', 'le', 'contains'] as const;
-
-/**
- * A single field/op/value filter, matched against a task's own JSON shape —
- * the schema-driven alternative to hand-written OData. Dalux's tasks $filter
- * only ever validates one exact expression server-side (`data/type/typeId eq
- * '<id>'` — no `and`/`or`, no other operators, no other fields), so anything
- * else (dates, status, custom fields, ...) has to be expressed as a
- * `conditions` entry and applied here, client-side, after fetching.
- */
-export const taskFilterConditionSchema = z.object({
-  field: z
-    .string().describe('Dot path in the returned task JSON, e.g. "status", "userDefinedFields.Some Field".'),
-  op: z.enum(taskConditionOps).describe('"contains" = case-insensitive substring.'),
-  value: z.union([z.string(), z.number(), z.boolean()]),
-});
-export type TaskFilterCondition = z.infer<typeof taskFilterConditionSchema>;
-
-function getByPath(obj: unknown, path: string): unknown {
-  return path.split('.').reduce<unknown>((acc, key) => {
-    if (acc == null || typeof acc !== 'object') return undefined;
-    return (acc as Record<string, unknown>)[key];
-  }, obj);
-}
-
-function matchesCondition(actual: unknown, condition: TaskFilterCondition): boolean {
-  const { op, value } = condition;
-  if (op === 'contains') {
-    return typeof actual === 'string' && typeof value === 'string' && actual.toLowerCase().includes(value.toLowerCase());
-  }
-  if (actual === null || actual === undefined) return false;
-
-  let cmp: number;
-  if (typeof actual === 'number' && typeof value === 'number') {
-    cmp = actual - value;
-  } else if (typeof actual === 'boolean' || typeof value === 'boolean') {
-    if (op !== 'eq' && op !== 'ne') return false;
-    cmp = actual === value ? 0 : 1;
-  } else {
-    // ISO 8601 timestamps and plain strings both sort correctly lexically.
-    const a = String(actual);
-    const b = String(value);
-    cmp = a < b ? -1 : a > b ? 1 : 0;
-  }
-  switch (op) {
-    case 'eq':
-      return cmp === 0;
-    case 'ne':
-      return cmp !== 0;
-    case 'gt':
-      return cmp > 0;
-    case 'ge':
-      return cmp >= 0;
-    case 'lt':
-      return cmp < 0;
-    case 'le':
-      return cmp <= 0;
-    default:
-      return false;
-  }
-}
-
-/** ANDs every condition together against each task's own (unwrapped) fields. */
-function applyConditions<T>(items: readonly T[], conditions: TaskFilterCondition[] | undefined): T[] {
-  if (!conditions || conditions.length === 0) return [...items];
-  return items.filter((item) => {
-    const data = unwrapTask(item);
-    return conditions.every((condition) => matchesCondition(getByPath(data, condition.field), condition));
-  });
-}
 
 // ---------- list_project_tasks ----------
 
@@ -92,12 +27,12 @@ export const listProjectTasksInput = z.object({
   projectId: z.string(),
   typeId: z
     .string()
-    .optional().describe('Only tasks of this type. Ignored if filter is set.'),
+    .optional().describe('Only tasks of this type.'),
   filter: z
     .string()
-    .optional().describe('OData $filter. Dalux accepts only `data/type/typeId eq \'<id>\'`; use conditions for anything else.'),
-  select: z.string().optional().describe('OData $select.'),
-  orderby: z.string().optional().describe('OData $orderby expression.'),
+    .optional().describe('Simple OData ($filter); only `data/type/typeId eq \'<id>\'` reaches Dalux, the rest becomes conditions. Prefer conditions.'),
+  select: z.string().optional().describe('Comma-separated top-level fields (applied here).'),
+  orderby: z.string().optional().describe('e.g. "created desc" (applied here).'),
   conditions: z
     .array(taskFilterConditionSchema)
     .optional().describe('Client-side filters, ANDed, e.g. [{"field":"created","op":"ge","value":"2026-08-01T00:00:00Z"}].'),
@@ -110,36 +45,54 @@ export type ListProjectTasksInput = z.infer<typeof listProjectTasksInput>;
  * Retrieves tasks, approvals, safety issues, safety observations and good
  * practices on a project.
  *
- * Uses Dalux-side bookmark pagination to completion via getAllProjectTasks,
- * so the MCP endpoint itself does not apply additional list pagination.
+ * Uses Dalux-side bookmark pagination to completion, then pages for the LLM.
  *
- * The `filter`/`select`/`orderby` input properties are named without the `$`
- * that OData expects — a literal `$filter` property name fails some clients'
- * tool-schema validation (property names must match /^[a-zA-Z0-9_.-]{1,64}$/),
- * which silently drops the whole tool from the model's tool list. They're
- * translated back to `$filter`/`$select`/`$orderby` here before calling the
- * OData-speaking TasksApi.
- *
- * `conditions` exists because Dalux's own $filter only accepts
- * `data/type/typeId eq '<id>'` — there is no server-side way to filter tasks
- * on anything else, so it's done here, client-side, after fetching.
+ * `filter`/`select`/`orderby` keep their OData names (without the `$`, which
+ * fails some clients' tool-schema validation), but Dalux rejects almost all
+ * OData on this endpoint (see taskFilter.ts): only the typeId clause of
+ * `filter` is sent; the rest of `filter`, `select` and `orderby` are applied
+ * here after fetching.
  */
 export async function listProjectTasks(
   client: DaluxClient,
   args: ListProjectTasksInput,
-): Promise<PaginatedForLlm<unknown>> {
-  const { projectId, filter, select, orderby, conditions, limit, offset, fields, ...rest } = args;
+): Promise<PaginatedForLlm<unknown> & { filterNote?: string }> {
+  const { projectId, typeId, filter, select, orderby, conditions, limit, offset, fields, ...params } = args;
 
-  const params: Record<string, unknown> = { ...rest };
-  if (filter !== undefined) params.$filter = filter;
-  if (select !== undefined) params.$select = select;
-  if (orderby !== undefined) params.$orderby = orderby;
-  const items = await collectAllDaluxItems((pageParams) =>
-    client.tasks.getProjectTasks(projectId, { ...params, ...pageParams }),
-  );
-  const page = paginateForLlm(applyConditions(items, conditions).map(unwrapTask), { limit, offset });
-  // An OData `select` already chose the fields; the lean default applies only without one.
-  return select === undefined ? pickFields(page, TASK_FIELDS, fields) : page;
+  const query = resolveTaskQuery({ typeId, filter, conditions });
+  const sort = orderby === undefined ? undefined : parseOrderby(orderby);
+  const items = (await collectProjectTasks(client, projectId, query, params)).map(unwrapTask);
+  if (sort) items.sort(sort);
+  const page = paginateForLlm(items, { limit, offset });
+  const picked =
+    select === undefined
+      ? pickFields(page, TASK_FIELDS, fields)
+      : pickFields(page, [], select.split(',').map((path) => odataPathToField(path.trim()).split('.')[0]));
+  return query.note ? { ...picked, filterNote: query.note } : picked;
+}
+
+/** `created desc, number` → a comparator over dot-path fields; missing values sort last. */
+function parseOrderby(orderby: string): (a: Record<string, unknown>, b: Record<string, unknown>) => number {
+  const keys = orderby.split(',').map((part) => {
+    const match = /^\s*([A-Za-z_][\w/.]*)(?:\s+(asc|desc))?\s*$/i.exec(part);
+    if (!match) throw new Error(`orderby: cannot parse \`${part.trim()}\`; use e.g. "created desc".`);
+    return { path: odataPathToField(match[1]).split('.'), sign: match[2]?.toLowerCase() === 'desc' ? -1 : 1 };
+  });
+  const get = (obj: unknown, path: string[]) =>
+    path.reduce<unknown>((acc, key) => (acc && typeof acc === 'object' ? (acc as Record<string, unknown>)[key] : undefined), obj);
+  return (a, b) => {
+    for (const { path, sign } of keys) {
+      const x = get(a, path);
+      const y = get(b, path);
+      if (x == null || y == null) {
+        if (x == null && y == null) continue;
+        return x == null ? 1 : -1;
+      }
+      const cmp = typeof x === 'number' && typeof y === 'number' ? x - y : String(x).localeCompare(String(y));
+      if (cmp !== 0) return cmp * sign;
+    }
+    return 0;
+  };
 }
 
 // ---------- search_tasks ----------
@@ -153,10 +106,10 @@ export const searchTasksInput = z.object({
     .string().describe('Keywords or natural language.'),
   typeId: z
     .string()
-    .optional().describe('Only tasks of this type. Ignored if filter is set.'),
+    .optional().describe('Only tasks of this type.'),
   filter: z
     .string()
-    .optional().describe('OData $filter. Dalux accepts only `data/type/typeId eq \'<id>\'`; use conditions for anything else.'),
+    .optional().describe('Simple OData, as in list_project_tasks. Prefer conditions.'),
   conditions: z
     .array(taskFilterConditionSchema)
     .optional().describe('Client-side filters, ANDed (see list_project_tasks).'),
@@ -173,7 +126,7 @@ export type SearchTasksInput = z.infer<typeof searchTasksInput>;
 
 /**
  * Ranked keyword/semantic search across a project's tasks — the "find tasks
- * about X" complement to list_project_tasks' exact OData filtering. Ranks by
+ * about X" complement to list_project_tasks' exact field filtering. Ranks by
  * BM25, or by Mistral embeddings when Mistral may be used (see mistral.ts).
  *
  * Re-fetches and re-renders every task on each call, same trade-off as
@@ -184,17 +137,8 @@ export type SearchTasksInput = z.infer<typeof searchTasksInput>;
 export async function searchTasks(client: DaluxClient, args: SearchTasksInput) {
   const { projectId, query, typeId, filter, conditions, includeChanges, includeAttachments, topK } = args;
 
-  const params: Record<string, unknown> = {};
-  if (filter !== undefined) {
-    params.$filter = filter;
-  } else if (typeId !== undefined) {
-    params.$filter = `data/type/typeId eq '${typeId.replace(/'/g, "''")}'`;
-  }
-
-  const rawTasks = applyConditions(
-    await collectAllDaluxItems((pageParams) => client.tasks.getProjectTasks(projectId, { ...params, ...pageParams })),
-    conditions,
-  );
+  const taskQuery = resolveTaskQuery({ typeId, filter, conditions });
+  const rawTasks = await collectProjectTasks(client, projectId, taskQuery);
 
   const changesByTaskId = includeChanges
     ? groupChangesByTaskId(
@@ -239,6 +183,7 @@ export async function searchTasks(client: DaluxClient, args: SearchTasksInput) {
     mode,
     warning,
     query,
+    ...(taskQuery.note && { filterNote: taskQuery.note }),
     totalTasks: byTaskId.size,
     returnedCount: matches.length,
     note: UNTRUSTED_TEXT_NOTE,

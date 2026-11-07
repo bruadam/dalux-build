@@ -143,12 +143,17 @@ const TASKS: SkillDoc = {
 Paged. Items carry \`taskId, number, subject, type, usage, workflow, created\`; \`fields: ["*"]\` (or \`select\`)
 returns full tasks.
 
-**OData is very limited in Dalux.** \`filter\` (sent as \`$filter\`) accepts exactly one shape:
-\`data/type/typeId eq '<id>'\`. No \`and\`/\`or\`, no other operators, no other fields; anything else fails with
-"Parameter validation failed for OData query". \`typeId\` is shorthand for that filter and is ignored when
-\`filter\` is set.
+**Dalux supports almost no OData on tasks** (checked live, 2026-11). Its \`$filter\` accepts exactly one shape,
+\`data/type/typeId eq '<id>'\` (no \`and\`/\`or\`, no other operators or fields), and it rejects every \`$select\` and
+\`$orderby\` tried, with "Parameter validation failed for OData query". So this server sends only that typeId clause:
+- \`typeId\` is the simplest way to get it.
+- \`filter\` takes simple OData: clauses joined by \`and\`, each \`<path> eq|ne|gt|ge|lt|le <value>\`,
+  \`contains(<path>,'x')\` or \`startswith(<path>,'x')\`. The typeId clause goes to Dalux; the rest is turned into
+  \`conditions\` (reported in \`filterNote\`). \`or\`, \`not\` and other functions are refused before calling Dalux.
+- \`select\` (top-level fields) and \`orderby\` (\`"created desc"\`) are applied here, after fetching.
 
-Use \`conditions\` for everything else. They run on the server after fetching, ANDed together:
+Prefer \`conditions\` for everything else. They run on this server after fetching, ANDed together
+(\`contains\`/\`startswith\` are case-insensitive):
 
 \`\`\`
 conditions: [

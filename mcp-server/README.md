@@ -196,7 +196,7 @@ The server bundles its own usage documentation and serves it over MCP, so any co
 | `overview` | topics, general principles (IDs, paging, lean items, errors), toolsets |
 | `files` | projects, file areas, folders, files, `download_file` caps, users and companies |
 | `documents` | `search_file_content`, `render_pdf_page` |
-| `tasks` | `list_project_tasks` paging and `conditions` (Dalux OData accepts only `typeId eq`), `search_tasks`, history, attachments |
+| `tasks` | `list_project_tasks` paging and `conditions` (Dalux OData accepts only `typeId eq`; the server translates the rest), `search_tasks`, history, attachments |
 | `search` | file-area, task and reference-docs indexes |
 | `consistency` | `check_document_consistency` workflow, findings, verdicts |
 | `models_and_quality` | IFC analysis, clash, volumes, `ifc_diff`, the 3D viewer, forms, quality, scheduling |
@@ -276,7 +276,7 @@ list_consistency_reports() / drop_consistency_report(reportId)
 
 ### Task search
 
-`list_project_tasks` filters with an exact OData `$filter` expression (see `get_skill({ topic: "tasks" })`) — precise, but it needs the model to write correct OData and can only match the literal field it's pointed at. Two tools answer "which tasks are about X" without that:
+`list_project_tasks` filters on exact field values (`typeId`, `conditions`, or simple OData that the server translates — see `get_skill({ topic: "tasks" })`) — precise, but it can only match the literal field it's pointed at. Two tools answer "which tasks are about X" without that:
 
 `search_tasks(projectId, query, typeId?, filter?, includeChanges?, topK?)` is the ad-hoc, no-setup option: it fetches the project's tasks (optionally narrowed with `typeId`/`filter` first), renders each one's subject, type, status, custom fields and (if `includeChanges: true`) change-history text, ranks them against `query` (embeddings if Mistral is enabled, BM25 otherwise — see `src/mistral.ts`), and returns the best-matching tasks (default `topK` 10) as `{ taskId, number, subject, type, status, score, snippet }`. Call `get_task` for the full task. Good for a one-off question; it re-fetches and re-renders every task on every call.
 

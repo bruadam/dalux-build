@@ -53,7 +53,20 @@ async function createPlatform(databaseUrl: string) {
   return new Platform(createDb(databaseUrl), loadEncryptionKey());
 }
 
+/** `dalux-mcp worker`: the platform's background jobs (index scopes, Dalux user matching). */
+async function runWorker(): Promise<void> {
+  const { startWorker } = await import('./worker/main');
+  const boss = await startWorker();
+  console.error('dalux-mcp worker running');
+  for (const signal of ['SIGTERM', 'SIGINT'] as const) {
+    process.once(signal, () => {
+      boss.stop({ graceful: true }).finally(() => process.exit(0));
+    });
+  }
+}
+
 async function main(): Promise<void> {
+  if (process.argv[2] === 'worker') return runWorker();
   const options = parseArgs(process.argv.slice(2));
 
   if (options.transport === 'stdio') {

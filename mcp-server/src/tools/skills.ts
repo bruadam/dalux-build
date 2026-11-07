@@ -570,7 +570,9 @@ export type GetSkillOutput = z.infer<typeof getSkillOutput>;
 
 function overviewWithSkills(): string {
   if (!MARKDOWN_SKILLS.length) return OVERVIEW.content;
-  const rows = MARKDOWN_SKILLS.map((skill) => `| \`${skill.name}\` | ${skill.description.replace(/\|/g, '\\|')} |`);
+  const rows = MARKDOWN_SKILLS.map(
+    (skill) => `| \`${skill.name}\` | ${skill.description.replace(/\\/g, '\\\\').replace(/\|/g, '\\|')} |`,
+  );
   return `${OVERVIEW.content}
 ## Domain skills
 

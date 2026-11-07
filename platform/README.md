@@ -19,7 +19,7 @@ docker compose up -d --build
 | `migrate` | Applies migrations and sets the role passwords, then exits; `web` and `mcp` start after it |
 | `web` | The interface (Next.js), connected as the `web` role |
 | `mcp` | The MCP server (`mcp-server/Dockerfile`), connected as the `mcp` role |
-| `caddy` | One HTTPS origin: `/mcp*`, `/.well-known/*`, `/authorize`, `/token`, `/register` go to `mcp`, everything else to `web` |
+| `caddy` | One HTTPS origin: `/mcp*`, `/.well-known/*`, `/token`, `/register`, `/revoke` go to `mcp`, everything else (including `/authorize`) to `web` |
 
 Environment (all required unless a default is given):
 
@@ -29,7 +29,7 @@ Environment (all required unless a default is given):
 | `PLATFORM_DB_WEB_PASSWORD` / `_MCP_` / `_WORKER_` | migrate, web, mcp | Login passwords of the `web`, `mcp`, `worker` roles. The mcp service connects as `mcp` and writes index data as `worker` |
 | `PLATFORM_ENCRYPTION_KEY` | web, mcp | 32 bytes, base64 (`openssl rand -base64 32`); encrypts Dalux and embedding keys. Losing it makes stored keys unreadable |
 | `BETTER_AUTH_SECRET` | web | Signs interface sessions (`openssl rand -base64 32`) |
-| `PUBLIC_URL` | web, mcp | The public origin, e.g. `https://mcp.example.com`; used for invite links, cookies, and auth origin checks |
+| `PUBLIC_URL` | web, mcp | The public origin, e.g. `https://mcp.example.com`; used for invite links, cookies, auth origin checks, and as the OAuth issuer. Must be `https://` |
 | `PLATFORM_SITE_ADDRESS` | caddy | Host name Caddy serves and gets a certificate for (default `localhost`) |
 | `PLATFORM_HTTP_PORT` / `PLATFORM_HTTPS_PORT` / `PLATFORM_DB_PORT` | caddy, postgres | Host ports (defaults `80`, `443`, `5432`; Postgres binds to 127.0.0.1 only) |
 
@@ -51,6 +51,18 @@ Environment (all required unless a default is given):
 - Every account sees its own access and manages its own `dxm_` API tokens. A
   token is shown once; the database stores `hashApiToken(token)` (sha256 hex of
   the full token) and a 12-character display prefix.
+- OAuth 2.1 for MCP clients (Claude, ChatGPT, Linear; PRD 6.5 mode B): the
+  `mcp` service serves the RFC 8414 / RFC 9728 metadata (per MCP endpoint, so
+  `/mcp/c/<slug>` has its own resource), RFC 7591 registration, the token
+  endpoint (PKCE S256; access tokens `dxo_…` for 1 hour, refresh tokens `dxr_…`
+  for 30 days, rotated on use; presenting a used refresh token revokes the
+  whole approval) and RFC 7009 revocation, with CORS on `/register`, `/token`
+  and `/revoke`. The interface serves `/authorize`: sign in, choose the
+  connection (fixed when the client asks for `/mcp/c/<slug>`), optionally
+  narrow the capabilities, approve. Each approval is an `oauth_sessions` row;
+  *Connected apps* lists and revokes them. Codes and tokens are stored as
+  sha256 hashes. An OAuth access token acts like a `dxm_` token restricted to
+  the approved connection; revocation takes effect within 60 seconds.
 - Every admin change writes an `audit_log` row. Changes to grants, groups,
   memberships, and account status call `refresh_effective_access()` in the
   same transaction.

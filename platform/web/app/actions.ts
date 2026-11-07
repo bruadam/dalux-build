@@ -13,6 +13,7 @@ import { db } from '@/lib/server/db';
 import { UserError } from '@/lib/server/errors';
 import { createGrant, deleteGrant } from '@/lib/server/grants';
 import { addMember, createGroup, deleteGroup, removeMember } from '@/lib/server/groups';
+import { decideAuthorization, revokeOAuthSession } from '@/lib/server/oauth';
 import { createRobot, reassignRobotOwner } from '@/lib/server/robots';
 import { requireActor } from '@/lib/server/session';
 import { setEmbeddingKey, setHeaderMode } from '@/lib/server/settings';
@@ -92,6 +93,23 @@ export const createRobotTokenAction = async (_: FormState, form: FormData) =>
 
 export const revokeTokenAction = async (_: FormState, form: FormData) =>
   run((actor) => revokeApiToken(db(), actor, text(form, 'tokenId')));
+
+export const revokeOAuthSessionAction = async (_: FormState, form: FormData) =>
+  run((actor) => revokeOAuthSession(db(), actor, text(form, 'sessionId')));
+
+/** The consent page's Approve / Deny: sends the browser back to the MCP client. */
+export async function approveAuthorizationAction(_: FormState, form: FormData): Promise<FormState> {
+  let target: string | undefined;
+  const state = await run(async (actor) => {
+    target = await decideAuthorization(db(), actor, new URLSearchParams(text(form, 'query')), {
+      approve: text(form, 'decision') !== 'deny',
+      connectionId: text(form, 'connectionId'),
+      capabilities: form.getAll('capabilities').map(String),
+    });
+  });
+  if (target) redirect(target);
+  return state;
+}
 
 export const inviteAccountAction = async (_: FormState, form: FormData) =>
   run(async (actor) => {

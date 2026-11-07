@@ -9,6 +9,7 @@ export const dynamic = 'force-dynamic';
 const USER_LINKS = [
   { href: '/', label: 'My access' },
   { href: '/tokens', label: 'My tokens' },
+  { href: '/oauth', label: 'Connected apps' },
 ];
 
 const ADMIN_LINKS = [

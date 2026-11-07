@@ -213,6 +213,8 @@ export const oauthCodes = pgTable('oauth_codes', {
     .references(() => connections.id, { onDelete: 'cascade' }),
   redirectUri: text('redirect_uri').notNull(),
   codeChallenge: text('code_challenge').notNull(),
+  /** Null means the account's full access; otherwise the subset chosen at consent. */
+  capabilities: text('capabilities').array(),
   expiresAt: timestamp('expires_at', { withTimezone: true }).notNull(),
   usedAt: timestamp('used_at', { withTimezone: true }),
   createdAt: createdAt(),
@@ -232,6 +234,8 @@ export const oauthSessions = pgTable(
     connectionId: uuid('connection_id')
       .notNull()
       .references(() => connections.id, { onDelete: 'cascade' }),
+    /** Null means the account's full access; otherwise the subset chosen at consent. */
+    capabilities: text('capabilities').array(),
     lastUsedAt: timestamp('last_used_at', { withTimezone: true }),
     revokedAt: timestamp('revoked_at', { withTimezone: true }),
     createdAt: createdAt(),

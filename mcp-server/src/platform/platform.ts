@@ -8,6 +8,10 @@ import {
   connections,
   daluxUserLinks,
   decryptSecret,
+  OAUTH_ACCESS_TOKEN_PREFIX,
+  oauthClients,
+  oauthSessions,
+  oauthTokens,
   effectiveAccess,
   settings,
   type Db,
@@ -71,13 +75,14 @@ export class Platform {
   private readonly clients = new Map<string, { key: string; connection: Connection }>();
 
   constructor(
-    private readonly db: Db,
+    readonly db: Db,
     private readonly encryptionKey: Buffer,
   ) {}
 
   async authenticate(token: string): Promise<AuthResult> {
     const tokenHash = hashApiToken(token);
-    const result = await this.tokens(tokenHash, () => this.loadToken(tokenHash));
+    const load = token.startsWith(OAUTH_ACCESS_TOKEN_PREFIX) ? this.loadOAuthToken : this.loadToken;
+    const result = await this.tokens(tokenHash, () => load.call(this, tokenHash));
     if ('caller' in result && result.caller.token.expiresAt && result.caller.token.expiresAt <= new Date()) {
       return { error: 'The API token has expired.' };
     }
@@ -104,6 +109,33 @@ export class Platform {
         token: { id: token.id, name: token.name, connectionId: token.connectionId, expiresAt: token.expiresAt },
         defaultConnectionId: account.defaultConnectionId,
         access: allowed ? access.filter((row) => allowed.includes(row.capability)) : access,
+      },
+    };
+  }
+
+  /** OAuth access tokens act like a `dxm_` token bound to the consented connection and capabilities. */
+  private async loadOAuthToken(tokenHash: string): Promise<AuthResult> {
+    const [row] = await this.db
+      .select({ token: oauthTokens, session: oauthSessions, account: accounts, clientName: oauthClients.name })
+      .from(oauthTokens)
+      .innerJoin(oauthSessions, eq(oauthSessions.id, oauthTokens.sessionId))
+      .innerJoin(oauthClients, eq(oauthClients.id, oauthSessions.clientId))
+      .innerJoin(accounts, eq(accounts.id, oauthSessions.accountId))
+      .where(and(eq(oauthTokens.tokenHash, tokenHash), eq(oauthTokens.kind, 'access')));
+    if (!row) return { error: 'Unknown access token.' };
+    const { token, session, account } = row;
+    if (token.revokedAt || session.revokedAt) return { error: 'The access token has been revoked.' };
+    if (account.status !== 'active') return { error: 'The account behind this access token is not active.' };
+
+    await this.db.update(oauthSessions).set({ lastUsedAt: new Date() }).where(eq(oauthSessions.id, session.id));
+    const access = await this.accessByAccount(account.id, () => this.loadAccess(account.id));
+    const allowed = session.capabilities;
+    return {
+      caller: {
+        account: { id: account.id, role: account.role },
+        token: { id: session.id, name: `OAuth: ${row.clientName ?? session.clientId}`, connectionId: session.connectionId, expiresAt: token.expiresAt },
+        defaultConnectionId: account.defaultConnectionId,
+        access: allowed ? access.filter((r) => allowed.includes(r.capability)) : access,
       },
     };
   }
@@ -143,8 +175,13 @@ export class Platform {
     if (cached?.key === key) return cached.connection;
 
     const validated = validateDaluxBaseUrl(row.baseUrl);
-    if ('error' in validated) throw new Error(`Connection ${row.slug}: base URL ${validated.error}`);
-    const apiKey = decryptSecret(row.apiKeyEncrypted, this.encryptionKey);
+    if ('error' in validated) throw new Error(`base URL ${validated.error}`);
+    let apiKey: string;
+    try {
+      apiKey = decryptSecret(row.apiKeyEncrypted, this.encryptionKey);
+    } catch {
+      throw new Error('its API key cannot be decrypted with PLATFORM_ENCRYPTION_KEY');
+    }
     const client = createClient({ baseUrl: validated.baseUrl, apiKey });
     const connection = {
       id: row.id,

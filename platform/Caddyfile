@@ -1,7 +1,8 @@
-# One origin: the MCP server under /mcp, its OAuth and model-viewer routes,
-# and the web interface for everything else.
+# One origin: the MCP server under /mcp, its OAuth discovery, registration,
+# token and revocation endpoints, and the web interface for everything else
+# (including the OAuth /authorize consent page).
 {$PLATFORM_SITE_ADDRESS:localhost} {
-	@mcp path /mcp /mcp/* /.well-known/* /authorize /token /register
+	@mcp path /mcp /mcp/* /.well-known/* /token /register /revoke
 	handle @mcp {
 		reverse_proxy mcp:8080
 	}

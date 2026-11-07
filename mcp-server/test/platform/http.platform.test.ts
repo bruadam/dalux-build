@@ -428,3 +428,34 @@ describe('platform mode: Dalux header mode', () => {
     expect(indexIds(JSON.parse((await call(tokens.bob, 'list_file_area_indexes', {})).text))).toEqual(accountIndexes);
   });
 });
+
+describe('platform mode: misconfigured connection', () => {
+  it.each([
+    ['bad-url', 'http://dalux.example.com/service/api', ENCRYPTION_KEY, 'base URL'],
+    ['bad-key', 'https://node1.field.dalux.com/service/api', Buffer.alloc(32, 9), 'cannot be decrypted'],
+  ])('answers a clear error and logs one line for %s', async (slug, baseUrl, key, reason) => {
+    const connectionId = await insert('connections', {
+      name: slug,
+      slug,
+      base_url: baseUrl,
+      api_key_encrypted: encryptSecret('key-secret', key),
+      api_key_last4: 'cret',
+    });
+    await insert('grants', { account_id: ids.bob, connection_id: connectionId, capabilities: ['projects:read'] });
+    await owner.query('SELECT refresh_effective_access()');
+    const log = jest.spyOn(console, 'error').mockImplementation(() => {});
+    try {
+      const { status, body } = await rpc(`/mcp/c/${slug}`, 'tools/list', {}, { Authorization: `Bearer ${tokens.bob}` }, app().handleRequest);
+      expect(status).toBe(503);
+      expect(body).toMatchObject({ error: 'connection_misconfigured' });
+      expect(body.message).toContain(`Connection "${slug}" is misconfigured`);
+      expect(body.message).toContain(reason);
+      expect(body.message).toContain('ask an admin');
+      expect(log).toHaveBeenCalledTimes(1);
+      expect(String(log.mock.calls[0][0])).toContain(slug);
+      expect(JSON.stringify(log.mock.calls)).not.toContain('key-secret');
+    } finally {
+      log.mockRestore();
+    }
+  });
+});

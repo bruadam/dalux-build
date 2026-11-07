@@ -1,4 +1,5 @@
 import type { McpServer } from '@modelcontextprotocol/server';
+import { registerAppResource, registerAppTool, RESOURCE_MIME_TYPE } from '@modelcontextprotocol/ext-apps/server';
 import { z } from 'zod';
 import type { DaluxClient } from 'dalux-build-api';
 import { TASK_TIMELINE_BUNDLE_JS } from './taskTimelineBundle.generated';
@@ -14,19 +15,15 @@ import { createToolGuard, type ToolGuard } from '../access/guard';
  *
  * Unlike ui/ifcViewer.ts, this needs no signed URL or cross-origin fetch —
  * every field the chart draws is embedded directly in the tool result — so
- * it renders identically over stdio and the HTTP/OAuth deployment.
- *
- * Registers directly via `server.registerResource`/`registerTool` for the
- * same reason ifcViewer.ts does: see the comment there about
- * `@modelcontextprotocol/ext-apps/server` being ESM-only.
+ * it renders identically over stdio and the HTTP/OAuth deployment. The task
+ * count and title length are capped so the result stays far below Claude's
+ * ~150,000-character limit for results it hands to an app.
  */
 
 export const RESOURCE_URI = 'ui://dalux-build/task-timeline';
 
-/** MCP Apps (SEP-1865) resource MIME type. */
-const RESOURCE_MIME_TYPE = 'text/html;profile=mcp-app';
-/** Pre-2.0 hosts read the UI resource URI from this flat `_meta` key instead of `_meta.ui.resourceUri`; set both for compatibility. */
-const LEGACY_RESOURCE_URI_META_KEY = 'ui/resourceUri';
+const MAX_TASKS = 200;
+const MAX_TITLE_CHARS = 200;
 
 const TASK_TIMELINE_HTML = `<!doctype html>
 <html>
@@ -49,7 +46,7 @@ export const viewTasksTimelineInput = z.object({
   projectId: z.string(),
   taskIds: z
     .array(z.string())
-    .min(1).describe('Task IDs to show.'),
+    .min(1).max(MAX_TASKS).describe('Task IDs to show.'),
 });
 export type ViewTasksTimelineInput = z.infer<typeof viewTasksTimelineInput>;
 
@@ -80,7 +77,7 @@ function normalizeTask(taskId: string, raw: unknown): TimelineTask {
   return {
     taskId,
     label: text('number') ?? taskId,
-    title: text('title'),
+    title: text('title')?.slice(0, MAX_TITLE_CHARS),
     status: text('status'),
     created: text('created'),
     deadline: text('deadline'),
@@ -93,7 +90,8 @@ export function registerTaskTimeline(
   client: DaluxClient,
   guard: ToolGuard = createToolGuard(UNRESTRICTED_CONTEXT),
 ): void {
-  server.registerResource(
+  registerAppResource(
+    server,
     'task-timeline',
     RESOURCE_URI,
     {
@@ -106,14 +104,15 @@ export function registerTaskTimeline(
     }),
   );
 
-  server.registerTool(
+  registerAppTool(
+    server,
     'view_tasks_timeline',
     {
       title: 'View Tasks Timeline',
       description: 'Show a timeline (created to deadline, by status) of selected tasks in the chat.',
       inputSchema: viewTasksTimelineInput,
       outputSchema: viewTasksTimelineOutput,
-      _meta: { ui: { resourceUri: RESOURCE_URI }, [LEGACY_RESOURCE_URI_META_KEY]: RESOURCE_URI },
+      _meta: { ui: { resourceUri: RESOURCE_URI } },
     },
     (args) =>
       guard(

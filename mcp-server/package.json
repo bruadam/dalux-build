@@ -65,6 +65,20 @@
   "jest": {
     "testEnvironment": "node",
     "preset": "ts-jest",
+    "transform": {
+      "^.+\\.tsx?$": "ts-jest",
+      "/node_modules/@modelcontextprotocol/ext-apps/.+\\.js$": [
+        "ts-jest",
+        {
+          "tsconfig": {
+            "allowJs": true
+          }
+        }
+      ]
+    },
+    "transformIgnorePatterns": [
+      "/node_modules/(?!@modelcontextprotocol/ext-apps/)"
+    ],
     "testMatch": [
       "**/test/**/*.test.ts"
     ],

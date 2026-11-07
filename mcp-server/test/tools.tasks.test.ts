@@ -35,7 +35,7 @@ describe('tools/tasks', () => {
       typeId: 'ty1',
     });
 
-    expect(getProjectTasks).toHaveBeenCalledWith('p1', { typeId: 'ty1' });
+    expect(getProjectTasks).toHaveBeenCalledWith('p1', { $filter: "data/type/typeId eq 'ty1'" });
     expect(result.items).toHaveLength(2);
     expect(result.totalCount).toBe(2);
     expect(result.returnedCount).toBe(2);
@@ -77,22 +77,53 @@ describe('tools/tasks', () => {
     expect(result.items).toEqual([{ taskId: 't1', location: { x: 1 } }]);
   });
 
-  it('listProjectTasks translates filter/select/orderby to their OData $-prefixed names', async () => {
-    const getProjectTasks = jest.fn().mockResolvedValue({ items: [] });
+  it('listProjectTasks sends only the typeId clause to Dalux and applies the rest of filter/select/orderby itself', async () => {
+    const getProjectTasks = jest.fn().mockResolvedValue({
+      items: [
+        { data: { taskId: 't1', subject: 'a', created: '2026-01-01', workflow: { name: 'Open' } } },
+        { data: { taskId: 't2', subject: 'b', created: '2026-03-01', workflow: { name: 'Open' } } },
+        { data: { taskId: 't3', subject: 'c', created: '2026-02-01', workflow: { name: 'Closed' } } },
+      ],
+    });
     const client = fakeClient({ tasks: { getProjectTasks } });
 
-    await tasks.listProjectTasks(client, {
+    const result = await tasks.listProjectTasks(client, {
       projectId: 'p1',
-      filter: "data/type/typeId eq 'x'",
-      select: 'taskId,title',
-      orderby: 'taskId desc',
+      filter: "data/type/typeId eq 'x' and data/workflow/name eq 'Open'",
+      select: 'data/taskId,created',
+      orderby: 'data/created desc',
     });
 
-    expect(getProjectTasks).toHaveBeenCalledWith('p1', {
-      $filter: "data/type/typeId eq 'x'",
-      $select: 'taskId,title',
-      $orderby: 'taskId desc',
-    });
+    expect(getProjectTasks).toHaveBeenCalledWith('p1', { $filter: "data/type/typeId eq 'x'" });
+    expect(result.items).toEqual([
+      { taskId: 't2', created: '2026-03-01' },
+      { taskId: 't1', created: '2026-01-01' },
+    ]);
+    expect(result.filterNote).toMatch(/translated/);
+  });
+
+  it('listProjectTasks rejects an untranslatable filter without calling Dalux', async () => {
+    const getProjectTasks = jest.fn();
+    const client = fakeClient({ tasks: { getProjectTasks } });
+
+    await expect(
+      tasks.listProjectTasks(client, { projectId: 'p1', filter: "workflow/name eq 'Open' or workflow/name eq 'New'" }),
+    ).rejects.toThrow(/or\/not are not supported/);
+    await expect(tasks.searchTasks(client, { projectId: 'p1', query: 'x', filter: "substringof('a', subject)" })).rejects.toThrow(
+      /unsupported part/,
+    );
+    expect(getProjectTasks).not.toHaveBeenCalled();
+  });
+
+  it('listProjectTasks reports the OData it sent when Dalux rejects the request', async () => {
+    const getProjectTasks = jest
+      .fn()
+      .mockRejectedValue(new Error('API request failed: Parameter validation failed for OData query'));
+    const client = fakeClient({ tasks: { getProjectTasks } });
+
+    await expect(tasks.listProjectTasks(client, { projectId: 'p1', typeId: 'ty1' })).rejects.toThrow(
+      `Parameter validation failed for OData query (sent $filter="data/type/typeId eq 'ty1'")`,
+    );
   });
 
   it('listProjectTasks applies field conditions client-side (date range, ANDed)', async () => {

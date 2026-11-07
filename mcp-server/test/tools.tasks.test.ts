@@ -42,6 +42,41 @@ describe('tools/tasks', () => {
     expect(result.truncated).toBe(false);
   });
 
+  it('listProjectTasks returns lean, paged items unless more fields are asked for', async () => {
+    const task = {
+      taskId: 't1',
+      number: 'T-1',
+      subject: 'Crack',
+      type: { typeId: 'ty1', name: 'Defect' },
+      usage: 'task',
+      workflow: { name: 'Open' },
+      created: '2026-01-01T00:00:00Z',
+      createdBy: { userId: 'u1' },
+      userDefinedFields: { items: [{ name: 'Zone', values: ['North'] }] },
+    };
+    const getProjectTasks = jest.fn().mockResolvedValue({ items: [task, { ...task, taskId: 't2' }, { data: { ...task, taskId: 't3' } }] });
+    const client = fakeClient({ tasks: { getProjectTasks } });
+
+    const lean = await tasks.listProjectTasks(client, { projectId: 'p1', limit: 1, offset: 2 });
+    const full = await tasks.listProjectTasks(client, { projectId: 'p1', limit: 1, fields: ['userDefinedFields'] });
+
+    expect(getProjectTasks).toHaveBeenCalledWith('p1', {});
+    const { createdBy: _createdBy, userDefinedFields: _udf, ...leanTask } = task;
+    expect(lean.items).toEqual([{ ...leanTask, taskId: 't3' }]);
+    expect(lean).toMatchObject({ totalCount: 3, returnedCount: 1, truncated: false });
+    expect(full.items).toEqual([{ ...leanTask, userDefinedFields: task.userDefinedFields }]);
+    expect(full.nextOffset).toBe(1);
+  });
+
+  it('listProjectTasks keeps the fields an OData select asked for', async () => {
+    const getProjectTasks = jest.fn().mockResolvedValue({ items: [{ taskId: 't1', location: { x: 1 } }] });
+    const client = fakeClient({ tasks: { getProjectTasks } });
+
+    const result = await tasks.listProjectTasks(client, { projectId: 'p1', select: 'taskId,location' });
+
+    expect(result.items).toEqual([{ taskId: 't1', location: { x: 1 } }]);
+  });
+
   it('listProjectTasks translates filter/select/orderby to their OData $-prefixed names', async () => {
     const getProjectTasks = jest.fn().mockResolvedValue({ items: [] });
     const client = fakeClient({ tasks: { getProjectTasks } });
@@ -191,6 +226,32 @@ describe('tools/tasks', () => {
     expect(getProjectTaskChanges).not.toHaveBeenCalled();
     expect(result.totalTasks).toBe(2);
     expect(result.matches[0]).toMatchObject({ taskId: 't1', subject: 'Crack in beam B12' });
+  });
+
+  it('searchTasks returns compact matches with a snippet instead of the raw task', async () => {
+    const description = `${'Background text. '.repeat(30)}The beam shows a crack near the support. ${'More text. '.repeat(30)}`;
+    const getProjectTasks = jest.fn().mockResolvedValue({
+      items: [
+        {
+          taskId: 't1',
+          number: 'T-7',
+          subject: 'Beam B12',
+          description,
+          type: { typeId: 'ty1', name: 'Defect' },
+          workflow: { name: 'Open' },
+          userDefinedFields: { items: [{ name: 'Zone', values: ['North'] }] },
+        },
+      ],
+    });
+    const client = fakeClient({ tasks: { getProjectTasks } });
+
+    const result = await tasks.searchTasks(client, { projectId: 'p1', query: 'crack' });
+
+    const match = result.matches[0];
+    expect(Object.keys(match).sort()).toEqual(['number', 'score', 'snippet', 'status', 'subject', 'taskId', 'type']);
+    expect(match).toMatchObject({ taskId: 't1', number: 'T-7', subject: 'Beam B12', type: 'Defect', status: 'Open' });
+    expect(match.snippet).toContain('crack near the support');
+    expect(match.snippet!.length).toBeLessThanOrEqual(202);
   });
 
   it('searchTasks applies field conditions client-side before ranking', async () => {

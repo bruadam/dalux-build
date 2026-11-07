@@ -1,9 +1,10 @@
+import { createHash } from 'node:crypto';
+
 import { createMcpHandler } from '@modelcontextprotocol/server';
 
 import type { RequestContext } from '../access/context';
 import { runWithContext } from '../access/requestScope';
 import { restrictClient } from '../access/restrictedClient';
-import type { ModelLinkStore } from '../modelLinks';
 import { buildServer } from '../server';
 import type { Caller, Connection, Platform } from './platform';
 
@@ -18,8 +19,6 @@ function jsonError(status: number, error: string, message: string): Response {
 
 export interface PlatformHandlerOptions {
   platform: Platform;
-  publicUrl?: string;
-  modelLinks: ModelLinkStore;
   /** Today's Dalux-header flow, used only when an admin has turned header mode on. */
   serveWithHeaders: (request: Request) => Promise<Response>;
 }
@@ -82,19 +81,11 @@ export function createPlatformHandler(options: PlatformHandlerOptions): (request
       account: caller.account,
       connection: { id: connection.id },
       access: caller.access.filter((row) => row.connectionId === connection.id),
+      fileNamespace: createHash('sha256').update(`${caller.account.id}/${connection.id}`).digest('hex').slice(0, 32),
     };
-    const hosting = options.publicUrl
-      ? {
-          publicUrl: options.publicUrl,
-          daluxBaseUrl: connection.baseUrl,
-          daluxApiKey: connection.apiKey,
-          modelLinks: options.modelLinks,
-        }
-      : undefined;
     const handler = createMcpHandler(() =>
       buildServer(restrictClient(connection.client, context, connection.folders), {
         context,
-        hosting,
         folders: connection.folders,
         audit: (record) => platform.audit(caller, context, record),
       }),

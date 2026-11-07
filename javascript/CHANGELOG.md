@@ -1,5 +1,34 @@
 # dalux-build-api
 
+## 3.1.0
+
+### Minor Changes
+
+- [#176](https://github.com/bruadam/dalux-build/pull/176) [`78c80fe`](https://github.com/bruadam/dalux-build/commit/78c80feebd22c5e16e44137c807cf1fabee1406f) Thanks [@bruadam](https://github.com/bruadam)! - Python RAG agent: add a `consistency-specialist` subagent and `dalux.ai.check_consistency()` for finding inconsistencies between documents through the Dalux MCP server, a `compare_dalux_documents` retrieval tool that returns passages from several files, and 1-based page numbers in citations.
+
+### Patch Changes
+
+- [#177](https://github.com/bruadam/dalux-build/pull/177) [`b9cd4f4`](https://github.com/bruadam/dalux-build/commit/b9cd4f43b3d41fc1169b1901e6533ce769b3815e) Thanks [@bruadam](https://github.com/bruadam)! - Document the full `folder_path` form and the `DALUX_MCP_ALLOW_EXTERNAL_MODEL_IO` opt-in for `check_consistency`.
+
+- [#182](https://github.com/bruadam/dalux-build/pull/182) [`6d14e3a`](https://github.com/bruadam/dalux-build/commit/6d14e3a1c2623ac2c859dff15db613d0c578a0c0) Thanks [@bruadam](https://github.com/bruadam)! - Fix `check_consistency`: send `focus` as a list (as the MCP tool expects) and raise `ConsistencyCheckError` instead of a wrapped exception group.
+
+## 3.0.0
+
+### Major Changes
+
+- [#168](https://github.com/bruadam/dalux-build/pull/168) [`e54f30a`](https://github.com/bruadam/dalux-build/commit/e54f30a3c02455f2af616762dd081ddc8dc7f314) Thanks [@bruadam](https://github.com/bruadam)! - Standardize AI analysis, chat, OCR, and embeddings on Mistral using MISTRAL_API_KEY.
+  Replace the Python agent framework with LangChain agents and bounded adaptive RAG,
+  preserving specialist delegation and skills. Remove previous provider integrations
+  and local embeddings. Migrate vector caches to mistral-embed and update model selection.
+
+### Minor Changes
+
+- [`d457a1f`](https://github.com/bruadam/dalux-build/commit/d457a1f702483cf766fc24031622a205bcd37840) Thanks [@bruadam](https://github.com/bruadam)! - `FilesApi.getAllFiles`/`getFile` can now resolve `uploadedByUserId`/`lastModifiedByUserId` into full `ProjectUser` objects (and, through them, their company), the way the Python client's `get_files`/`get_file` already do via `recursively_populate`.
+  
+  Pass `recursivelyPopulate: true` — `getAllFiles(projectId, fileAreaId, params, verbose, true)`, or `getFile(projectId, fileAreaId, fileId, { recursivelyPopulate: true })` — to add `uploadedByUser`/`lastModifiedByUser` next to the existing id fields. `ProjectUser` itself gains an optional `company` field, populated the same way, matching the Python model.
+  
+  Defaults to `false`, unlike Python's `get_files` (which defaults to `true`): turning this on costs two extra requests (a project's users, then its companies) on every call, and flipping that on by default for an already-published client would be a behavior change for every existing caller, not an additive one.
+
 ## 2.5.1
 
 ### Patch Changes

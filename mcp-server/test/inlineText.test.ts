@@ -18,9 +18,9 @@ describe('inlineText', () => {
   });
 
   describe('maxInlineChars', () => {
-    it('defaults to 200,000', () => {
+    it('defaults to 40,000', () => {
       delete process.env.DALUX_MCP_MAX_INLINE_CHARS;
-      expect(maxInlineChars()).toBe(200_000);
+      expect(maxInlineChars()).toBe(40_000);
     });
 
     it('honours a per-call override', () => {
@@ -43,6 +43,7 @@ describe('inlineText', () => {
       expect(result.format).toBe('pdf');
       expect(result.text).toContain('Fire rating EI60 required');
       expect(result.truncated).toBe(false);
+      expect(result.note).toBeUndefined();
     });
 
     it('extracts a Word document\'s text with its heading anchor', async () => {
@@ -69,6 +70,7 @@ describe('inlineText', () => {
       if (!result.inlined) throw new Error('expected inlined result');
       expect(result.truncated).toBe(true);
       expect(result.text.length).toBe(5);
+      expect(result.note).toMatch(/^Text truncated to the first 5 of \d+ characters\. .*maxInlineChars/);
     });
 
     it('reports no extraction available for an unsupported format', async () => {

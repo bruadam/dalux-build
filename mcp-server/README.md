@@ -29,7 +29,9 @@ Reads the same environment variables as the rest of the Dalux Build clients:
 | --- | --- | --- |
 | `DALUX_BASE_URL` | yes | Your Dalux Build API base URL |
 | `DALUX_API_KEY` | yes | Your company's X-API-KEY |
-| `MISTRAL_API_KEY` | no | Enables semantic (embedding-based) ranking in document search; without it, ranking falls back to BM25 |
+| `MISTRAL_API_KEY` | no | Enables semantic (embedding-based) ranking in document search; without it, ranking falls back to BM25. Also enables model-based fact extraction and judging in `check_document_consistency` (only together with `DALUX_MCP_ALLOW_EXTERNAL_MODEL_IO`) |
+| `DALUX_MCP_ALLOW_EXTERNAL_MODEL_IO` | no | Set to `true` to let `check_document_consistency` send document text to Mistral. Off by default: without it the check runs deterministic patterns only and says so in `warnings` |
+| `DALUX_MCP_ANALYSIS_MODEL` | no | Mistral chat model used by `check_document_consistency` (default `mistral-large-latest`, the same default as the Python client) |
 | `DALUX_MCP_CACHE_DIR` | no | Where downloads and the ephemeral file-area/task indexes are cached (default `$TMPDIR/dalux-mcp`). Set it when the temp directory is small or wiped between restarts. Also used by the docs index if `DALUX_MCP_DOCS_DIR` is unset |
 | `DALUX_MCP_DOCS_DIR` | no | Where the (persistent) docs-repo index is stored (default `~/.dalux-mcp/docs-index`) — separate from `DALUX_MCP_CACHE_DIR` because, unlike the other two indexes, this one is meant to survive restarts |
 | `DOCS_GITHUB_TOKEN` (or `GITHUB_TOKEN`) | only for a private docs repo | Token `npm run docs:build` sends to the GitHub API — required to read a private repo, optional (but raises the rate limit) for a public one. Needs read access to the repo's contents; no other scope |
@@ -41,7 +43,7 @@ Reads the same environment variables as the rest of the Dalux Build clients:
 | `PUBLIC_URL` | HTTP transport only, optional | Externally-reachable `https://` base URL of this deployment. Set it to enable OAuth for Claude.ai/ChatGPT custom connectors — see below |
 | `DALUX_MCP_LOG_DISCOVERY` | HTTP transport only, optional | Set to `1` to log each client's `initialize` (client name/version, negotiated protocol version) and `tools/list` (tool count, `nextCursor`, payload size) to stderr. For diagnosing a host that shows fewer tools than the server registers — it distinguishes "served a short list" from "shortened a full list client-side". Logs no credentials |
 | `DALUX_MCP_MAX_INLINE_BYTES` | no | Server-wide default for how many bytes of an image `download_file`/`download_task_attachment` will stream back inline (default 10 MB, hard ceiling 500 MB) — see [Document search](#document-search) |
-| `DALUX_MCP_MAX_INLINE_CHARS` | no | Server-wide default for how many characters of extracted text those same tools will stream back inline for PDF/Word/Excel/Markdown/HTML (default 200,000, hard ceiling 2,000,000) |
+| `DALUX_MCP_MAX_INLINE_CHARS` | no | Server-wide default for how many characters of extracted text those same tools will stream back inline for PDF/Word/Excel/Markdown/HTML (default 40,000, hard ceiling 2,000,000) |
 | `DALUX_MCP_FEEDBACK_REPO` | no | `owner/repo` that `report_feedback` files issues against (default `bruadam/dalux-build`) — set this on a fork |
 | `DALUX_MCP_FEEDBACK_GITHUB_TOKEN` (or `GITHUB_TOKEN`) | only to enable `report_feedback` | Token with Issues: write (or `public_repo`) access that `report_feedback` uses to create the issue. Without this (or the gh CLI flag below), `report_feedback` still previews reports but refuses to post them |
 | `DALUX_MCP_FEEDBACK_USE_GH_CLI` | no | Set to `1` to have `report_feedback` post via the local `gh` CLI's own login instead of a token — a dev-machine-only alternative; ignored once a token is set |
@@ -143,6 +145,8 @@ When `DATABASE_URL` is set (connecting as the platform's `mcp` database role, se
 
 **Cross-document search**: `build_file_area_index`, `search_file_area`, `list_file_area_indexes`, `drop_file_area_index`
 
+**Cross-document consistency**: `check_document_consistency`, `list_inconsistencies`, `export_inconsistency_report`, `list_consistency_reports`, `drop_consistency_report`
+
 **Tasks**: `list_project_tasks`, `search_tasks`, `get_task`, `list_task_changes`, `list_task_attachments`
 
 **Cross-task search**: `build_task_index`, `search_task_index`, `list_task_indexes`, `drop_task_index`
@@ -163,13 +167,13 @@ When `DATABASE_URL` is set (connecting as the platform's `mcp` database role, se
 
 **IFC editing** (local only — see [IFC editing](#ifc-editing-ifc_edit_) below): `ifc_edit_start`, `ifc_edit_apply`, `ifc_edit_review`, `ifc_edit_save`
 
-**3D viewer**: `view_model_3d` (renders an interactive MCP App in supporting hosts — see below; requires `PUBLIC_URL`)
+**3D viewer**: `view_model_3d` (renders an interactive MCP App in supporting hosts — see below)
 
 **Feedback**: `report_feedback` (files a bug/enhancement report on this server's own GitHub repo — see [Feedback reporting](#feedback-reporting) below)
 
-List tools report `totalCount`/`truncated` and follow Dalux pagination to completion, returning all matching items. There is no extra MCP-side list cap.
+List tools follow Dalux pagination to completion, then return one page: `limit` (default 50, max 200) and `offset` select it, and the result reports `totalCount`, `returnedCount`, `truncated` and, when more remain, `nextOffset` (pass it as the next `offset`). `list_files`, `list_files_in_folder`, `search_files_by_name` and `list_project_tasks` return lean items by default (files: `fileId`, `fileName`, `folderId`, `lastModified`, `version`, `fileSize`; tasks: `taskId`, `number`, `subject`, `type`, `usage`, `workflow`, `created`). Pass `fields` to add more, or `["*"]` for every field; `get_file`/`get_task` return the full item. `get_folder_tree` returns `{ id, name, children }` nodes to `maxDepth` levels (default 3). A folder cut off at the limit reports `childCount`; call again with its id as `folderId` to go deeper.
 
-`search_projects_by_name`, `search_files_by_name` and `search_folders_by_name` complement the exact-match `find_project_by_name` / exact-`folderId` lookups: they match a substring anywhere in the name, case-insensitively, and return every match rather than assuming there is exactly one — useful when only part of the name (or its casing) is known.
+`search_projects_by_name`, `search_files_by_name` and `search_folders_by_name` complement the exact-match `find_project_by_name` / exact-`folderId` lookups: they match a substring anywhere in the name, case-insensitively, and can return several matches rather than assuming there is exactly one — useful when only part of the name (or its casing) is known.
 
 ### Usage guide (`get_skill`)
 
@@ -181,7 +185,7 @@ The server bundles its own usage documentation and serves it over MCP, so any co
 | --- | --- |
 | `overview` | tool categories, general usage principles, how errors are reported |
 | `tasks` | `list_project_tasks` filtering — OData `$filter`/`$select`/`$orderby` syntax, field paths, worked examples |
-| `documents` | `search_file_content`, `render_pdf_page`, cross-document search (`build_file_area_index`/`search_file_area`) |
+| `documents` | `search_file_content`, `render_pdf_page`, cross-document search (`build_file_area_index`/`search_file_area`), cross-document consistency checks (`check_document_consistency`) |
 | `files` | file areas/folders/files navigation, path-based lookups, projects, directory (users/companies) |
 | `models_and_quality` | IFC model tools (incl. `ifc_diff` and the `ifc_edit_*` group), the 3D viewer, forms, quality plans, scheduling |
 
@@ -193,7 +197,7 @@ The same five docs are also published as `dalux-build://skill/<topic>` resources
 
 - **`downloadUrl`** — always present: a single-use, ~15-minute link (`downloadLinks.ts`) the user can click to fetch the file directly. Loopback-only (`http://127.0.0.1:<port>/...`), so it only works from the same machine this server runs on — the common case for a local Claude Desktop/Claude Code stdio setup, not a genuinely remote HTTP-transport deployment.
 - **`image`** — for an actual image (PNG/JPEG/GIF/WEBP/BMP — not `.tiff`/`.svg`/CAD formats, which aren't things a vision model can decode), the bytes come back as a real MCP `image` content block, the same mechanism `render_pdf_page` already uses. Capped by `maxInlineBytes` (default 10 MB, hard ceiling 500 MB/524288000 bytes, `DALUX_MCP_MAX_INLINE_BYTES` for the server-wide default) — past that, no `image` field, `downloadUrl` still works.
-- **`text`** — for PDF/Word (`.docx`/`.docm`)/Excel (`.xlsx`/`.xlsm`)/Markdown/HTML, the same extraction pipeline `search_file_content` uses runs automatically and its text comes back inline, since raw document bytes aren't something a model can read the way it can an image. Capped by `maxInlineChars` (default 200,000 characters, hard ceiling 2,000,000, `DALUX_MCP_MAX_INLINE_CHARS` for the server-wide default).
+- **`text`** — for PDF/Word (`.docx`/`.docm`)/Excel (`.xlsx`/`.xlsm`)/Markdown/HTML, the same extraction pipeline `search_file_content` uses runs automatically and its text comes back inline, since raw document bytes aren't something a model can read the way it can an image. Capped by `maxInlineChars` (default 40,000 characters, hard ceiling 2,000,000, `DALUX_MCP_MAX_INLINE_CHARS` for the server-wide default). Truncated text comes with `truncated: true` and a `note` that says how to get more.
 
 An MCP embedded-resource (`type: 'resource'`) content block would in principle be the spec-correct way to send arbitrary bytes back for any format, but at least one real MCP host this server runs under has no support for rendering it and hard-errors on any tool result that includes one — so this server never emits one; the local cache write plus `downloadUrl`/`image`/`text` above is what actually reaches the chat instead. The local cache write always happens regardless, since `search_file_content`/`render_pdf_page`/the index builders read from it. `download_task_attachment` behaves the same way.
 
@@ -238,11 +242,30 @@ Details worth knowing before pointing it at a large file area:
 
 This is the TypeScript counterpart of the corpus-wide RAG agent in the Python package (`python/dalux_build/ai/`), which uses Chroma and LangChain and hosts its own LLM loop. Chunk size and overlap match (1000/150) so passages read the same through either path.
 
+### Cross-document consistency
+
+`check_document_consistency` finds statements in different documents of a file area or folder that contradict each other: a door schedule (xlsx) says D-101 is EI60 while the specification (docx) says EI30, the tender letter's handover date differs from the time schedule (`uge 12 2027`), a BoQ quantity differs from the description, or two documents cite different editions of the same DS/EN standard or different revisions of a drawing. It reads `.pdf`, `.docx`/`.docm`, `.xlsx`/`.xlsm` and `.csv` (delimiter sniffed, so `;`-separated Danish exports with `1.234,5` numbers work). Nothing in Dalux is modified.
+
+```
+check_document_consistency(projectId, fileAreaId, folderPath?, fileIds?, extensions?, focus?, maxFiles?, timeBudgetSeconds?, useModel?)
+    ->  { reportId, complete, filesInScope, filesAnalyzed, skipped, findingsCount, bySeverity, topFindings, warnings }
+list_inconsistencies(reportId, severity?, type?, fileId?, offset?, limit?)  ->  { total, findings }
+export_inconsistency_report(reportId, format: 'xlsx' | 'docx' | 'md' | 'annotated-pdf')
+    ->  { reportId, format, fileName, filePath, downloadUrl, findingsCount, annotatedFiles?, unmatchedQuotes? }
+list_consistency_reports() / drop_consistency_report(reportId)
+```
+
+- **Deterministic first**: facts (element/door/room IDs, fire classes, concrete and exposure classes, U-values, sound requirements, dimensions, BoQ rows, milestone dates incl. Danish formats and week numbers, amounts in kr./DKK, standard editions, drawing revisions) are extracted with patterns, normalised, and compared per subject and attribute across *different* files. Equal values written differently (`EI 60`/`EI60`, `1.200 mm`/`1,2 m`, `01-03-2027`/`1. marts 2027`) do not conflict.
+- **With `MISTRAL_API_KEY` and `DALUX_MCP_ALLOW_EXTERNAL_MODEL_IO=true`** (and `useModel` not false), Mistral (`DALUX_MCP_ANALYSIS_MODEL`) also extracts facts the patterns miss, then judges every finding: false alarms are dropped, the rest become `verdict: "confirmed"` with an explanation and a precedence note based on the `danish-construction-contracts` skill. The opt-in variable is required because document text leaves the server; if it is missing, the check runs the patterns only and a warning names the variable. Model extraction respects `timeBudgetSeconds` inside a file too: a large file (e.g. a long bill of quantities) is read in batches, the progress is saved, and the next call continues it. Without the model, findings stay `verdict: "candidate"` for the calling agent to review with the `document-consistency-review` skill.
+- **Resumable and incremental**: same arguments give the same `reportId`; while `complete` is false, call again. Facts are cached per file revision, so later calls only re-read changed files. Reports untouched for a week are deleted.
+- **Export**: xlsx (one row per statement, grouped by finding), docx (summary and table) or md, written locally and returned as a download link — never uploaded to Dalux.
+- **Annotated PDFs**: `annotated-pdf` returns a zip with an annotated copy of every PDF that has findings (`<name>.annotated.pdf`) plus the xlsx register. Each quote gets a highlight annotation (red/orange/yellow for high/medium/low) with a comment and popup in the document's language (Danish or English), naming the conflicting value and its location in the other document; `/NM` is the finding id. The PDFs are downloaded again from Dalux and annotated as an incremental update ([`@cantoo/pdf-lib`](https://github.com/cantoo-scribe/pdf-lib), MIT), so the original bytes are kept. Quotes that cannot be found on their page or its neighbours get a note at the top of the page and are counted in `unmatchedQuotes`; encrypted PDFs are skipped. Both are listed on the register's Annotations sheet.
+
 ### Task search
 
 `list_project_tasks` filters with an exact OData `$filter` expression (see `get_skill({ topic: "tasks" })`) — precise, but it needs the model to write correct OData and can only match the literal field it's pointed at. Two tools answer "which tasks are about X" without that:
 
-`search_tasks(projectId, query, typeId?, filter?, includeChanges?, topK?)` is the ad-hoc, no-setup option: it fetches the project's tasks (optionally narrowed with `typeId`/`filter` first), renders each one's subject, type, status, custom fields and (if `includeChanges: true`) change-history text, ranks them against `query` (embeddings if `MISTRAL_API_KEY` is set, BM25 otherwise — see `src/search/rank.ts`), and returns the best-matching tasks with a `score`. Good for a one-off question; it re-fetches and re-renders every task on every call.
+`search_tasks(projectId, query, typeId?, filter?, includeChanges?, topK?)` is the ad-hoc, no-setup option: it fetches the project's tasks (optionally narrowed with `typeId`/`filter` first), renders each one's subject, type, status, custom fields and (if `includeChanges: true`) change-history text, ranks them against `query` (embeddings if `MISTRAL_API_KEY` is set, BM25 otherwise — see `src/search/rank.ts`), and returns the best-matching tasks (default `topK` 10) as `{ taskId, number, subject, type, status, score, snippet }`. Call `get_task` for the full task. Good for a one-off question; it re-fetches and re-renders every task on every call.
 
 For repeated searches over the same project, build an index instead — the task-side counterpart of `build_file_area_index`/`search_file_area`, combining each task with its change history into one searchable document per task:
 
@@ -286,11 +309,16 @@ Details worth knowing:
 
 ### `view_model_3d` (3D IFC viewer)
 
-`view_model_3d` renders an interactive 3D view of an `.ifc` file inline in the conversation, using [MCP Apps](https://github.com/modelcontextprotocol/ext-apps) (`ui://` resources, stable since 2026-01-26) and the [ifclite](https://ifclite.dev/) embed viewer (`@ifc-lite/embed-sdk`). Supporting hosts — currently Claude.ai and Claude Desktop — render the tool's `ui://dalux-build/ifc-viewer` resource in a sandboxed iframe; the viewer inside it streams the model from a short-lived signed URL served by this same server.
+`view_model_3d` renders an interactive 3D view of an `.ifc` file inline in the conversation, using [MCP Apps](https://github.com/modelcontextprotocol/ext-apps) (`ui://` resources). Supporting hosts render the tool's `ui://dalux-build/ifc-viewer` resource in a sandboxed iframe. It works on stdio and HTTP alike.
 
-This only works on the **HTTP transport with `PUBLIC_URL` set** (see [OAuth](#oauth-claudeai--chatgpt-custom-connectors) above) — the embed viewer needs a real `https://` URL it can fetch cross-origin, which stdio can't offer. Without `PUBLIC_URL`, the tool still appears in `tools/list` (so its presence doesn't depend on how the server happens to be deployed) but returns a message explaining to use `download_file` instead, rather than erroring.
+The app is plain WebGL (three.js) and makes no network requests of its own, so it runs under the default MCP Apps CSP (`connect-src 'none'`) and needs no WebGPU. It pulls everything through host-proxied calls to app-only tools (`_meta.ui.visibility: ["app"]`, hidden from the model):
 
-Mechanics, if you're curious: calling the tool issues a random, in-memory, 15-minute ticket (`src/modelLinks.ts`) bound to the request's Dalux credentials and file, and returns `https://<PUBLIC_URL>/models/<ticket>` as `modelUrl` in `structuredContent`. `GET /models/<ticket>` (handled in `http.ts`, ahead of the localhost Host/Origin checks that guard the main `/mcp` endpoint, since this route carries its own auth and is fetched cross-origin from `embed.ifclite.com` by design) resolves the ticket, downloads (or reuses the cache for) the file, and streams it back with CORS scoped to `https://embed.ifclite.com` and `Range` support. The Dalux API key itself never reaches the browser. Selecting an element in the viewer reports its IFC properties back to the model via `ui/update-model-context`.
+- `ifc_viewer_geometry` — the model tessellated once on the server with ifc-lite, packed into ~3 MB binary chunks (`src/ifc/meshPack.ts`), gzip + base64.
+- `ifc_viewer_element` — class, name, GlobalId, material, property and quantity sets for the side panel.
+- `ifc_viewer_selection` — the express ids behind a `selectionId`.
+
+Chat-driven filtering: `ifc_query_elements` returns a `selectionId` for its full match set (stored in memory for an hour, bound to the file). Pass it — or a `filter` / up to 200 `globalIds` — to `view_model_3d` with `mode` `isolate`, `xray` (default) or `highlight`; the viewer shows a filter chip with a mode switch and **Show all**. Clicking an element opens its properties and reports it back to the model via `ui/update-model-context`; **Ask in chat** sends it as a message. Other controls: fit (`F`), x-ray (`X`), per-class visibility, a section slider, `Esc` to close the panel.
+
 
 ### `ifc_diff` (revision comparison)
 

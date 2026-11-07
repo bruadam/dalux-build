@@ -1,0 +1,10 @@
+node_modules
+dist
+raycast-env.d.ts
+.raycast-swift-build
+.swiftpm
+compiled_raycast_swift
+.env
+
+# The repo root ignores *.png; the extension icon must be committed.
+!assets/*.png

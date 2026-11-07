@@ -1,4 +1,5 @@
 import path from 'node:path';
+import { extractCsv } from './csv';
 import { extractDocx } from './docx';
 import { extractHtml } from './html';
 import { extractMarkdown } from './markdown';
@@ -10,7 +11,7 @@ export * from './types';
 export { CHUNK_SIZE, CHUNK_OVERLAP } from './chunk';
 
 /** Extensions this server can read, in the form the tool descriptions advertise. */
-export const SUPPORTED_EXTENSIONS = ['.pdf', '.docx', '.docm', '.xlsx', '.xlsm', '.md', '.markdown', '.html', '.htm'] as const;
+export const SUPPORTED_EXTENSIONS = ['.pdf', '.docx', '.docm', '.xlsx', '.xlsm', '.csv', '.md', '.markdown', '.html', '.htm'] as const;
 
 const FORMAT_BY_EXTENSION: Record<string, DocumentFormat> = {
   '.pdf': 'pdf',
@@ -20,6 +21,7 @@ const FORMAT_BY_EXTENSION: Record<string, DocumentFormat> = {
   '.docm': 'docx',
   '.xlsx': 'xlsx',
   '.xlsm': 'xlsx',
+  '.csv': 'csv',
   '.md': 'md',
   '.markdown': 'md',
   '.html': 'html',
@@ -55,6 +57,8 @@ export async function extractDocument(filePath: string, nameHint?: string): Prom
       return extractDocx(filePath);
     case 'xlsx':
       return extractXlsx(filePath);
+    case 'csv':
+      return extractCsv(filePath);
     case 'md':
       return extractMarkdown(filePath);
     case 'html':

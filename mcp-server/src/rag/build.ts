@@ -68,13 +68,13 @@ function sourceDir(indexId: string): string {
   return dir;
 }
 
-async function downloadSource(
+/** Download one file of `scope` into `directory`, returning the local path. */
+export async function downloadSource(
   client: DaluxClient,
   scope: IndexScope,
-  indexId: string,
+  directory: string,
   file: IndexableFile,
 ): Promise<string> {
-  const directory = sourceDir(indexId);
   // The API-provided name is never used as a path component: a file named
   // "../../etc/passwd.pdf" would otherwise write outside the index directory.
   const localName = `${file.fileId.replace(/[^A-Za-z0-9._-]/g, '_')}${path.extname(file.fileName).toLowerCase()}`;
@@ -197,7 +197,7 @@ export async function buildIndex(
 
     let localPath: string | null = null;
     try {
-      localPath = await downloadSource(client, scope, indexId, file);
+      localPath = await downloadSource(client, scope, sourceDir(indexId), file);
       if (statSync(localPath).size > maxFileSizeBytes) {
         sizeSkipped.push({
           fileId: file.fileId,

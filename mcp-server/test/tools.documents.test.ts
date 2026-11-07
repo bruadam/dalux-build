@@ -173,6 +173,7 @@ describe('tools/documents', () => {
 
       expect(result.truncated).toBe(true);
       expect((result.text as string).length).toBe(5);
+      expect(result.note).toContain('search_file_content');
     });
 
     it('falls back to a message (with a download link) for a format with no text extraction and no image', async () => {

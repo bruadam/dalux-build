@@ -11,6 +11,7 @@ def test_build_specialist_subagents_returns_expected_names():
         "legal-specialist",
         "construction-pm-specialist",
         "entrepriseret-specialist",
+        "consistency-specialist",
     ]
 
 
@@ -36,3 +37,22 @@ def test_entrepriseret_subagent_covers_danish_standard_terms():
 
     for term in ("AB18", "ABT18", "ABR18"):
         assert term in prompt
+
+
+def test_consistency_subagent_follows_the_mcp_consistency_workflow():
+    subagents = {s["name"]: s for s in build_specialist_subagents()}
+    spec = subagents["consistency-specialist"]
+    prompt = spec["system_prompt"]
+
+    for name in (
+        "get_skill",
+        "danish-construction-contracts",
+        "document-consistency-review",
+        "check_document_consistency",
+        "list_inconsistencies",
+        "compare_dalux_documents",
+        "export_inconsistency_report",
+    ):
+        assert name in prompt
+    assert "uoverensstemmelser" in spec["description"]
+    assert spec["recursion_limit"] > 30

@@ -27,9 +27,8 @@ export function cacheDirFor(fileId: string): string {
  * schedule CSVs, clash results.
  *
  * Deliberately not a sub-directory of `cacheDirFor`: that holds the downloaded
- * file itself, and `modelLinks.resolveModelFile` takes its only non-dot entry
- * to be that file, so dropping anything else in there hands the 3D viewer a
- * CSV instead of the IFC.
+ * file itself, and readers take its only non-dot entry to be that file, so
+ * dropping anything else in there could hand them a CSV instead of the IFC.
  */
 export function derivedDirFor(fileId: string): string {
   const dir = path.join(mcpCacheRoot(), 'derived', fileId);
@@ -37,15 +36,15 @@ export function derivedDirFor(fileId: string): string {
   return dir;
 }
 
-/** Where the current caller's temporary indexes live: separate per file namespace (see RequestContext). */
-function indexBase(): string {
+/** Where the current caller's indexes and reports live: separate per file namespace (see RequestContext). */
+function callerBase(): string {
   const namespace = currentContext().fileNamespace;
   return namespace ? path.join(mcpCacheRoot(), 'callers', namespace) : mcpCacheRoot();
 }
 
 /** Root under which every temporary file-area index lives (one sub-directory per index). */
 export function ragRoot(): string {
-  const dir = path.join(indexBase(), 'rag');
+  const dir = path.join(callerBase(), 'rag');
   mkdirSync(dir, { recursive: true });
   return dir;
 }
@@ -59,7 +58,7 @@ export function ragIndexDir(indexId: string): string {
 
 /** Root under which every temporary task index lives (see store/file/taskStore.ts). */
 export function taskIndexRoot(): string {
-  const dir = path.join(indexBase(), 'task-index');
+  const dir = path.join(callerBase(), 'task-index');
   mkdirSync(dir, { recursive: true });
   return dir;
 }
@@ -67,6 +66,20 @@ export function taskIndexRoot(): string {
 /** Directory holding a single temporary task index's manifest and per-task chunks/vectors. */
 export function taskIndexDir(indexId: string): string {
   const dir = path.join(taskIndexRoot(), indexId);
+  mkdirSync(dir, { recursive: true });
+  return dir;
+}
+
+/** Root under which every document-consistency report lives (see consistency/report.ts). */
+export function consistencyRoot(): string {
+  const dir = path.join(callerBase(), 'consistency');
+  mkdirSync(dir, { recursive: true });
+  return dir;
+}
+
+/** Directory holding one consistency report: manifest, per-file facts, findings and exports. */
+export function consistencyReportDir(reportId: string): string {
+  const dir = path.join(consistencyRoot(), reportId);
   mkdirSync(dir, { recursive: true });
   return dir;
 }

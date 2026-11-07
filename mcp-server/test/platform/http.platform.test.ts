@@ -51,6 +51,8 @@ jest.mock('dalux-build-api', () => ({
 }));
 
 import { buildHttpApp } from '../../src/http';
+import { setIndexStores } from '../../src/store';
+import { postgresIndexStores } from '../../src/store/postgres';
 import { hashApiToken, Platform } from '../../src/platform/platform';
 
 const ADMIN_URL = process.env.TEST_DATABASE_URL ?? 'postgres://migrator:migrator@localhost:54329/platform_test';
@@ -317,6 +319,20 @@ describe('platform mode: access', () => {
 
     const bobTools = await listTools(tokens.bob);
     expect(bobTools).toEqual(expect.arrayContaining(['build_file_area_index', 'drop_task_index']));
+  });
+});
+
+describe('platform mode: Postgres index store', () => {
+  it('runs index tools as the calling account and connection', async () => {
+    const workerDb = createDb(dbUrl('worker'));
+    const { search, build } = postgresIndexStores({ mcp: mcpDb, worker: workerDb });
+    setIndexStores(search, build);
+    try {
+      const result = await call(tokens.alice, 'list_file_area_indexes', {});
+      expect(result.isError).toBe(false);
+    } finally {
+      await workerDb.$client.end();
+    }
   });
 });
 

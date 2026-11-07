@@ -4,6 +4,7 @@ import { createClient } from 'dalux-build-api';
 import { buildServer } from './server';
 import { buildHttpApp } from './http';
 import { UNRESTRICTED_CONTEXT } from './access/context';
+import { initIndexStores } from './store';
 
 interface CliOptions {
   transport: 'stdio' | 'http';
@@ -67,6 +68,7 @@ async function main(): Promise<void> {
   // not from server-side env vars — see http.ts.
   const token = options.token ?? process.env.DALUX_MCP_TOKEN;
   const localhostOnly = LOOPBACK_HOSTS.has(options.host);
+  initIndexStores();
   const platform = process.env.DATABASE_URL ? await createPlatform(process.env.DATABASE_URL) : undefined;
   const { start } = buildHttpApp({ token, localhostOnly, publicUrl: options.publicUrl, platform });
   await start(options.port, options.host);

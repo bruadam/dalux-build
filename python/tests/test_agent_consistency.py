@@ -87,12 +87,12 @@ def test_namespace_check_consistency_passes_client_and_arguments(monkeypatch):
     monkeypatch.setattr(consistency, "check_consistency", fake_check)
     client = object()
 
-    result = AINamespace(client).check_consistency("P", "FA", focus="datoer", max_files=10)
+    result = AINamespace(client).check_consistency("P", "FA", focus=["dates"], max_files=10)
 
     assert result == "report"
     assert received["client"] is client
     assert (received["project_id"], received["file_area_id"]) == ("P", "FA")
-    assert received["focus"] == "datoer" and received["max_files"] == 10
+    assert received["focus"] == ["dates"] and received["max_files"] == 10
 
 
 def test_missing_mcp_server_build_raises(monkeypatch):
@@ -101,3 +101,14 @@ def test_missing_mcp_server_build_raises(monkeypatch):
 
     with pytest.raises(ConsistencyCheckError, match="not built"):
         consistency.check_consistency(client, "P", "FA")
+
+
+def test_tool_errors_are_unwrapped_from_task_groups():
+    error = ConsistencyCheckError("check_document_consistency failed: bad focus")
+    group = type("Group", (Exception,), {})
+    inner, outer = group(), group()
+    inner.exceptions, outer.exceptions = (error,), (inner,)
+    wrapped = outer
+
+    assert consistency._find_consistency_error(wrapped) is error
+    assert consistency._find_consistency_error(RuntimeError("other")) is None

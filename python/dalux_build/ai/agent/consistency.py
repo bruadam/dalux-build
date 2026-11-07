@@ -78,7 +78,7 @@ async def run_consistency_check(
     folder_path: str | None = None,
     file_ids: list[str] | None = None,
     extensions: list[str] | None = None,
-    focus: str | None = None,
+    focus: list[str] | None = None,
     max_files: int | None = None,
     time_budget_seconds: int | None = None,
     use_model: bool | None = None,
@@ -153,16 +153,35 @@ async def _with_mcp_server(
         "DALUX_API_KEY": client.configuration.api_key,
     }
     mcp_client = MultiServerMCPClient({MCP_SERVER_NAME: stdio_connection(entrypoint, env)})
-    async with mcp_client.session(MCP_SERVER_NAME) as session:
+    try:
+        async with mcp_client.session(MCP_SERVER_NAME) as session:
 
-        async def call_tool(name: str, arguments: dict[str, object]) -> dict[str, object]:
-            result = await session.call_tool(name, arguments)
-            text = "".join(block.text for block in result.content if isinstance(block, TextContent))
-            if result.isError:
-                raise ConsistencyCheckError(f"{name} failed: {text}")
-            return cast(dict[str, object], json.loads(text))
+            async def call_tool(name: str, arguments: dict[str, object]) -> dict[str, object]:
+                result = await session.call_tool(name, arguments)
+                text = "".join(
+                    block.text for block in result.content if isinstance(block, TextContent)
+                )
+                if result.isError:
+                    raise ConsistencyCheckError(f"{name} failed: {text}")
+                return cast(dict[str, object], json.loads(text))
 
-        return await run(call_tool)
+            return await run(call_tool)
+    except Exception as exc:
+        # The stdio transport runs in task groups, which wrap our own errors in exception groups.
+        error = _find_consistency_error(exc)
+        if error is None:
+            raise
+        raise error from None
+
+
+def _find_consistency_error(exc: BaseException) -> ConsistencyCheckError | None:
+    if isinstance(exc, ConsistencyCheckError):
+        return exc
+    for inner in getattr(exc, "exceptions", ()):
+        found = _find_consistency_error(inner)
+        if found is not None:
+            return found
+    return None
 
 
 def check_consistency(
@@ -173,7 +192,7 @@ def check_consistency(
     folder_path: str | None = None,
     file_ids: list[str] | None = None,
     extensions: list[str] | None = None,
-    focus: str | None = None,
+    focus: list[str] | None = None,
     max_files: int | None = None,
     time_budget_seconds: int | None = None,
     use_model: bool | None = None,

@@ -3,7 +3,7 @@
 Self-hosted Dalux MCP platform (see `docs/specs/self-hosted-mcp-platform.md`).
 This folder holds the Compose setup, the `@dalux-platform/db` package
 (schema, migrations, row-level security), and the `@dalux-platform/web`
-interface. The `worker` service joins `compose.yaml` in wave 3.
+interface.
 
 ## Run with Docker Compose
 
@@ -19,6 +19,7 @@ docker compose up -d --build
 | `migrate` | Applies migrations and sets the role passwords, then exits; `web` and `mcp` start after it |
 | `web` | The interface (Next.js), connected as the `web` role |
 | `mcp` | The MCP server (`mcp-server/Dockerfile`), connected as the `mcp` role |
+| `worker` | `node dist/cli.js worker` from the same image, connected as the `worker` role: index scopes and Dalux user matching (see *Worker*) |
 | `caddy` | One HTTPS origin: `/mcp*`, `/.well-known/*`, `/token`, `/register`, `/revoke` go to `mcp`, everything else (including `/authorize`) to `web` |
 
 Environment (all required unless a default is given):
@@ -27,7 +28,7 @@ Environment (all required unless a default is given):
 | --- | --- | --- |
 | `PLATFORM_DB_MIGRATOR_PASSWORD` | postgres, migrate | Password of the owner role `migrator` |
 | `PLATFORM_DB_WEB_PASSWORD` / `_MCP_` / `_WORKER_` | migrate, web, mcp | Login passwords of the `web`, `mcp`, `worker` roles. The mcp service connects as `mcp` and writes index data as `worker` |
-| `PLATFORM_ENCRYPTION_KEY` | web, mcp | 32 bytes, base64 (`openssl rand -base64 32`); encrypts Dalux and embedding keys. Losing it makes stored keys unreadable |
+| `PLATFORM_ENCRYPTION_KEY` | web, mcp, worker | 32 bytes, base64 (`openssl rand -base64 32`); encrypts Dalux and embedding keys. Losing it makes stored keys unreadable |
 | `BETTER_AUTH_SECRET` | web | Signs interface sessions (`openssl rand -base64 32`) |
 | `PUBLIC_URL` | web, mcp | The public origin, e.g. `https://mcp.example.com`; used for invite links, cookies, auth origin checks, and as the OAuth issuer. Must be `https://` |
 | `PLATFORM_SITE_ADDRESS` | caddy | Host name Caddy serves and gets a certificate for (default `localhost`) |
@@ -76,6 +77,33 @@ npm run build --workspace=dalux-build-api && npm run build --workspace=@dalux-pl
 DATABASE_URL=postgres://web:...@localhost:5432/platform PLATFORM_ENCRYPTION_KEY=... \
 BETTER_AUTH_SECRET=... PUBLIC_URL=http://localhost:3000 npm run dev --workspace=@dalux-platform/web
 ```
+
+## Worker
+
+`dalux-mcp worker` runs jobs with [pg-boss](https://github.com/timgit/pg-boss) in the
+`pgboss` schema (created by migration 0008, owned by the `worker` role). A cron job
+every minute queues what is due:
+
+- **Index scopes** (*Indexes* in the interface, admins only): file area, task, or docs
+  scopes with the same arguments as `build_file_area_index` / `build_task_index`.
+  A scope runs on its schedule (default every 6 hours, minimum 15 minutes) or after
+  *Refresh now*. The builders are the MCP server's incremental ones, writing to the
+  Postgres store: unchanged revisions are not downloaded or embedded again. Each run
+  records items indexed / unchanged / removed / pending, chunks, skipped and failed
+  files with reasons, duration, and embedding tokens (from the provider's usage; marked
+  *estimated* when it returns none). One run at a time.
+- **Embedding key**: the key in *Settings*. Setting it is the admin's consent to send
+  document text to Mistral; without it, indexes are lexical only. `MISTRAL_API_KEY` is
+  not used by the worker.
+- **Dalux user matching** (*Dalux users*): per connection, the users of every project
+  (`GET /1.2/projects/{projectId}/users`, deduplicated by user id) are loaded when the
+  connection is new, daily, and on *Load users and match now*. Personal accounts are
+  linked to the one Dalux user with the same email (case-insensitive, trimmed) every
+  minute, so new accounts are linked quickly. No match or several: not linked, link by
+  hand. Robots are only linked by hand. Manual links are never changed.
+
+Optional: `DOCS_GITHUB_TOKEN` (or `GITHUB_TOKEN`) for private docs repositories.
+The worker assumes it is the only worker: at start it marks runs left *running* as failed.
 
 ## Postgres (alone)
 

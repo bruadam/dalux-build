@@ -35,6 +35,7 @@ export const daluxUserLinkSource = pgEnum('dalux_user_link_source', ['auto', 'ma
 export const indexKind = pgEnum('index_kind', ['file', 'task', 'docs']);
 export const oauthTokenKind = pgEnum('oauth_token_kind', ['access', 'refresh']);
 export const auditKind = pgEnum('audit_kind', ['admin', 'tool']);
+export const indexRunStatus = pgEnum('index_run_status', ['running', 'ok', 'partial', 'failed']);
 
 export const connections = pgTable('connections', {
   id: id(),
@@ -43,6 +44,10 @@ export const connections = pgTable('connections', {
   baseUrl: text('base_url').notNull(),
   apiKeyEncrypted: text('api_key_encrypted').notNull(),
   apiKeyLast4: text('api_key_last4').notNull(),
+  /** "Match now" in the interface; the worker matches Dalux users when this is newer than the last match. */
+  daluxUsersRequestedAt: timestamp('dalux_users_requested_at', { withTimezone: true }),
+  daluxUsersSyncedAt: timestamp('dalux_users_synced_at', { withTimezone: true }),
+  daluxUsersSyncError: text('dalux_users_sync_error'),
   createdAt: createdAt(),
   updatedAt: updatedAt(),
 });
@@ -169,6 +174,21 @@ export const daluxUserLinks = pgTable(
     updatedAt: updatedAt(),
   },
   (t) => [primaryKey({ columns: [t.accountId, t.connectionId] })],
+);
+
+/** The connection's Dalux users (all projects, deduplicated), copied by the worker for matching and manual linking. */
+export const daluxUsers = pgTable(
+  'dalux_users',
+  {
+    connectionId: uuid('connection_id')
+      .notNull()
+      .references(() => connections.id, { onDelete: 'cascade' }),
+    daluxUserId: text('dalux_user_id').notNull(),
+    email: text('email'),
+    name: text('name'),
+    updatedAt: updatedAt(),
+  },
+  (t) => [primaryKey({ columns: [t.connectionId, t.daluxUserId] })],
 );
 
 /** `capabilities` NULL = all of the account's capabilities. */
@@ -469,4 +489,66 @@ export const chunks = pgTable(
     index('chunks_folder_ancestors_idx').using('gin', t.folderAncestorIds),
     index('chunks_tsv_idx').using('gin', t.tsv),
   ],
+);
+
+/**
+ * What the worker indexes (PRD 6.3). `scope` holds the same arguments as the
+ * build tools: file `{ projectId, fileAreaId, folderId?, folderPath?, recursive?, extensions?, includeDrawings? }`,
+ * task `{ projectId, typeId?, filter? }`, docs `{ owner, repo, ref?, path? }`.
+ */
+export const indexScopes = pgTable(
+  'index_scopes',
+  {
+    id: id(),
+    connectionId: uuid('connection_id')
+      .notNull()
+      .references(() => connections.id, { onDelete: 'cascade' }),
+    kind: indexKind('kind').notNull(),
+    name: text('name').notNull(),
+    scope: jsonb('scope').notNull(),
+    intervalMinutes: integer('interval_minutes').notNull().default(360),
+    enabled: boolean('enabled').notNull().default(true),
+    /** "Refresh now"; the worker runs the scope when this is newer than the last run. */
+    refreshRequestedAt: timestamp('refresh_requested_at', { withTimezone: true }),
+    lastRunAt: timestamp('last_run_at', { withTimezone: true }),
+    lastRunStatus: indexRunStatus('last_run_status'),
+    createdAt: createdAt(),
+    updatedAt: updatedAt(),
+  },
+  (t) => [
+    index('index_scopes_connection_idx').on(t.connectionId),
+    check('index_scopes_interval', sql`${t.intervalMinutes} >= 15`),
+  ],
+);
+
+/** One worker run of an index scope. Names skipped and failed files, so only the web (admins) and worker read it. */
+export const indexRuns = pgTable(
+  'index_runs',
+  {
+    id: id(),
+    scopeId: uuid('scope_id')
+      .notNull()
+      .references(() => indexScopes.id, { onDelete: 'cascade' }),
+    trigger: text('trigger').notNull(),
+    status: indexRunStatus('status').notNull().default('running'),
+    startedAt: timestamp('started_at', { withTimezone: true }).notNull().defaultNow(),
+    finishedAt: timestamp('finished_at', { withTimezone: true }),
+    durationMs: integer('duration_ms'),
+    indexExternalId: text('index_external_id'),
+    itemsInScope: integer('items_in_scope'),
+    itemsIndexed: integer('items_indexed'),
+    itemsReused: integer('items_reused'),
+    itemsRemoved: integer('items_removed'),
+    itemsPending: integer('items_pending'),
+    totalChunks: integer('total_chunks'),
+    skipped: jsonb('skipped').notNull().default([]),
+    failed: jsonb('failed').notNull().default([]),
+    warnings: jsonb('warnings').notNull().default([]),
+    embeddingModel: text('embedding_model'),
+    embeddingTokens: integer('embedding_tokens'),
+    /** True when the provider returned no usage and `embedding_tokens` is an estimate (characters / 3). */
+    embeddingTokensEstimated: boolean('embedding_tokens_estimated').notNull().default(false),
+    error: text('error'),
+  },
+  (t) => [index('index_runs_scope_idx').on(t.scopeId, t.startedAt)],
 );

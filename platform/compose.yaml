@@ -62,6 +62,24 @@ services:
       migrate:
         condition: service_completed_successfully
 
+  # Index scopes and Dalux user matching (pg-boss jobs in Postgres). The embedding
+  # key comes from the settings in the interface; set DOCS_GITHUB_TOKEN for private docs repos.
+  worker:
+    build:
+      context: ..
+      dockerfile: mcp-server/Dockerfile
+    restart: unless-stopped
+    entrypoint: ["node", "dist/cli.js", "worker"]
+    healthcheck:
+      disable: true
+    environment:
+      DATABASE_URL_WORKER: postgres://worker:${PLATFORM_DB_WORKER_PASSWORD}@postgres:5432/platform
+      PLATFORM_ENCRYPTION_KEY: ${PLATFORM_ENCRYPTION_KEY}
+      DOCS_GITHUB_TOKEN: ${DOCS_GITHUB_TOKEN:-}
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+
   caddy:
     image: caddy:2
     restart: unless-stopped

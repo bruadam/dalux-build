@@ -10,8 +10,10 @@ import { inviteAccount, reissueInvite, setAccountRole, setAccountStatus } from '
 import type { Actor } from '@/lib/server/actor';
 import { addConnection, rotateConnectionKey } from '@/lib/server/connections';
 import { db } from '@/lib/server/db';
+import { linkDaluxUser, requestDaluxUserMatch, unlinkDaluxUser } from '@/lib/server/daluxUsers';
 import { UserError } from '@/lib/server/errors';
 import { createGrant, deleteGrant } from '@/lib/server/grants';
+import { createIndexScope, deleteIndexScope, requestIndexRefresh, updateIndexScope } from '@/lib/server/indexScopes';
 import { addMember, createGroup, deleteGroup, removeMember } from '@/lib/server/groups';
 import { decideAuthorization, revokeOAuthSession } from '@/lib/server/oauth';
 import { createRobot, reassignRobotOwner } from '@/lib/server/robots';
@@ -187,3 +189,53 @@ export const setEmbeddingKeyAction = async (_: FormState, form: FormData) =>
 
 export const setHeaderModeAction = async (_: FormState, form: FormData) =>
   run((actor) => setHeaderMode(db(), actor, text(form, 'enabled') === 'on'));
+
+export const createIndexScopeAction = async (_: FormState, form: FormData) =>
+  run(async (actor) => {
+    await createIndexScope(db(), actor, {
+      connectionId: text(form, 'connectionId'),
+      kind: text(form, 'kind'),
+      name: text(form, 'name'),
+      intervalHours: Number(text(form, 'intervalHours') || 6),
+      scope: {
+        projectId: text(form, 'projectId'),
+        fileAreaId: text(form, 'fileAreaId'),
+        folderId: text(form, 'folderId'),
+        folderPath: text(form, 'folderPath'),
+        recursive: text(form, 'recursive') === 'on',
+        extensions: text(form, 'extensions'),
+        includeDrawings: text(form, 'includeDrawings') === 'on',
+        typeId: text(form, 'typeId'),
+        filter: text(form, 'filter'),
+        owner: text(form, 'owner'),
+        repo: text(form, 'repo'),
+        ref: text(form, 'ref'),
+        path: text(form, 'path'),
+      },
+    });
+  });
+
+export const updateIndexScopeAction = async (_: FormState, form: FormData) =>
+  run((actor) =>
+    updateIndexScope(db(), actor, text(form, 'scopeId'), {
+      enabled: text(form, 'enabled') === 'on',
+      intervalHours: Number(text(form, 'intervalHours')),
+    }),
+  );
+
+export const refreshIndexScopeAction = async (_: FormState, form: FormData) =>
+  run((actor) => requestIndexRefresh(db(), actor, text(form, 'scopeId')));
+
+export const deleteIndexScopeAction = async (_: FormState, form: FormData) =>
+  run((actor) => deleteIndexScope(db(), actor, text(form, 'scopeId')));
+
+export const linkDaluxUserAction = async (_: FormState, form: FormData) =>
+  run((actor) =>
+    linkDaluxUser(db(), actor, { accountId: text(form, 'accountId'), connectionId: text(form, 'connectionId'), daluxUserId: text(form, 'daluxUserId') }),
+  );
+
+export const unlinkDaluxUserAction = async (_: FormState, form: FormData) =>
+  run((actor) => unlinkDaluxUser(db(), actor, { accountId: text(form, 'accountId'), connectionId: text(form, 'connectionId') }));
+
+export const matchDaluxUsersAction = async (_: FormState, form: FormData) =>
+  run((actor) => requestDaluxUserMatch(db(), actor, text(form, 'connectionId')));

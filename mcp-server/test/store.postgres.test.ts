@@ -191,6 +191,16 @@ describeDb('Postgres index store', () => {
     });
   });
 
+  it('stores text with NUL characters and lone surrogates (from extracted attachments)', async () => {
+    const document = fileDocument('nul', ['F1'], ['before\u0000after \udc4b']);
+    await writeIndex('idx-nul', [document], [null]);
+    await as('admin', async () => {
+      const stored = await build.fileAreas.readDocument('idx-nul', 'nul');
+      expect(stored?.chunks).toEqual([expect.objectContaining({ text: 'beforeafter \ufffd' })]);
+      await build.fileAreas.dropIndex('idx-nul');
+    });
+  });
+
   it('ranks semantically in Postgres with the same result shape as the file store', async () => {
     process.env.MISTRAL_API_KEY = 'test-key';
     embeddings.set('membrane', axis(2, 3, 0.5));

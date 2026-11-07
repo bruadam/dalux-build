@@ -147,6 +147,18 @@ function textArray(values: readonly string[]): string {
   return `{${values.map((value) => JSON.stringify(value)).join(',')}}`;
 }
 
+/**
+ * Postgres text and jsonb hold neither NUL characters nor lone UTF-16 surrogates,
+ * which text extracted from attachments sometimes has: NULs are dropped, lone surrogates become U+FFFD.
+ */
+const LONE_SURROGATE = /[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]/g;
+
+function storable<T>(value: T): T {
+  return JSON.parse(
+    JSON.stringify(value, (_key, item) => (typeof item === 'string' ? item.replaceAll('\u0000', '').replace(LONE_SURROGATE, '\uFFFD') : item)),
+  );
+}
+
 function toVector(values: readonly number[]): string {
   return JSON.stringify(values);
 }
@@ -327,8 +339,9 @@ function createStore<Manifest extends ManifestBase, Document extends { chunks: o
         return { ...document.fields, chunks: chunks.map((chunk) => ({ ...chunk.location, text: chunk.text })) } as unknown as Document;
       }),
 
-    writeDocument: (indexId, document, vectors) =>
+    writeDocument: (indexId, stored, vectors) =>
       pools.worker.transaction(async (tx) => {
+        const document = storable(stored);
         const access = mapping.access(document);
         const index = await ensureIndex(tx, indexId, {
           projectId: access?.projectId ?? null,

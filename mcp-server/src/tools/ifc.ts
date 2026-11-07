@@ -47,6 +47,7 @@ import { buildToolContext, callIfcTool } from '../ifc/runtime';
 import { deleteRule, getRules, listRules, saveRule } from '../ifc/ruleCatalog';
 import { resolveModel, type ResolvedModel } from '../ifc/session';
 import { describeVolumeJob, getVolumeJob, startVolumeJob } from '../ifc/volumeJobs';
+import { describeSelection, queryExpressIds, saveSelection } from '../ifc/viewerData';
 
 const ifcRef = {
   projectId: z.string().describe('The Dalux project ID.'),
@@ -205,7 +206,13 @@ export async function ifcQueryElements(client: DaluxClient, args: IfcQueryElemen
   }
 
   const res = await callIfcTool(ctx, 'query_entities', input);
-  return { matched: res.data.total ?? res.data.count, entities: res.data.entities ?? res.text };
+  const matched = res.data.total ?? res.data.count;
+  // A server-side handle on the full match set, so view_model_3d can show it without an id list.
+  const expressIds = await queryExpressIds(ctx, model, { type: args.type, property: args.property });
+  const selectionId = expressIds.length
+    ? saveSelection({ fileId: args.fileId, label: describeSelection({ filter: { type: args.type, property: args.property } }), expressIds })
+    : undefined;
+  return { matched, selectionId, entities: res.data.entities ?? res.text };
 }
 
 // ---------- ifc_schedule ----------

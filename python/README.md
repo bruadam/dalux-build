@@ -518,7 +518,9 @@ from dalux_build.ai.rag import PlatformRetriever
 
 platform = PlatformConfig.from_env()  # DALUX_PLATFORM_URL / _TOKEN / _CONNECTION
 files = PlatformRetriever(platform=platform, arguments={"projectId": "P1", "fileAreaId": "FA1"})
-tasks = PlatformRetriever(platform=platform, tool="search_task_index", arguments={"projectId": "P1"})
+tasks = PlatformRetriever(
+    platform=platform, tool="search_task_index", arguments={"projectId": "P1"}
+)
 docs = PlatformRetriever(platform=platform, tool="search_docs")
 
 for doc in files.invoke("fire rating of doors"):

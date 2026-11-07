@@ -44,15 +44,19 @@ def citation_label(metadata: dict[str, object]) -> str:
     """``file, page N`` for a passage, using the page number printed in the PDF.
 
     PyPDFLoader stores the 0-based page index as ``page`` and the printed page
-    label as ``page_label``.
+    label as ``page_label``. Passages without a page (from the platform's
+    search tools) may carry a ``location`` such as a section or sheet range.
     """
     source = metadata.get("file_name") or metadata.get("source", "unknown")
     page_label = metadata.get("page_label")
     page = metadata.get("page")
+    location = metadata.get("location")
     if page_label is not None:
         return f"{source}, page {page_label}"
     if isinstance(page, int):
         return f"{source}, page {page + 1}"
+    if location:
+        return f"{source}, {location}"
     return str(source)
 
 

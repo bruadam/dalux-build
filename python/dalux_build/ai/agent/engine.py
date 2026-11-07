@@ -30,6 +30,7 @@ from .scope import AgentScope, resolve_pdf_files
 
 if TYPE_CHECKING:
     from ... import DaluxClient
+    from ..platform_config import PlatformConfig
 
 _GRAPH_NAME = "dalux_agent"
 _DEEP_AGENTS_UI_REPO = "https://github.com/langchain-ai/deep-agents-ui.git"
@@ -186,46 +187,18 @@ def _ensure_ui_checkout(ui_dir: Path, *, log: TextIO) -> None:
         )
 
 
-def launch_agent(
-    *,
-    scope: AgentScope,
+def _index_locally(
     client: DaluxClient,
-    skill: str | None = None,
-    provider: str = "mistral",
-    model: str | None = None,
-    embeddings_provider: str = "mistral",
-    recursive: bool = True,
-    file_type: str | None = "document",
-    open_browser: bool = True,
-    backend_port: int | None = None,
-    ui_port: int | None = None,
-    ui_repo_dir: str | None = None,
-    startup_timeout: float = 300.0,
-    verbose: bool = False,
-) -> AgentHandle:
-    """Sync scope PDFs into a local vector index, then launch the LangGraph
-    backend and the deep-agents-ui chat frontend against it.
-
-    Documents are embedded with mistral-embed before the backend starts.
-    """
-    _require_dependencies()
-    _require_external_tools()
-
-    # Deferred until after the dependency check above, so a missing optional
-    # 'rag' extra surfaces as MissingAgentDependencies rather than a raw
-    # ImportError from importing platformdirs/langchain transitively.
-    from ..rag.cache_paths import scope_cache_dir
+    scope: AgentScope,
+    *,
+    recursive: bool,
+    file_type: str | None,
+    embeddings_provider: str,
+    verbose: bool,
+) -> None:
+    """Download the scope's PDFs and bring the local vector index up to date."""
     from ..rag.ingest import sync_scope
     from ..rag.vectorstore import load_or_build
-
-    api_key_env_var = _PROVIDER_API_KEY_ENV_VARS.get(provider)
-    if api_key_env_var is None:
-        raise AgentStartupError(
-            f"Unsupported provider {provider!r}; supported: {', '.join(_PROVIDER_API_KEY_ENV_VARS)}"
-        )
-    provider_api_key = os.environ.get(api_key_env_var)
-    if not provider_api_key:
-        raise AgentStartupError(f"{api_key_env_var} must be set to use provider={provider!r}.")
 
     cache_key = scope.cache_key()
     files = resolve_pdf_files(
@@ -246,6 +219,60 @@ def launch_agent(
         verbose=verbose,
     )
 
+
+def launch_agent(
+    *,
+    scope: AgentScope,
+    client: DaluxClient,
+    skill: str | None = None,
+    provider: str = "mistral",
+    model: str | None = None,
+    embeddings_provider: str = "mistral",
+    recursive: bool = True,
+    file_type: str | None = "document",
+    open_browser: bool = True,
+    backend_port: int | None = None,
+    ui_port: int | None = None,
+    ui_repo_dir: str | None = None,
+    startup_timeout: float = 300.0,
+    verbose: bool = False,
+    platform: PlatformConfig | None = None,
+) -> AgentHandle:
+    """Sync scope PDFs into a local vector index, then launch the LangGraph
+    backend and the deep-agents-ui chat frontend against it.
+
+    Documents are embedded with mistral-embed before the backend starts.
+    With *platform*, nothing is indexed locally: the agent searches the
+    platform's shared index and uses its tools with the platform token.
+    """
+    _require_dependencies()
+    _require_external_tools()
+
+    # Deferred until after the dependency check above, so a missing optional
+    # 'rag' extra surfaces as MissingAgentDependencies rather than a raw
+    # ImportError from importing platformdirs/langchain transitively.
+    from ..rag.cache_paths import scope_cache_dir
+
+    api_key_env_var = _PROVIDER_API_KEY_ENV_VARS.get(provider)
+    if api_key_env_var is None:
+        raise AgentStartupError(
+            f"Unsupported provider {provider!r}; supported: {', '.join(_PROVIDER_API_KEY_ENV_VARS)}"
+        )
+    provider_api_key = os.environ.get(api_key_env_var)
+    if not provider_api_key:
+        raise AgentStartupError(f"{api_key_env_var} must be set to use provider={provider!r}.")
+
+    cache_key = scope.cache_key()
+    if platform is None:
+        _index_locally(
+            client,
+            scope,
+            recursive=recursive,
+            file_type=file_type,
+            embeddings_provider=embeddings_provider,
+            verbose=verbose,
+        )
+
     run_dir = _write_langgraph_run_dir(cache_key)
 
     configuration = client.configuration
@@ -261,6 +288,8 @@ def launch_agent(
         "DALUX_AGENT_EMBEDDINGS_PROVIDER": embeddings_provider,
         **scope.to_env(),
     }
+    if platform is not None:
+        backend_environment.update(platform.to_env())
     if model:
         backend_environment["DALUX_AGENT_MODEL"] = model
     if skill:

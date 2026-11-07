@@ -82,6 +82,9 @@ class AIEndpointProxy(AiMixin):
         file_type: str | None = "document",
         open_browser: bool = True,
         verbose: bool = False,
+        platform_url: str | None = None,
+        platform_token: str | None = None,
+        platform_connection: str | None = None,
     ) -> "AgentHandle":
         """Launch a local RAG chat agent over the PDFs in this resource's scope.
 
@@ -104,6 +107,15 @@ class AIEndpointProxy(AiMixin):
                 (default ``"document"``). Drawings (``file_type == "drawing"``)
                 are always excluded regardless of this value. Pass ``None`` to
                 index every non-drawing PDF regardless of file_type.
+            platform_url: Base URL of a self-hosted Dalux MCP platform
+                (default ``DALUX_PLATFORM_URL``). When set, the agent searches
+                the platform's shared index instead of a local one.
+            platform_token: The ``dxm_`` API token or OAuth access token to
+                call the platform with (default ``DALUX_PLATFORM_TOKEN``). Use
+                the person's own token; a robot token only for unattended jobs.
+            platform_connection: Connection slug on the platform (default
+                ``DALUX_PLATFORM_CONNECTION``; omit to use the token's or the
+                account's default connection).
         """
         if self._resource_name not in _AGENT_CAPABLE_RESOURCES:
             raise NotImplementedError(
@@ -116,6 +128,7 @@ class AIEndpointProxy(AiMixin):
         from .agent.engine import launch_agent
         from .agent.models import pick_mistral_model
         from .agent.scope import resolve_scope
+        from .platform_config import PlatformConfig
 
         if pick_model and provider != "mistral":
             raise ValueError("pick_model=True is only supported with provider='mistral'.")
@@ -140,6 +153,9 @@ class AIEndpointProxy(AiMixin):
             file_type=file_type,
             open_browser=open_browser,
             verbose=verbose,
+            platform=PlatformConfig.from_env(
+                url=platform_url, token=platform_token, connection=platform_connection
+            ),
         )
 
 

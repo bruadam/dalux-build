@@ -1,0 +1,116 @@
+"""Retrieval through a self-hosted Dalux MCP platform instead of a local vector store.
+
+The platform serves the shared document, task and reference-docs indexes as
+MCP search tools (``search_file_area``, ``search_task_index``, ``search_docs``)
+over streamable HTTP. Every call carries a bearer token (a ``dxm_`` API token
+or an OAuth access token), so the platform's access rules decide which
+passages come back: use a person's own token when the agent works for that
+person, and a robot token only for unattended jobs.
+"""
+
+from __future__ import annotations
+
+import asyncio
+import json
+from typing import Literal, cast
+
+from langchain_core.callbacks import (
+    AsyncCallbackManagerForRetrieverRun,
+    CallbackManagerForRetrieverRun,
+)
+from langchain_core.documents import Document
+from langchain_core.retrievers import BaseRetriever
+
+from ..platform_config import PlatformConfig
+
+SearchTool = Literal["search_file_area", "search_task_index", "search_docs"]
+
+PLATFORM_SERVER_NAME = "dalux-platform"
+
+
+class PlatformError(RuntimeError):
+    """A platform MCP tool call failed (bad token, no access, missing index, ...)."""
+
+
+async def call_platform_tool(
+    platform: PlatformConfig, name: str, arguments: dict[str, object]
+) -> dict[str, object]:
+    """Call one platform MCP tool and return its JSON result."""
+    from langchain_mcp_adapters.client import MultiServerMCPClient
+    from mcp.types import TextContent
+
+    client = MultiServerMCPClient({PLATFORM_SERVER_NAME: platform.mcp_connection()})
+    async with client.session(PLATFORM_SERVER_NAME) as session:
+        result = await session.call_tool(name, arguments)
+    text = "".join(block.text for block in result.content if isinstance(block, TextContent))
+    if result.isError:
+        raise PlatformError(f"{name} failed: {text}")
+    return cast(dict[str, object], json.loads(text))
+
+
+def documents_from_matches(tool: SearchTool, matches: list[dict[str, object]]) -> list[Document]:
+    """Turn search matches into Documents with the metadata the agent cites.
+
+    ``file_id``/``file_name`` as in the local store, ``page`` 0-based like
+    PyPDFLoader (the tools report 1-based pages), plus ``location`` for
+    passages without a page (a spreadsheet range, a section, a task field).
+    """
+    documents = []
+    for match in matches:
+        if tool == "search_task_index":
+            number = match.get("number")
+            subject = str(match["subject"])
+            file_id = str(match["taskId"])
+            file_name = f"Task {number}: {subject}" if number else subject
+        elif tool == "search_docs":
+            file_id = file_name = str(match["path"])
+        else:
+            file_id, file_name = str(match["fileId"]), str(match["fileName"])
+        metadata: dict[str, object] = {
+            "file_id": file_id,
+            "file_name": file_name,
+            "source": file_name,
+            "location": match.get("location"),
+            "score": match.get("score"),
+        }
+        page = match.get("page")
+        if isinstance(page, int):
+            metadata["page"] = page - 1
+        documents.append(Document(page_content=str(match["text"]), metadata=metadata))
+    return documents
+
+
+class PlatformRetriever(BaseRetriever):  # type: ignore[explicit-any]  # pydantic model
+    """LangChain retriever over one of the platform's MCP search tools.
+
+    *arguments* address the index, as the tool expects: e.g.
+    ``{"projectId": ..., "fileAreaId": ...}`` or ``{"indexId": ...}`` for
+    ``search_file_area``; ``{"projectId": ...}`` for ``search_task_index``;
+    nothing for ``search_docs``.
+    """
+
+    platform: PlatformConfig
+    tool: SearchTool = "search_file_area"
+    arguments: dict[str, object] = {}
+    top_k: int = 6
+
+    async def asearch(self, query: str, *, top_k: int | None = None) -> list[Document]:
+        result = await call_platform_tool(
+            self.platform,
+            self.tool,
+            {**self.arguments, "query": query, "topK": top_k or self.top_k},
+        )
+        return documents_from_matches(self.tool, cast(list[dict[str, object]], result["matches"]))
+
+    def search(self, query: str, *, top_k: int | None = None) -> list[Document]:
+        return asyncio.run(self.asearch(query, top_k=top_k))
+
+    def _get_relevant_documents(
+        self, query: str, *, run_manager: CallbackManagerForRetrieverRun
+    ) -> list[Document]:
+        return self.search(query)
+
+    async def _aget_relevant_documents(
+        self, query: str, *, run_manager: AsyncCallbackManagerForRetrieverRun
+    ) -> list[Document]:
+        return await self.asearch(query)

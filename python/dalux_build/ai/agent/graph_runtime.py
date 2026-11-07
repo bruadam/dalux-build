@@ -15,8 +15,8 @@ from __future__ import annotations
 
 import asyncio
 import os
-from collections.abc import Callable
-from typing import Protocol
+from collections.abc import Callable, Sequence
+from typing import TYPE_CHECKING, Protocol
 
 from langchain.agents import create_agent
 from langchain_core.documents import Document
@@ -24,13 +24,18 @@ from langchain_core.language_models.chat_models import BaseChatModel
 from langchain_core.tools import BaseTool, tool
 from langchain_mistralai import ChatMistralAI
 
+from ..platform_config import PlatformConfig
 from ..rag.adaptive import build_adaptive_rag, format_documents, spread_across_files
+from ..rag.platform import PlatformRetriever
 from ..rag.vectorstore import open_vectorstore
 from ..reference import BYGGERIETSREGLER_CORPUS
 from ..reference.store import open_reference_store, reference_store_exists
 from .mcp_server import MCP_SERVER_NAME, resolve_mcp_server_entrypoint, stdio_connection
 from .skills_loader import find_skill, load_skills
 from .subagents import build_specialist_subagents
+
+if TYPE_CHECKING:
+    from langchain_mcp_adapters.sessions import Connection
 
 # Standing reference corpora (see dalux_build.ai.reference): (corpus name,
 # tool name, tool description). Each is merged in automatically once
@@ -55,7 +60,7 @@ class _RetrievedDocument(Protocol):
 class _Retriever(Protocol):
     """The subset of a vector store retriever's interface used here."""
 
-    def invoke(self, query: str) -> list[_RetrievedDocument]: ...
+    def invoke(self, input: str, /) -> Sequence[_RetrievedDocument]: ...
 
 
 _COMPARE_CANDIDATES = 30
@@ -141,12 +146,39 @@ def _adaptive_answer(retriever: _Retriever) -> Callable[[str], str]:
     )
 
 
+def _platform_retriever(platform: PlatformConfig) -> PlatformRetriever:
+    """Search the platform's shared index for the agent's scope."""
+    arguments: dict[str, object] = {
+        "projectId": _env("DALUX_AGENT_PROJECT_ID"),
+        "fileAreaId": _env("DALUX_AGENT_FILE_AREA_ID"),
+    }
+    folder_id = os.environ.get("DALUX_AGENT_FOLDER_ID")
+    if folder_id:
+        arguments["folderId"] = folder_id
+    return PlatformRetriever(platform=platform, arguments=arguments)
+
+
 def _build_retriever_tools() -> list[BaseTool]:
-    cache_key = _env("DALUX_AGENT_CACHE_KEY")
-    embeddings_provider = os.environ.get("DALUX_AGENT_EMBEDDINGS_PROVIDER", "mistral")
-    verbose = bool(os.environ.get("DALUX_AGENT_VERBOSE"))
-    store = open_vectorstore(cache_key, embeddings_provider, verbose=verbose)
-    answer = _adaptive_answer(store.as_retriever(search_kwargs={"k": 6}))
+    platform = PlatformConfig.from_env()
+    retriever: _Retriever
+    similar: Callable[[str, int], list[Document]]
+    if platform is None:
+        cache_key = _env("DALUX_AGENT_CACHE_KEY")
+        embeddings_provider = os.environ.get("DALUX_AGENT_EMBEDDINGS_PROVIDER", "mistral")
+        verbose = bool(os.environ.get("DALUX_AGENT_VERBOSE"))
+        store = open_vectorstore(cache_key, embeddings_provider, verbose=verbose)
+        retriever = store.as_retriever(search_kwargs={"k": 6})
+
+        def similar(query: str, k: int) -> list[Document]:
+            return store.similarity_search(query, k=k)
+    else:
+        platform_retriever = _platform_retriever(platform)
+        retriever = platform_retriever
+
+        def similar(query: str, k: int) -> list[Document]:
+            return platform_retriever.search(query, top_k=k)
+
+    answer = _adaptive_answer(retriever)
 
     @tool
     def search_dalux_documents(query: str) -> str:
@@ -157,7 +189,7 @@ def _build_retriever_tools() -> list[BaseTool]:
     def compare_dalux_documents(query: str) -> str:
         """Return raw passages about one subject from several different Dalux PDFs, each
         labelled [file, page], so statements in different documents can be compared."""
-        candidates = store.similarity_search(query, k=_COMPARE_CANDIDATES)
+        candidates = similar(query, _COMPARE_CANDIDATES)
         passages = spread_across_files(candidates, limit=_COMPARE_PASSAGES, per_file=2)
         return format_documents(passages) or "No matching passages in the indexed documents."
 
@@ -229,23 +261,28 @@ def _build_web_search_tools() -> list[BaseTool]:
 
 def _build_dalux_api_tools() -> list[BaseTool]:
     """Read-only Dalux API tools (files/folders/tasks/projects/...), loaded
-    from the TypeScript MCP server (see mcp-server/) over stdio.
+    from the TypeScript MCP server (see mcp-server/) over stdio, or from the
+    platform over HTTP with the platform token when one is configured.
 
     Complements search_dalux_documents (unstructured retrieval over indexed
     PDFs) with structured access to live project data. MCP's stdio transport
     is plain JSON-RPC over stdin/stdout, so this works regardless of the
     server being written in a different language than the agent.
     """
-    entrypoint = resolve_mcp_server_entrypoint()
-    if entrypoint is None:
-        return []
+    platform = PlatformConfig.from_env()
+    connection: Connection
+    if platform is not None:
+        connection = platform.mcp_connection()
+    else:
+        entrypoint = resolve_mcp_server_entrypoint()
+        if entrypoint is None:
+            return []
+        connection = stdio_connection(entrypoint, dict(os.environ))
 
     try:
         from langchain_mcp_adapters.client import MultiServerMCPClient
 
-        client = MultiServerMCPClient(
-            {MCP_SERVER_NAME: stdio_connection(entrypoint, dict(os.environ))}
-        )
+        client = MultiServerMCPClient({MCP_SERVER_NAME: connection})
         return asyncio.run(client.get_tools())
     except Exception as exc:  # noqa: BLE001 - optional tool group, must not crash the agent
         if bool(os.environ.get("DALUX_AGENT_VERBOSE")):

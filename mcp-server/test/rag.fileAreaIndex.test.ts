@@ -5,7 +5,8 @@ import type { DaluxClient } from 'dalux-build-api';
 
 import * as fileAreaIndex from '../src/tools/fileAreaIndex';
 import { indexIdFor, normalizeExtensions, resolveScope } from '../src/rag/scope';
-import { MANIFEST_VERSION, readManifest, summarizeSkips } from '../src/rag/store';
+import { MANIFEST_VERSION, readManifest } from '../src/store/file/fileAreaStore';
+import { summarizeSkips } from '../src/store/types';
 import { ragIndexDir } from '../src/cachePaths';
 import { paragraph, writeDocx, writeXlsx } from './fixtures/office';
 

@@ -50,7 +50,7 @@ export function ragIndexDir(indexId: string): string {
   return dir;
 }
 
-/** Root under which every temporary task index lives (see rag/taskStore.ts). */
+/** Root under which every temporary task index lives (see store/file/taskStore.ts). */
 export function taskIndexRoot(): string {
   const dir = path.join(mcpCacheRoot(), 'task-index');
   mkdirSync(dir, { recursive: true });
@@ -65,7 +65,7 @@ export function taskIndexDir(indexId: string): string {
 }
 
 /**
- * Root under which the docs-repo index lives (see rag/docsStore.ts) — persistent,
+ * Root under which the docs-repo index lives (see store/file/docsStore.ts) — persistent,
  * unlike the file-area and task indexes above.
  *
  * Those two are cheap to rebuild (they read live Dalux data) and scoped to

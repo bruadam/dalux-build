@@ -16,7 +16,7 @@ import type { DaluxClient } from 'dalux-build-api';
 import { SUPPORTED_EXTENSIONS } from '../extract';
 import { buildDocsIndex as runBuildDocsIndex, docsIndexIdFor } from '../rag/docsBuild';
 import { searchDocsIndex as runSearchDocsIndex } from '../rag/docsSearch';
-import { dropIndex, listIndexes, readManifest } from '../rag/docsStore';
+import { indexStores } from '../store';
 import type { DocsRepoScope } from '../rag/docsSource';
 
 /**
@@ -125,7 +125,7 @@ export async function searchDocsIndex(_client: DaluxClient, args: SearchDocsInde
     pathContains: args.pathContains,
   });
 
-  const manifest = readManifest(indexId);
+  const manifest = await indexStores().docs.readManifest(indexId);
   return {
     ...result,
     matches: result.matches.map((match) => ({ ...match, score: Number(match.score.toFixed(4)) })),
@@ -140,7 +140,7 @@ export const listDocsIndexesInput = z.object({});
 export type ListDocsIndexesInput = z.infer<typeof listDocsIndexesInput>;
 
 export async function listDocsIndexes() {
-  return { indexes: listIndexes(), supportedExtensions: SUPPORTED_EXTENSIONS };
+  return { indexes: await indexStores().docs.listIndexes(), supportedExtensions: SUPPORTED_EXTENSIONS };
 }
 
 // ---------- drop_docs_index ----------
@@ -151,7 +151,7 @@ export const dropDocsIndexInput = z.object({
 export type DropDocsIndexInput = z.infer<typeof dropDocsIndexInput>;
 
 export async function dropDocsIndex(_client: DaluxClient, args: DropDocsIndexInput) {
-  const dropped = dropIndex(args.indexId);
+  const dropped = await indexStores().docs.dropIndex(args.indexId);
   return {
     dropped,
     message: dropped
@@ -192,7 +192,7 @@ export type SearchDocsInput = z.infer<typeof searchDocsInput>;
 export async function searchDocs(_client: DaluxClient, args: SearchDocsInput) {
   const scope = resolveScope({});
   const indexId = docsIndexIdFor(scope);
-  const manifest = readManifest(indexId);
+  const manifest = await indexStores().docs.readManifest(indexId);
   if (!manifest) {
     throw new Error(
       'The docs corpus has not been indexed yet on this server — run `npm run docs:build` (see mcp-server/scripts/build-docs-index.ts) and restart the server.',

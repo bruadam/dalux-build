@@ -15,7 +15,8 @@ import { z } from 'zod';
 import type { DaluxClient } from 'dalux-build-api';
 import { buildTaskIndex as runBuildTaskIndex, taskIndexIdFor } from '../rag/taskBuild';
 import { searchTaskIndex as runSearchTaskIndex } from '../rag/taskSearch';
-import { dropIndex, listIndexes, readManifest, type TaskIndexScope } from '../rag/taskStore';
+import { indexStores } from '../store';
+import type { TaskIndexScope } from '../store/types';
 
 const scopeShape = {
   projectId: z.string().describe('The Dalux project ID.'),
@@ -81,7 +82,7 @@ export async function searchTaskIndex(_client: DaluxClient, args: SearchTaskInde
   }
 
   const result = await runSearchTaskIndex(indexId, args.query, { topK: args.topK, perTaskLimit: args.perTaskLimit });
-  const manifest = readManifest(indexId);
+  const manifest = await indexStores().tasks.readManifest(indexId);
 
   return {
     ...result,
@@ -97,7 +98,7 @@ export const listTaskIndexesInput = z.object({});
 export type ListTaskIndexesInput = z.infer<typeof listTaskIndexesInput>;
 
 export async function listTaskIndexes() {
-  return { indexes: listIndexes() };
+  return { indexes: await indexStores().tasks.listIndexes() };
 }
 
 // ---------- drop_task_index ----------
@@ -108,7 +109,7 @@ export const dropTaskIndexInput = z.object({
 export type DropTaskIndexInput = z.infer<typeof dropTaskIndexInput>;
 
 export async function dropTaskIndex(_client: DaluxClient, args: DropTaskIndexInput) {
-  const dropped = dropIndex(args.indexId);
+  const dropped = await indexStores().tasks.dropIndex(args.indexId);
   return {
     dropped,
     message: dropped

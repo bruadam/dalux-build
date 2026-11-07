@@ -21,16 +21,8 @@ import { CHUNK_OVERLAP, CHUNK_SIZE, packLines } from '../extract/chunk';
 import { EMBEDDING_DIMENSIONS, EMBEDDING_MODEL, embedTexts, embeddingsAvailable } from '../search/rank';
 import { extractAttachmentTextsByTaskId, groupAttachmentsByTaskId } from './taskAttachments';
 import { groupChangesByTaskId, renderTaskLines, str, taskRevisionKey, unwrapTask, type AttachmentText } from './taskText';
-import {
-  MANIFEST_VERSION,
-  deleteDocument,
-  readManifest,
-  writeDocument,
-  writeManifest,
-  type TaskChunk,
-  type TaskIndexManifest,
-  type TaskIndexScope,
-} from './taskStore';
+import { indexStores } from '../store';
+import type { TaskChunk, TaskIndexManifest, TaskIndexScope } from '../store/types';
 
 /** Indexes nobody has touched for a week are deleted on the next build. */
 const STALE_INDEX_MS = 7 * 24 * 60 * 60 * 1000;
@@ -102,9 +94,9 @@ export async function buildTaskIndex(
   const warnings: string[] = [];
   const useEmbeddings = embeddingsAvailable();
 
-  const existing = readManifest(indexId);
+  const store = indexStores().tasks;
+  const existing = await store.readManifest(indexId);
   const manifest: TaskIndexManifest = existing ?? {
-    version: MANIFEST_VERSION,
     indexId,
     scope,
     createdAt: new Date().toISOString(),
@@ -116,7 +108,7 @@ export async function buildTaskIndex(
   let refresh = options.refresh ?? false;
   if (existing?.embedding && useEmbeddings && existing.embedding.model !== EMBEDDING_MODEL) {
     for (const id of Object.keys(manifest.tasks)) {
-      deleteDocument(indexId, id);
+      await store.deleteDocument(indexId, id);
     }
     manifest.tasks = {};
     refresh = true;
@@ -154,7 +146,7 @@ export async function buildTaskIndex(
   let tasksRemoved = 0;
   for (const taskId of Object.keys(manifest.tasks)) {
     if (liveIds.has(taskId)) continue;
-    deleteDocument(indexId, taskId);
+    await store.deleteDocument(indexId, taskId);
     delete manifest.tasks[taskId];
     tasksRemoved += 1;
   }
@@ -203,7 +195,11 @@ export async function buildTaskIndex(
 
   for (const task of dirty) {
     const vectors = vectorsByTaskId.get(task.taskId) ?? null;
-    writeDocument(indexId, { taskId: task.taskId, chunks: task.chunks }, vectors?.length ? vectors : null);
+    await store.writeDocument(
+      indexId,
+      { taskId: task.taskId, chunks: task.chunks, access: { projectId: scope.projectId } },
+      vectors?.length ? vectors : null,
+    );
     manifest.tasks[task.taskId] = {
       subject: str(task.data.subject) ?? str(task.data.title) ?? '',
       number: str(task.data.number),
@@ -223,7 +219,7 @@ export async function buildTaskIndex(
     const writtenThisPass = new Set(dirty.map((task) => task.taskId));
     for (const taskId of Object.keys(manifest.tasks)) {
       if (writtenThisPass.has(taskId)) continue;
-      deleteDocument(indexId, taskId);
+      await store.deleteDocument(indexId, taskId);
       delete manifest.tasks[taskId];
     }
     warnings.push(
@@ -233,7 +229,7 @@ export async function buildTaskIndex(
   }
 
   manifest.updatedAt = new Date().toISOString();
-  writeManifest(manifest);
+  await store.writeManifest(manifest);
 
   const totalChunks = Object.values(manifest.tasks).reduce((total, entry) => total + entry.chunkCount, 0);
 

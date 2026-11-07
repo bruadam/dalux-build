@@ -1,5 +1,5 @@
 /**
- * Cross-task search over a temporary task index (rag/taskStore.ts) — the
+ * Cross-task search over a temporary task index (store/file/taskStore.ts) — the
  * task-side sibling of rag/search.ts, which searches file-area indexes.
  *
  * Brute-force cosine/BM25 over every chunk, same trade-off as the file-area
@@ -8,7 +8,8 @@
  */
 
 import { EMBEDDING_MODEL, bm25Scores, cosineSimilarity, embedTexts, embeddingsAvailable, type RankMode } from '../search/rank';
-import { readDocument, readManifest, readVectors, type TaskIndexManifest, type TaskManifestEntry } from './taskStore';
+import { indexStores } from '../store';
+import type { TaskIndexManifest, TaskManifestEntry } from '../store/types';
 
 export interface TaskSearchMatch {
   taskId: string;
@@ -43,7 +44,10 @@ interface Candidate {
   vector: Float32Array | null;
 }
 
-function collectCandidates(manifest: TaskIndexManifest): { candidates: Candidate[]; tasksSearched: number; missingVectors: boolean } {
+async function collectCandidates(
+  manifest: TaskIndexManifest,
+): Promise<{ candidates: Candidate[]; tasksSearched: number; missingVectors: boolean }> {
+  const store = indexStores().tasks;
   const dimensions = manifest.embedding?.dimensions ?? 0;
   const candidates: Candidate[] = [];
   let tasksSearched = 0;
@@ -51,9 +55,9 @@ function collectCandidates(manifest: TaskIndexManifest): { candidates: Candidate
 
   for (const taskId of Object.keys(manifest.tasks)) {
     const entry = manifest.tasks[taskId];
-    const document = readDocument(manifest.indexId, taskId);
+    const document = await store.readDocument(manifest.indexId, taskId);
     if (!document) continue;
-    const vectors = dimensions ? readVectors(manifest.indexId, taskId, dimensions) : null;
+    const vectors = dimensions ? await store.readVectors(manifest.indexId, taskId, dimensions) : null;
     if (dimensions && (!vectors || vectors.length !== document.chunks.length)) missingVectors = true;
 
     tasksSearched += 1;
@@ -84,7 +88,7 @@ export async function searchTaskIndex(
   query: string,
   options: TaskIndexSearchOptions = {},
 ): Promise<TaskIndexSearchResult> {
-  const manifest = readManifest(indexId);
+  const manifest = await indexStores().tasks.readManifest(indexId);
   if (!manifest) {
     throw new Error(
       `No task index "${indexId}" on this server. Build one with build_task_index first ` +
@@ -96,7 +100,7 @@ export async function searchTaskIndex(
   const perTaskLimit = options.perTaskLimit === undefined ? 3 : options.perTaskLimit;
   const warnings: string[] = [];
 
-  const { candidates, tasksSearched, missingVectors } = collectCandidates(manifest);
+  const { candidates, tasksSearched, missingVectors } = await collectCandidates(manifest);
   if (!candidates.length) {
     return { indexId, mode: 'lexical', query, tasksSearched, chunksSearched: 0, matches: [], warnings };
   }

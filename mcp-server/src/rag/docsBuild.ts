@@ -16,16 +16,9 @@ import { docsIndexRoot, pruneStaleIndexes } from '../cachePaths';
 import { extractDocument } from '../extract';
 import { EMBEDDING_DIMENSIONS, EMBEDDING_MODEL, embedTexts, embeddingsAvailable } from '../search/rank';
 import { fetchDocContent, listDocsEntries, type DocsRepoEntry, type DocsRepoScope } from './docsSource';
-import {
-  MANIFEST_VERSION,
-  deleteDocument,
-  readManifest,
-  safeDocId,
-  writeDocument,
-  writeManifest,
-  type DocsIndexManifest,
-  type FailedDoc,
-} from './docsStore';
+import { indexStores } from '../store';
+import { safeDocId } from '../store/file/docsStore';
+import type { DocsIndexManifest, FailedDoc } from '../store/types';
 
 /** Indexes nobody has touched for a week are deleted on the next build. */
 const STALE_INDEX_MS = 7 * 24 * 60 * 60 * 1000;
@@ -110,9 +103,9 @@ export async function buildDocsIndex(
   const warnings: string[] = [];
   const useEmbeddings = embeddingsAvailable();
 
-  const existing = readManifest(indexId);
+  const store = indexStores().docs;
+  const existing = await store.readManifest(indexId);
   const manifest: DocsIndexManifest = existing ?? {
-    version: MANIFEST_VERSION,
     indexId,
     scope,
     createdAt: new Date().toISOString(),
@@ -125,7 +118,7 @@ export async function buildDocsIndex(
   let refresh = options.refresh ?? false;
   if (existing?.embedding && useEmbeddings && existing.embedding.model !== EMBEDDING_MODEL) {
     for (const id of Object.keys(manifest.docs)) {
-      deleteDocument(indexId, id);
+      await store.deleteDocument(indexId, id);
     }
     manifest.docs = {};
     refresh = true;
@@ -152,7 +145,7 @@ export async function buildDocsIndex(
   let docsRemoved = 0;
   for (const docPath of Object.keys(manifest.docs)) {
     if (liveIds.has(docPath)) continue;
-    deleteDocument(indexId, docPath);
+    await store.deleteDocument(indexId, docPath);
     delete manifest.docs[docPath];
     docsRemoved += 1;
   }
@@ -221,7 +214,7 @@ export async function buildDocsIndex(
       const vectors = useEmbeddings && chunks.length ? await embedTexts(chunks.map((c) => c.text)) : null;
       if (vectors?.length) observedDimensions = vectors[0].length;
 
-      writeDocument(indexId, { path: entry.path, chunks }, vectors);
+      await store.writeDocument(indexId, { path: entry.path, chunks }, vectors);
       writtenThisPass.add(entry.path);
       manifest.docs[entry.path] = {
         path: entry.path,
@@ -234,7 +227,7 @@ export async function buildDocsIndex(
       indexedThisPass += 1;
       if (indexedThisPass % MANIFEST_FLUSH_EVERY === 0) {
         manifest.updatedAt = new Date().toISOString();
-        writeManifest(manifest);
+        await store.writeManifest(manifest);
       }
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
@@ -248,7 +241,7 @@ export async function buildDocsIndex(
     if (manifest.embedding.dimensions !== observedDimensions) {
       for (const docPath of Object.keys(manifest.docs)) {
         if (writtenThisPass.has(docPath)) continue;
-        deleteDocument(indexId, docPath);
+        await store.deleteDocument(indexId, docPath);
         delete manifest.docs[docPath];
       }
       warnings.push(
@@ -270,7 +263,7 @@ export async function buildDocsIndex(
   const docsPending = entries.filter((entry) => !indexedIds.has(entry.path) && !failedIds.has(entry.path)).length;
 
   manifest.updatedAt = new Date().toISOString();
-  writeManifest(manifest);
+  await store.writeManifest(manifest);
 
   const totalChunks = Object.values(manifest.docs).reduce((total, entry) => total + entry.chunkCount, 0);
   const complete = docsPending === 0;

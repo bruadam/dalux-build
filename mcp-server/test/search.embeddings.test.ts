@@ -12,7 +12,7 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import type { DaluxClient } from 'dalux-build-api';
 
-import { readManifest, writeManifest } from '../src/rag/store';
+import { readManifest, writeManifest } from '../src/store/file/fileAreaStore';
 import { embedTexts } from '../src/search/rank';
 import { searchChunks } from '../src/search/documentSearch';
 import * as fileAreaIndex from '../src/tools/fileAreaIndex';

@@ -2,6 +2,8 @@ import type { McpServer } from '@modelcontextprotocol/server';
 import { z } from 'zod';
 import type { DaluxClient } from 'dalux-build-api';
 import { TASK_TIMELINE_BUNDLE_JS } from './taskTimelineBundle.generated';
+import { checkAccess } from '../access/checkAccess';
+import { UNRESTRICTED_CONTEXT, type RequestContext } from '../access/context';
 
 /**
  * Interactive lifecycle timeline for a set of Dalux tasks, delivered as an
@@ -87,7 +89,11 @@ function normalizeTask(taskId: string, raw: unknown): TimelineTask {
 }
 
 /** Registers the `view_tasks_timeline` tool and its `ui://` resource on `server`. Works over any transport — no hosting dependency. */
-export function registerTaskTimeline(server: McpServer, client: DaluxClient): void {
+export function registerTaskTimeline(
+  server: McpServer,
+  client: DaluxClient,
+  context: RequestContext = UNRESTRICTED_CONTEXT,
+): void {
   server.registerResource(
     'task-timeline',
     RESOURCE_URI,
@@ -113,6 +119,14 @@ export function registerTaskTimeline(server: McpServer, client: DaluxClient): vo
       _meta: { ui: { resourceUri: RESOURCE_URI }, [LEGACY_RESOURCE_URI_META_KEY]: RESOURCE_URI },
     },
     async (args) => {
+      const decision = checkAccess(context, 'view_tasks_timeline', args);
+      if (!decision.allowed) {
+        return {
+          content: [{ type: 'text' as const, text: decision.reason }],
+          structuredContent: { available: false, message: decision.reason },
+          isError: true,
+        };
+      }
       const results = await Promise.all(
         args.taskIds.map(async (taskId) => {
           try {

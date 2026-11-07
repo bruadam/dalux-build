@@ -1,6 +1,6 @@
 /**
  * On-disk layout of a temporary task index — the task-side sibling of
- * rag/store.ts, which holds file-area indexes.
+ * fileAreaStore.ts, which holds file-area indexes.
  *
  *   <tmp>/dalux-mcp/task-index/<indexId>/manifest.json    scope, per-task revisions
  *   <tmp>/dalux-mcp/task-index/<indexId>/tasks/<id>.json  one task's chunks (its own
@@ -14,49 +14,13 @@
 
 import { existsSync, mkdirSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
-import { taskIndexDir, taskIndexRoot } from '../cachePaths';
+import { taskIndexDir, taskIndexRoot } from '../../cachePaths';
+import type { IndexStore, IndexedTask, TaskIndexManifest, TaskIndexSummary } from '../types';
 
 export const MANIFEST_VERSION = 1;
 
-export interface TaskIndexScope {
-  projectId: string;
-  /** Shorthand narrowing, expands to an OData filter on data/type/typeId — see tools/taskIndex.ts. */
-  typeId: string | null;
-  /** Raw OData $filter narrowing which tasks are indexed. Takes precedence over typeId. */
-  filter: string | null;
-}
-
-/** A rendered passage of a task's text — its own fields, or one change entry. No page concept, unlike document chunks. */
-export interface TaskChunk {
-  location: string;
-  text: string;
-}
-
-export interface TaskManifestEntry {
-  subject: string;
-  number: string | null;
-  usage: string | null;
-  revisionKey: string;
-  chunkCount: number;
-  changeCount: number;
-  attachmentCount: number;
-  indexedAt: string;
-}
-
-export interface TaskIndexManifest {
+export interface StoredTaskIndexManifest extends TaskIndexManifest {
   version: number;
-  indexId: string;
-  scope: TaskIndexScope;
-  createdAt: string;
-  updatedAt: string;
-  /** Null when the index was built without an embeddings key (lexical search only). */
-  embedding: { model: string; dimensions: number } | null;
-  tasks: Record<string, TaskManifestEntry>;
-}
-
-export interface IndexedTask {
-  taskId: string;
-  chunks: TaskChunk[];
 }
 
 function tasksDir(indexId: string): string {
@@ -74,11 +38,11 @@ function safeId(taskId: string): string {
   return taskId.replace(/[^A-Za-z0-9._-]/g, '_');
 }
 
-export function readManifest(indexId: string): TaskIndexManifest | null {
+export function readManifest(indexId: string): StoredTaskIndexManifest | null {
   const file = manifestPath(indexId);
   if (!existsSync(file)) return null;
   try {
-    const manifest = JSON.parse(readFileSync(file, 'utf-8')) as TaskIndexManifest;
+    const manifest = JSON.parse(readFileSync(file, 'utf-8')) as StoredTaskIndexManifest;
     return manifest.version === MANIFEST_VERSION ? manifest : null;
   } catch {
     return null;
@@ -86,7 +50,8 @@ export function readManifest(indexId: string): TaskIndexManifest | null {
 }
 
 export function writeManifest(manifest: TaskIndexManifest): void {
-  writeFileSync(manifestPath(manifest.indexId), JSON.stringify(manifest, null, 2), 'utf-8');
+  const stored: StoredTaskIndexManifest = { ...manifest, version: MANIFEST_VERSION };
+  writeFileSync(manifestPath(manifest.indexId), JSON.stringify(stored, null, 2), 'utf-8');
 }
 
 export function writeDocument(indexId: string, task: IndexedTask, vectors: number[][] | null): void {
@@ -140,16 +105,6 @@ export function dropIndex(indexId: string): boolean {
   return true;
 }
 
-export interface TaskIndexSummary {
-  indexId: string;
-  scope: TaskIndexScope;
-  taskCount: number;
-  chunkCount: number;
-  updatedAt: string;
-  mode: 'embeddings' | 'lexical';
-  sizeBytes: number;
-}
-
 function directorySize(dir: string): number {
   let total = 0;
   for (const entry of readdirSync(dir, { withFileTypes: true })) {
@@ -185,7 +140,18 @@ export function listIndexes(): TaskIndexSummary[] {
   }
   return entries
     .map((indexId) => readManifest(indexId))
-    .filter((manifest): manifest is TaskIndexManifest => manifest !== null)
+    .filter((manifest): manifest is StoredTaskIndexManifest => manifest !== null)
     .map(summarize)
     .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
 }
+
+export const taskFileStore: IndexStore<TaskIndexManifest, IndexedTask, TaskIndexSummary> = {
+  readManifest: async (indexId) => readManifest(indexId),
+  writeManifest: async (manifest) => writeManifest(manifest),
+  readDocument: async (indexId, taskId) => readDocument(indexId, taskId),
+  writeDocument: async (indexId, document, vectors) => writeDocument(indexId, document, vectors),
+  readVectors: async (indexId, taskId, dimensions) => readVectors(indexId, taskId, dimensions),
+  deleteDocument: async (indexId, taskId) => deleteDocument(indexId, taskId),
+  dropIndex: async (indexId) => dropIndex(indexId),
+  listIndexes: async () => listIndexes(),
+};

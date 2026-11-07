@@ -13,6 +13,7 @@ import {
 import { toNodeHandler, localhostHostValidation, localhostOriginValidation } from '@modelcontextprotocol/node';
 import { createClient } from 'dalux-build-api';
 import { buildServer } from './server';
+import { UNRESTRICTED_CONTEXT } from './access/context';
 import { createOAuthServer, type OAuthServer } from './oauth';
 import { validateDaluxBaseUrl } from './daluxUrl';
 import { createModelLinkStore, resolveModelFile, type ModelLinkStore } from './modelLinks';
@@ -339,7 +340,7 @@ export function buildHttpApp(options: BuildHttpAppOptions = {}): HttpApp {
               modelLinks,
             }
           : undefined;
-        mcpHandler = createMcpHandler(() => buildServer(client, { hosting }));
+        mcpHandler = createMcpHandler(() => buildServer(client, { hosting, context: UNRESTRICTED_CONTEXT }));
         handlersByCredentials.set(key, mcpHandler);
       }
       // Peek before the handler consumes the body, log after it answers.

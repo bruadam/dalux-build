@@ -12,63 +12,15 @@
 
 import { existsSync, mkdirSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
-import { ragIndexDir, ragRoot } from '../cachePaths';
-import type { TextChunk } from '../extract';
-import type { IndexScope } from './scope';
+import { ragIndexDir, ragRoot } from '../../cachePaths';
+import { summarizeSkips, type IndexManifest, type IndexStore, type IndexSummary, type IndexedDocument } from '../types';
 
 // Bumped when the manifest shape changes; an older manifest is ignored, which
 // costs a rebuild of a disposable cache rather than mis-reading it.
 export const MANIFEST_VERSION = 2;
 
-export interface ManifestEntry {
-  fileName: string;
-  revisionKey: string;
-  format: string;
-  chunkCount: number;
-  note?: string;
-  indexedAt: string;
-}
-
-/**
- * Skipped files are stored grouped, not listed.
- *
- * A docx-only scope over a file area of drawings skips thousands of files;
- * keeping every name made the manifest 25x larger than the index it describes,
- * and it was rewritten on every pass.
- */
-export interface SkipSummary {
-  reason: string;
-  count: number;
-  examples: string[];
-}
-
-export interface FailedFile {
-  fileId: string;
-  fileName: string;
-  /** Revision that failed, so a later upload of the same file is retried. */
-  revisionKey: string;
-  error: string;
-}
-
-export interface IndexManifest {
+export interface StoredIndexManifest extends IndexManifest {
   version: number;
-  indexId: string;
-  scope: IndexScope;
-  createdAt: string;
-  updatedAt: string;
-  /** Null when the index was built without an embeddings key (lexical search only). */
-  embedding: { model: string; dimensions: number } | null;
-  files: Record<string, ManifestEntry>;
-  skipped: SkipSummary[];
-  failed: FailedFile[];
-}
-
-export interface IndexedDocument {
-  fileId: string;
-  fileName: string;
-  format: string;
-  note?: string;
-  chunks: TextChunk[];
 }
 
 function docsDir(indexId: string): string {
@@ -86,12 +38,12 @@ function safeId(fileId: string): string {
   return fileId.replace(/[^A-Za-z0-9._-]/g, '_');
 }
 
-export function readManifest(indexId: string): IndexManifest | null {
+export function readManifest(indexId: string): StoredIndexManifest | null {
   const file = manifestPath(indexId);
   if (!existsSync(file)) return null;
-  let manifest: IndexManifest;
+  let manifest: StoredIndexManifest;
   try {
-    manifest = JSON.parse(readFileSync(file, 'utf-8')) as IndexManifest;
+    manifest = JSON.parse(readFileSync(file, 'utf-8')) as StoredIndexManifest;
   } catch {
     return null;
   }
@@ -108,20 +60,8 @@ export function readManifest(indexId: string): IndexManifest | null {
 }
 
 export function writeManifest(manifest: IndexManifest): void {
-  writeFileSync(manifestPath(manifest.indexId), JSON.stringify(manifest, null, 2), 'utf-8');
-}
-
-/** Group skipped files by reason, keeping a few names per group as evidence. */
-export function summarizeSkips(skipped: readonly { fileName: string; reason: string }[]): SkipSummary[] {
-  const byReason = new Map<string, string[]>();
-  for (const skip of skipped) {
-    byReason.set(skip.reason, [...(byReason.get(skip.reason) ?? []), skip.fileName]);
-  }
-  return [...byReason.entries()].map(([reason, fileNames]) => ({
-    reason,
-    count: fileNames.length,
-    examples: fileNames.slice(0, 5),
-  }));
+  const stored: StoredIndexManifest = { ...manifest, version: MANIFEST_VERSION };
+  writeFileSync(manifestPath(manifest.indexId), JSON.stringify(stored, null, 2), 'utf-8');
 }
 
 export function writeDocument(
@@ -179,16 +119,6 @@ export function dropIndex(indexId: string): boolean {
   return true;
 }
 
-export interface IndexSummary {
-  indexId: string;
-  scope: IndexScope;
-  fileCount: number;
-  chunkCount: number;
-  updatedAt: string;
-  mode: 'embeddings' | 'lexical';
-  sizeBytes: number;
-}
-
 function directorySize(dir: string): number {
   let total = 0;
   for (const entry of readdirSync(dir, { withFileTypes: true })) {
@@ -224,7 +154,18 @@ export function listIndexes(): IndexSummary[] {
   }
   return entries
     .map((indexId) => readManifest(indexId))
-    .filter((manifest): manifest is IndexManifest => manifest !== null)
+    .filter((manifest): manifest is StoredIndexManifest => manifest !== null)
     .map(summarize)
     .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
 }
+
+export const fileAreaFileStore: IndexStore<IndexManifest, IndexedDocument, IndexSummary> = {
+  readManifest: async (indexId) => readManifest(indexId),
+  writeManifest: async (manifest) => writeManifest(manifest),
+  readDocument: async (indexId, fileId) => readDocument(indexId, fileId),
+  writeDocument: async (indexId, document, vectors) => writeDocument(indexId, document, vectors),
+  readVectors: async (indexId, fileId, dimensions) => readVectors(indexId, fileId, dimensions),
+  deleteDocument: async (indexId, fileId) => deleteDocument(indexId, fileId),
+  dropIndex: async (indexId) => dropIndex(indexId),
+  listIndexes: async () => listIndexes(),
+};

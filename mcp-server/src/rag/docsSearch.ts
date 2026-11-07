@@ -5,7 +5,8 @@
 
 import { EMBEDDING_MODEL, bm25Scores, cosineSimilarity, embedTexts, embeddingsAvailable, type RankMode } from '../search/rank';
 import type { TextChunk } from '../extract';
-import { readDocument, readManifest, readVectors, type DocsIndexManifest } from './docsStore';
+import { indexStores } from '../store';
+import type { DocsIndexManifest } from '../store/types';
 
 export interface DocsSearchMatch extends TextChunk {
   path: string;
@@ -36,10 +37,11 @@ interface Candidate {
   vector: Float32Array | null;
 }
 
-function collectCandidates(
+async function collectCandidates(
   manifest: DocsIndexManifest,
   options: DocsIndexSearchOptions,
-): { candidates: Candidate[]; docsSearched: number; missingVectors: boolean } {
+): Promise<{ candidates: Candidate[]; docsSearched: number; missingVectors: boolean }> {
+  const store = indexStores().docs;
   const needle = options.pathContains?.toLowerCase();
   const dimensions = manifest.embedding?.dimensions ?? 0;
 
@@ -50,9 +52,9 @@ function collectCandidates(
   for (const docPath of Object.keys(manifest.docs)) {
     if (needle && !docPath.toLowerCase().includes(needle)) continue;
 
-    const document = readDocument(manifest.indexId, docPath);
+    const document = await store.readDocument(manifest.indexId, docPath);
     if (!document) continue;
-    const vectors = dimensions ? readVectors(manifest.indexId, docPath, dimensions) : null;
+    const vectors = dimensions ? await store.readVectors(manifest.indexId, docPath, dimensions) : null;
     if (dimensions && (!vectors || vectors.length !== document.chunks.length)) missingVectors = true;
 
     docsSearched += 1;
@@ -83,7 +85,7 @@ export async function searchDocsIndex(
   query: string,
   options: DocsIndexSearchOptions = {},
 ): Promise<DocsIndexSearchResult> {
-  const manifest = readManifest(indexId);
+  const manifest = await indexStores().docs.readManifest(indexId);
   if (!manifest) {
     throw new Error(`No docs index "${indexId}" on this server. Build one with \`npm run docs:build\` first.`);
   }
@@ -92,7 +94,7 @@ export async function searchDocsIndex(
   const perDocLimit = options.perDocLimit === undefined ? 3 : options.perDocLimit;
   const warnings: string[] = [];
 
-  const { candidates, docsSearched, missingVectors } = collectCandidates(manifest, options);
+  const { candidates, docsSearched, missingVectors } = await collectCandidates(manifest, options);
   if (!candidates.length) {
     return { indexId, mode: 'lexical', query, docsSearched, chunksSearched: 0, matches: [], warnings };
   }

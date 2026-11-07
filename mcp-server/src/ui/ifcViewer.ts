@@ -3,6 +3,8 @@ import { z } from 'zod';
 import type { DaluxClient } from 'dalux-build-api';
 import type { ModelLinkStore } from '../modelLinks';
 import { IFC_VIEWER_BUNDLE_JS } from './ifcViewerBundle.generated';
+import { checkAccess } from '../access/checkAccess';
+import { UNRESTRICTED_CONTEXT, type RequestContext } from '../access/context';
 
 /**
  * Interactive 3D viewer for IFC models, delivered as an MCP App (SEP-1865 /
@@ -80,7 +82,12 @@ export interface IfcHostingOptions {
  * `hosting`, the tool just explains that the viewer needs the HTTP
  * deployment instead of erroring.
  */
-export function registerIfcViewer(server: McpServer, client: DaluxClient, hosting: IfcHostingOptions | undefined): void {
+export function registerIfcViewer(
+  server: McpServer,
+  client: DaluxClient,
+  hosting: IfcHostingOptions | undefined,
+  context: RequestContext = UNRESTRICTED_CONTEXT,
+): void {
   server.registerResource(
     'ifc-viewer',
     RESOURCE_URI,
@@ -110,6 +117,14 @@ export function registerIfcViewer(server: McpServer, client: DaluxClient, hostin
       _meta: { ui: { resourceUri: RESOURCE_URI }, [LEGACY_RESOURCE_URI_META_KEY]: RESOURCE_URI },
     },
     async (args) => {
+      const decision = checkAccess(context, 'view_model_3d', args);
+      if (!decision.allowed) {
+        return {
+          content: [{ type: 'text' as const, text: decision.reason }],
+          structuredContent: { available: false, message: decision.reason },
+          isError: true,
+        };
+      }
       if (!hosting) {
         const message =
           'The 3D viewer needs this Dalux MCP server running with --public-url (the HTTP/OAuth deployment) ' +

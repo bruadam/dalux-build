@@ -19,6 +19,10 @@ export function analysisModel(): string {
   return process.env.DALUX_MCP_ANALYSIS_MODEL || DEFAULT_ANALYSIS_MODEL;
 }
 
+export function externalModelIoAllowed(): boolean {
+  return process.env.DALUX_MCP_ALLOW_EXTERNAL_MODEL_IO === 'true';
+}
+
 export function modelAvailable(): boolean {
   return Boolean(process.env.MISTRAL_API_KEY);
 }
@@ -42,6 +46,11 @@ const KNOWN_ATTRIBUTES = [
 async function completeJson<T>(system: string, user: string, name: string, schema: Record<string, unknown>): Promise<T> {
   const apiKey = process.env.MISTRAL_API_KEY;
   if (!apiKey) throw new Error('MISTRAL_API_KEY is not set.');
+  if (!externalModelIoAllowed()) {
+    throw new Error(
+      'External model I/O is disabled. Set DALUX_MCP_ALLOW_EXTERNAL_MODEL_IO=true to allow sending document content to Mistral.',
+    );
+  }
   const { Mistral } = await import('@mistralai/mistralai');
   const client = new Mistral({ apiKey, retryConfig: RETRY });
   const response = await client.chat.complete({

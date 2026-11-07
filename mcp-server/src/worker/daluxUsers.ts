@@ -76,15 +76,16 @@ export function planLinks(
 /** Re-matches one connection's accounts against its stored Dalux users. Cheap: no Dalux calls. */
 export async function matchConnection(db: Db, connectionId: string): Promise<void> {
   await db.transaction(async (tx) => {
-    const [accountRows, users, links] = await Promise.all([
-      tx.select({ id: accounts.id, type: accounts.type, email: accounts.email }).from(accounts),
-      tx.select({ daluxUserId: daluxUsers.daluxUserId, email: daluxUsers.email, name: daluxUsers.name })
-        .from(daluxUsers)
-        .where(eq(daluxUsers.connectionId, connectionId)),
-      tx.select({ accountId: daluxUserLinks.accountId, daluxUserId: daluxUserLinks.daluxUserId, source: daluxUserLinks.source })
-        .from(daluxUserLinks)
-        .where(eq(daluxUserLinks.connectionId, connectionId)),
-    ]);
+    // One transaction is one connection: queries run one after another.
+    const accountRows = await tx.select({ id: accounts.id, type: accounts.type, email: accounts.email }).from(accounts);
+    const users = await tx
+      .select({ daluxUserId: daluxUsers.daluxUserId, email: daluxUsers.email, name: daluxUsers.name })
+      .from(daluxUsers)
+      .where(eq(daluxUsers.connectionId, connectionId));
+    const links = await tx
+      .select({ accountId: daluxUserLinks.accountId, daluxUserId: daluxUserLinks.daluxUserId, source: daluxUserLinks.source })
+      .from(daluxUserLinks)
+      .where(eq(daluxUserLinks.connectionId, connectionId));
     const plan = planLinks(accountRows, users, links);
     for (const row of plan.link) {
       await tx

@@ -8,7 +8,7 @@ services:
       POSTGRES_PASSWORD: migrator
       POSTGRES_DB: platform_test
     ports:
-      - "127.0.0.1:54329:5432"
+      - "127.0.0.1:${PLATFORM_TEST_DB_PORT:-54329}:5432"
     tmpfs:
       - /var/lib/postgresql/data
     healthcheck:

@@ -289,6 +289,94 @@ export const auditLog = pgTable(
 );
 
 /**
+ * Better Auth tables (interface login), mapped by `modelName` in the web app.
+ * Each auth user is linked 1:1 to a personal row in `accounts`.
+ */
+export const authUsers = pgTable('auth_users', {
+  id: text('id').primaryKey(),
+  platformAccountId: uuid('platform_account_id')
+    .notNull()
+    .unique()
+    .references(() => accounts.id, { onDelete: 'cascade' }),
+  name: text('name').notNull(),
+  email: text('email').notNull().unique(),
+  emailVerified: boolean('email_verified').notNull().default(false),
+  image: text('image'),
+  createdAt: createdAt(),
+  updatedAt: updatedAt(),
+});
+
+export const authSessions = pgTable(
+  'auth_sessions',
+  {
+    id: text('id').primaryKey(),
+    userId: text('user_id')
+      .notNull()
+      .references(() => authUsers.id, { onDelete: 'cascade' }),
+    token: text('token').notNull().unique(),
+    expiresAt: timestamp('expires_at', { withTimezone: true }).notNull(),
+    ipAddress: text('ip_address'),
+    userAgent: text('user_agent'),
+    createdAt: createdAt(),
+    updatedAt: updatedAt(),
+  },
+  (t) => [index('auth_sessions_user_idx').on(t.userId)],
+);
+
+/** Better Auth's credential rows; `accountId` is the provider's account id, not `accounts.id`. */
+export const authAccounts = pgTable(
+  'auth_accounts',
+  {
+    id: text('id').primaryKey(),
+    userId: text('user_id')
+      .notNull()
+      .references(() => authUsers.id, { onDelete: 'cascade' }),
+    accountId: text('provider_account_id').notNull(),
+    providerId: text('provider_id').notNull(),
+    accessToken: text('access_token'),
+    refreshToken: text('refresh_token'),
+    idToken: text('id_token'),
+    accessTokenExpiresAt: timestamp('access_token_expires_at', { withTimezone: true }),
+    refreshTokenExpiresAt: timestamp('refresh_token_expires_at', { withTimezone: true }),
+    scope: text('scope'),
+    password: text('password'),
+    createdAt: createdAt(),
+    updatedAt: updatedAt(),
+  },
+  (t) => [index('auth_accounts_user_idx').on(t.userId)],
+);
+
+export const authVerifications = pgTable(
+  'auth_verifications',
+  {
+    id: text('id').primaryKey(),
+    identifier: text('identifier').notNull(),
+    value: text('value').notNull(),
+    expiresAt: timestamp('expires_at', { withTimezone: true }).notNull(),
+    createdAt: createdAt(),
+    updatedAt: updatedAt(),
+  },
+  (t) => [index('auth_verifications_identifier_idx').on(t.identifier)],
+);
+
+/** Invite links for personal accounts; only the sha256 hash of the link token is stored. */
+export const accountInvites = pgTable(
+  'account_invites',
+  {
+    id: id(),
+    accountId: uuid('account_id')
+      .notNull()
+      .references(() => accounts.id, { onDelete: 'cascade' }),
+    tokenHash: text('token_hash').notNull().unique(),
+    expiresAt: timestamp('expires_at', { withTimezone: true }).notNull(),
+    usedAt: timestamp('used_at', { withTimezone: true }),
+    createdByAccountId: uuid('created_by_account_id').references(() => accounts.id, { onDelete: 'set null' }),
+    createdAt: createdAt(),
+  },
+  (t) => [index('account_invites_account_idx').on(t.accountId)],
+);
+
+/**
  * Index data. `project_id`/`file_area_id` on an index describe its scope for
  * RLS (both NULL for docs, which every active account can read). Documents and chunks copy the access columns so
  * policies need no joins. `folder_ancestor_ids` runs from the file area's

@@ -29,6 +29,20 @@
       "when": 1794075136554,
       "tag": "0003_index_build_state",
       "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1794076299668,
+      "tag": "0004_auth_invites",
+      "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1794076302891,
+      "tag": "0005_auth_invites_roles",
+      "breakpoints": true
     }
   ]
 }

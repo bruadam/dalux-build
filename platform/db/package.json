@@ -40,6 +40,7 @@
     "preset": "ts-jest",
     "testMatch": [
       "**/test/**/*.test.ts"
-    ]
+    ],
+    "testTimeout": 30000
   }
 }

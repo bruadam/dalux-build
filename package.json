@@ -5,7 +5,8 @@
   "workspaces": [
     "javascript",
     "mcp-server",
-    "platform/db"
+    "platform/db",
+    "platform/web"
   ],
   "scripts": {
     "changeset": "changeset",

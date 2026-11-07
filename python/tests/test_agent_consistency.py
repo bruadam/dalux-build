@@ -87,12 +87,12 @@ def test_namespace_check_consistency_passes_client_and_arguments(monkeypatch):
     monkeypatch.setattr(consistency, "check_consistency", fake_check)
     client = object()
 
-    result = AINamespace(client).check_consistency("P", "FA", focus="datoer", max_files=10)
+    result = AINamespace(client).check_consistency("P", "FA", focus=["dates"], max_files=10)
 
     assert result == "report"
     assert received["client"] is client
     assert (received["project_id"], received["file_area_id"]) == ("P", "FA")
-    assert received["focus"] == "datoer" and received["max_files"] == 10
+    assert received["focus"] == ["dates"] and received["max_files"] == 10
 
 
 def test_missing_mcp_server_build_raises(monkeypatch):

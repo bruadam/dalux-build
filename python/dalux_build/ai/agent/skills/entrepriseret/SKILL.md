@@ -16,8 +16,8 @@ contract regimes used in Danish construction projects:
   anlægsvirksomhed (general conditions for works and supplies).
 - **ABT18** — Almindelige Betingelser for Totalentreprise (design-build/
   turnkey contracts).
-- **ABR18** — Almindelige Betingelser for Rådgivning (consulting/advisory
-  services).
+- **ABR18** — Almindelige betingelser for rådgivning og bistand i bygge- og
+  anlægsvirksomhed (consulting/advisory services).
 
 ## Instructions
 

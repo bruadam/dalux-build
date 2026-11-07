@@ -1,4 +1,4 @@
-import { createHash } from "node:crypto";
+import { pbkdf2Sync } from "node:crypto";
 import { getPreferenceValues } from "@raycast/api";
 import { createClient, type DaluxClient } from "dalux-build-api";
 import { validateBaseUrl } from "./daluxUrl";
@@ -26,5 +26,5 @@ export function getClient(): DaluxClient {
 /** Short, non-reversible id of the configured account, used to keep caches of different accounts apart. */
 export function accountId(): string {
   const { baseUrl, apiKey } = settings();
-  return createHash("sha256").update(`${baseUrl}\n${apiKey}`).digest("hex").slice(0, 12);
+  return pbkdf2Sync(apiKey, baseUrl, 210000, 32, "sha512").toString("hex").slice(0, 12);
 }

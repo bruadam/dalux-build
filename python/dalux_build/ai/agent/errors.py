@@ -18,3 +18,7 @@ class MissingAgentDependencies(AgentError, ImportError):
 
 class AgentStartupError(AgentError, RuntimeError):
     """Raised when the agent backend or UI process cannot be started."""
+
+
+class ConsistencyCheckError(AgentError, RuntimeError):
+    """Raised when the MCP server cannot run or report a document consistency check."""

@@ -18,6 +18,7 @@ class SubAgent(TypedDict):
     name: str
     description: str
     system_prompt: str
+    recursion_limit: int
 
 
 _LEGAL_SYSTEM_PROMPT = (
@@ -70,6 +71,33 @@ _ENTREPRISERET_SYSTEM_PROMPT = (
 )
 
 
+_CONSISTENCY_SYSTEM_PROMPT = (
+    "You review construction project documents for inconsistencies between "
+    "documents (uoverensstemmelser/modstrid): conflicting values, quantities, "
+    "dates, references, and revisions.\n\n"
+    "1. Call get_skill with topic 'document-consistency-review', then with topic "
+    "'danish-construction-contracts', and follow both.\n"
+    "2. Call check_document_consistency with the projectId and fileAreaId (plus "
+    "folderPath, fileIds, or focus if the request names them). While the result "
+    "has complete=false, call it again with exactly the same arguments.\n"
+    "3. Page through list_inconsistencies with the reportId (offset/limit) until "
+    "you have seen every finding.\n"
+    "4. For each finding with verdict 'candidate', check it yourself: use "
+    "compare_dalux_documents (and search_dalux_documents or search_file_content) "
+    "to read the surrounding text in each cited file. Keep it only if the "
+    "documents really say different things about the same subject; note which "
+    "document takes precedence under the contract's priority order when the "
+    "documents state one.\n"
+    "5. Finish by calling export_inconsistency_report with the reportId (format "
+    "'xlsx' unless the user asked for 'docx' or 'md').\n\n"
+    "Report the confirmed findings grouped by severity. Cite every statement as "
+    "[file, page/location] with a short verbatim quote. List the candidates you "
+    "rejected and why, any skipped files and warnings, and the exported report's "
+    "fileName and downloadUrl. If the consistency tools are not available, say so "
+    "instead of inventing findings. Respond in the language of the request."
+)
+
+
 def build_specialist_subagents() -> list[SubAgent]:
     """Specialist subagents the orchestrator can delegate to via `task()`.
 
@@ -86,6 +114,7 @@ def build_specialist_subagents() -> list[SubAgent]:
                 "specific to Danish construction law."
             ),
             "system_prompt": _LEGAL_SYSTEM_PROMPT,
+            "recursion_limit": 30,
         },
         {
             "name": "construction-pm-specialist",
@@ -96,6 +125,7 @@ def build_specialist_subagents() -> list[SubAgent]:
                 "execution/status questions."
             ),
             "system_prompt": _CONSTRUCTION_PM_SYSTEM_PROMPT,
+            "recursion_limit": 30,
         },
         {
             "name": "entrepriseret-specialist",
@@ -106,5 +136,19 @@ def build_specialist_subagents() -> list[SubAgent]:
                 "construction law and standard contract regimes."
             ),
             "system_prompt": _ENTREPRISERET_SYSTEM_PROMPT,
+            "recursion_limit": 30,
+        },
+        {
+            "name": "consistency-specialist",
+            "description": (
+                "Finds inconsistencies between documents (uoverensstemmelser, "
+                "modstrid): conflicting values, quantities, dates, references or "
+                "revisions across files. Runs the full consistency check, verifies "
+                "candidate findings, and exports a report. Delegate here with the "
+                "projectId, fileAreaId and any folder or files to cover."
+            ),
+            "system_prompt": _CONSISTENCY_SYSTEM_PROMPT,
+            # Checking, paging and verifying findings takes many tool calls.
+            "recursion_limit": 150,
         },
     ]

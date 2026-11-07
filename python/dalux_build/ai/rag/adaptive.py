@@ -40,15 +40,45 @@ class State(TypedDict):
     source: str
 
 
+def citation_label(metadata: dict[str, object]) -> str:
+    """``file, page N`` for a passage, using the page number printed in the PDF.
+
+    PyPDFLoader stores the 0-based page index as ``page`` and the printed page
+    label as ``page_label``.
+    """
+    source = metadata.get("file_name") or metadata.get("source", "unknown")
+    page_label = metadata.get("page_label")
+    page = metadata.get("page")
+    if page_label is not None:
+        return f"{source}, page {page_label}"
+    if isinstance(page, int):
+        return f"{source}, page {page + 1}"
+    return str(source)
+
+
 def format_documents(documents: list[Document]) -> str:
     """Keep source and page identifiers alongside every retrieved passage."""
-    parts = []
+    return "\n\n---\n\n".join(
+        f"[{citation_label(doc.metadata)}]\n{doc.page_content}" for doc in documents
+    )
+
+
+def spread_across_files(documents: list[Document], limit: int, per_file: int) -> list[Document]:
+    """Keep the best-ranked passages, at most *per_file* from any one file.
+
+    Comparing documents needs each document's own statement, which plain
+    top-k retrieval tends to crowd out with several chunks from one file.
+    """
+    taken: dict[object, int] = {}
+    kept = []
     for doc in documents:
-        source = doc.metadata.get("file_name") or doc.metadata.get("source", "unknown")
-        page = doc.metadata.get("page")
-        label = f"{source}, page {page}" if page is not None else str(source)
-        parts.append(f"[{label}]\n{doc.page_content}")
-    return "\n\n---\n\n".join(parts)
+        key = doc.metadata.get("file_id") or doc.metadata.get("source")
+        if taken.get(key, 0) < per_file:
+            taken[key] = taken.get(key, 0) + 1
+            kept.append(doc)
+            if len(kept) == limit:
+                break
+    return kept
 
 
 def build_adaptive_rag(

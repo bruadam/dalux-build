@@ -16,7 +16,6 @@ from __future__ import annotations
 import asyncio
 import os
 from collections.abc import Callable
-from pathlib import Path
 from typing import Protocol
 
 from langchain.agents import create_agent
@@ -29,6 +28,7 @@ from ..rag.adaptive import build_adaptive_rag
 from ..rag.vectorstore import open_vectorstore
 from ..reference import BYGGERIETSREGLER_CORPUS
 from ..reference.store import open_reference_store, reference_store_exists
+from .mcp_server import MCP_SERVER_NAME, resolve_mcp_server_entrypoint, stdio_connection
 from .skills_loader import find_skill, load_skills
 from .subagents import build_specialist_subagents
 
@@ -198,24 +198,6 @@ def _build_web_search_tools() -> list[BaseTool]:
     return [web_search_tool]
 
 
-def _resolve_mcp_server_entrypoint() -> Path | None:
-    """Locate the built dalux-mcp CLI (mcp-server/dist/cli.js).
-
-    Looks next to this monorepo checkout by default (python/dalux_build/ai/agent/graph.py
-    -> repo root is 4 parents up); override with DALUX_MCP_SERVER_PATH when
-    running outside that layout. Returns None (not an error) if the server
-    hasn't been built — same "skip silently, agent still works" convention
-    as the other optional tool groups below.
-    """
-    override = os.environ.get("DALUX_MCP_SERVER_PATH")
-    if override:
-        path = Path(override)
-        return path if path.exists() else None
-    repo_root = Path(__file__).resolve().parents[4]
-    candidate = repo_root / "mcp-server" / "dist" / "cli.js"
-    return candidate if candidate.exists() else None
-
-
 def _build_dalux_api_tools() -> list[BaseTool]:
     """Read-only Dalux API tools (files/folders/tasks/projects/...), loaded
     from the TypeScript MCP server (see mcp-server/) over stdio.
@@ -225,7 +207,7 @@ def _build_dalux_api_tools() -> list[BaseTool]:
     is plain JSON-RPC over stdin/stdout, so this works regardless of the
     server being written in a different language than the agent.
     """
-    entrypoint = _resolve_mcp_server_entrypoint()
+    entrypoint = resolve_mcp_server_entrypoint()
     if entrypoint is None:
         return []
 
@@ -233,14 +215,7 @@ def _build_dalux_api_tools() -> list[BaseTool]:
         from langchain_mcp_adapters.client import MultiServerMCPClient
 
         client = MultiServerMCPClient(
-            {
-                "dalux-api": {
-                    "transport": "stdio",
-                    "command": "node",
-                    "args": [str(entrypoint), "--transport", "stdio"],
-                    "env": dict(os.environ),
-                }
-            }
+            {MCP_SERVER_NAME: stdio_connection(entrypoint, dict(os.environ))}
         )
         return asyncio.run(client.get_tools())
     except Exception as exc:  # noqa: BLE001 - optional tool group, must not crash the agent

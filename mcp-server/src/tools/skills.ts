@@ -267,6 +267,38 @@ it is. A private repo needs \`DOCS_GITHUB_TOKEN\` (or \`GITHUB_TOKEN\`, or a \`g
 \`DOCS_GITHUB_USE_GH_CLI=1\`) set wherever \`docs:build\` runs. Each document's git blob SHA doubles as its revision
 key, so re-running \`docs:build\` after editing a few files only re-indexes those. Reads the same formats as
 \`search_file_content\` (\`.md\`, \`.html\`, \`.pdf\`, \`.docx\`, \`.xlsx\`).
+
+## Cross-document consistency: \`check_document_consistency\`
+
+Finds statements in *different* documents that contradict each other — a door schedule says D-101 is EI60 while
+the specification says EI30, the tender letter's handover date differs from the time schedule, a BoQ quantity
+differs from the description, two documents cite different editions of DS/EN 1992-1-1, or a drawing is
+referenced with different revisions. Reads PDF, Word, Excel and CSV (\`;\`-separated Danish exports included);
+IFC is out of scope. Read-only towards Dalux: the report lives in the server's local cache.
+
+\`\`\`
+check_document_consistency(projectId, fileAreaId, folderPath?, fileIds?, extensions?, focus?, maxFiles?, timeBudgetSeconds?, useModel?)
+    -> { reportId, complete, filesInScope, filesAnalyzed, skipped, findingsCount, bySeverity, topFindings, warnings }
+list_inconsistencies(reportId, severity?, type?, fileId?, offset?, limit?)  ->  { total, findings }
+export_inconsistency_report(reportId, format: 'xlsx' | 'docx' | 'md')      ->  { fileName, filePath, downloadUrl, findingsCount }
+list_consistency_reports() / drop_consistency_report(reportId)
+\`\`\`
+
+- **Workflow**: run \`check_document_consistency\` on a folder (e.g. the tender folder); while \`complete\` is
+  false, call it again with the *same* arguments. Then page through \`list_inconsistencies\` (high severity first)
+  and, if the user wants a document, \`export_inconsistency_report\` and share the \`downloadUrl\`.
+- **Findings**: each has a type (\`value_conflict\`, \`quantity_conflict\`, \`date_conflict\`,
+  \`reference_conflict\`, \`revision_conflict\`, \`other\`), a severity (fire, structural, deadline and money
+  conflicts are high) and at least two statements from different files, each with file, location and verbatim
+  quote. Values are compared after normalisation, so \`EI 60\`/\`EI60\`, \`1.200 mm\`/\`1,2 m\` and
+  \`01-03-2027\`/\`1. marts 2027\` agree.
+- **Verdicts**: with \`MISTRAL_API_KEY\` set (and \`useModel\` not false), Mistral also extracts facts the
+  patterns miss and judges each finding: false alarms are dropped and the rest become \`confirmed\` with an
+  explanation and a precedence note. Without a key, findings stay \`candidate\` — check each one against its
+  quotes yourself, using the \`document-consistency-review\` and \`danish-construction-contracts\` skills, before
+  presenting it as a conflict.
+- **Incremental**: facts are kept per file revision, so a later call only re-reads changed files. Reports untouched
+  for a week are deleted automatically.
 `,
 };
 

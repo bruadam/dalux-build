@@ -221,7 +221,7 @@ class AINamespace:
         folder_path: str | None = None,
         file_ids: list[str] | None = None,
         extensions: list[str] | None = None,
-        focus: str | None = None,
+        focus: list[str] | None = None,
         max_files: int | None = None,
         time_budget_seconds: int | None = None,
         use_model: bool | None = None,

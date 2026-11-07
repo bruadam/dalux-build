@@ -54,7 +54,7 @@ def markdown_dir(name: str) -> Path:
 
 def chroma_dir(name: str) -> Path:
     """Persist directory for a corpus's Chroma collection."""
-    return reference_dir(name) / "chroma"
+    return reference_dir(name) / "chroma-mistral-embed"
 
 
 def reference_store_exists(name: str) -> bool:
@@ -63,7 +63,7 @@ def reference_store_exists(name: str) -> bool:
     return directory.exists() and any(directory.iterdir())
 
 
-def open_reference_store(name: str, embeddings_provider: str = "local") -> Chroma:
+def open_reference_store(name: str, embeddings_provider: str = "mistral") -> Chroma:
     """Open (creating if necessary) a named reference corpus's Chroma collection."""
     from langchain_chroma import Chroma
 
@@ -79,7 +79,7 @@ def open_reference_store(name: str, embeddings_provider: str = "local") -> Chrom
 def index_markdown_directory(
     name: str,
     *,
-    embeddings_provider: str = "local",
+    embeddings_provider: str = "mistral",
     chunk_size: int = DEFAULT_CHUNK_SIZE,
     chunk_overlap: int = DEFAULT_CHUNK_OVERLAP,
     verbose: bool = False,

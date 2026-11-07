@@ -104,7 +104,7 @@ jobs:
           cache-dependency-path: python/pyproject.toml
 
       - name: Install dependencies
-        run: pip install -e ".[dev,webhook]"
+        run: pip install -e ".[dev,webhook,ai,rag]"
 
       - name: Run tests
         run: pytest --cov=dalux_build --cov-report=term-missing
@@ -195,7 +195,7 @@ jobs:
       # needed here too, in the same order as test-webhook-server.
       - name: Install dalux-build (local, editable)
         working-directory: python
-        run: pip install -e ".[dev,webhook]"
+        run: pip install -e ".[dev,webhook,ai,rag]"
 
       - name: Install webhook-server
         working-directory: webhook-server
@@ -236,7 +236,7 @@ jobs:
       # to dalux_build before it ships.
       - name: Install dalux-build (local, editable)
         working-directory: python
-        run: pip install -e ".[dev,webhook]"
+        run: pip install -e ".[dev,webhook,ai,rag]"
 
       - name: Install webhook-server
         working-directory: webhook-server

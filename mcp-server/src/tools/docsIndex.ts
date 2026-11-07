@@ -166,7 +166,7 @@ export async function dropDocsIndex(_client: DaluxClient, args: DropDocsIndexInp
 // DOCS_GITHUB_OWNER/REPO/REF/PATH. build_docs_index/search_docs_index above
 // stay around for scripts/build-docs-index.ts (see there) and tests, but
 // building is deliberately NOT an MCP tool: indexing hundreds of documents
-// costs an OpenAI embedding call per chunk and can take minutes, which is a
+// costs a Mistral embedding call per chunk and can take minutes, which is a
 // bad thing to let a model trigger mid-conversation. The index is built
 // out-of-band (`npm run docs:build`, e.g. as a deploy step) and persists on
 // disk (see cachePaths.docsIndexRoot) — search_docs only ever reads it.

@@ -444,3 +444,29 @@ test suite (Node.js, Python, webhook server) passes first. See
 ## License
 
 MIT
+
+## Mistral AI and adaptive RAG
+
+Install `pip install 'dalux-build[ai,rag]'` and set `MISTRAL_API_KEY`.
+Chat, streaming, OCR, drawing analysis, and RAG use Mistral. Document and
+reference-corpus embeddings use `mistral-embed` through the Mistral SDK.
+
+```python
+agent = dalux.ai.files.agent(path="Files/4_Design/Contracts")
+# Optionally choose a tool-capable Mistral chat model:
+agent = dalux.ai.files.agent(folder_id="F456", pick_model=True)
+```
+
+The RAG workflow follows the
+[Mistral adaptive RAG cookbook](https://docs.mistral.ai/resources/cookbooks/third_party-langchain-adaptive_rag_mistral):
+route the question, retrieve passages, grade their relevance, generate a cited
+answer, and check grounding and usefulness. It stops after two retrieval attempts
+if evidence is insufficient. `FIRECRAWL_API_KEY` optionally enables web retrieval.
+LangChain agents provide specialist delegation and a `read_skill` tool; all agents
+use the configured Mistral model (`mistral-large-latest` by default).
+
+Migration: replace previous provider keys with `MISTRAL_API_KEY`; use
+`provider="mistral"` and `embeddings_provider="mistral"`. Model selection now uses
+`pick_mistral_model()`; the `free_only` option is removed. Scope indexes rebuild
+from cached PDFs into a separate `chroma-mistral-embed` directory. Re-run reference
+corpus indexing once to populate the new directory. The prior caches remain on disk.

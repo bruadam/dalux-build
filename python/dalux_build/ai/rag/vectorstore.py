@@ -29,48 +29,22 @@ except ImportError:
 DEFAULT_CHUNK_SIZE = 1000
 DEFAULT_CHUNK_OVERLAP = 150
 
-# OpenRouter serves chat models only, not embeddings — this is the only
-# guaranteed API key for this feature, so embeddings default to a local
-# sentence-transformers model rather than requiring a second provider key.
-DEFAULT_LOCAL_EMBEDDING_MODEL = "BAAI/bge-small-en-v1.5"
-DEFAULT_OPENAI_EMBEDDING_MODEL = "text-embedding-3-small"
+DEFAULT_EMBEDDING_MODEL = "mistral-embed"
 
 
-def build_embeddings(embeddings_provider: str = "local", *, verbose: bool = False) -> Embeddings:
-    """Build the embeddings model used to index and query documents.
-
-    Args:
-        embeddings_provider: ``"local"`` (default) uses a local
-            sentence-transformers model — no extra API key required, but
-            pulls in a multi-hundred-MB model on first use. ``"openai"``
-            uses ``OpenAIEmbeddings`` instead, when ``OPENAI_API_KEY`` is
-            available and a smaller/faster dependency footprint is preferred.
-        verbose: If True, print progress while loading the model (the local
-            provider especially can take a while on a cold start, since it
-            downloads the model from Hugging Face on first use).
-    """
-    if embeddings_provider == "openai":
-        if verbose:
-            print(f"Loading OpenAI embeddings model {DEFAULT_OPENAI_EMBEDDING_MODEL}...")
-        from langchain_openai import OpenAIEmbeddings
-
-        return OpenAIEmbeddings(model=DEFAULT_OPENAI_EMBEDDING_MODEL)
-
+def build_embeddings(embeddings_provider: str = "mistral", *, verbose: bool = False) -> Embeddings:
+    """Build the SDK-backed Mistral embedding adapter for Chroma."""
+    if embeddings_provider != "mistral":
+        raise ValueError("embeddings_provider must be 'mistral'.")
     if verbose:
-        print(
-            f"Loading local embeddings model {DEFAULT_LOCAL_EMBEDDING_MODEL} "
-            "(downloads on first use, this can take a few minutes)..."
-        )
-    from langchain_huggingface import HuggingFaceEmbeddings
+        print(f"Using Mistral embeddings model {DEFAULT_EMBEDDING_MODEL}.")
+    from .embeddings import MistralEmbeddings
 
-    embeddings = HuggingFaceEmbeddings(model_name=DEFAULT_LOCAL_EMBEDDING_MODEL)
-    if verbose:
-        print("Embeddings model loaded.")
-    return embeddings
+    return MistralEmbeddings()
 
 
 def open_vectorstore(
-    cache_key: str, embeddings_provider: str = "local", *, verbose: bool = False
+    cache_key: str, embeddings_provider: str = "mistral", *, verbose: bool = False
 ) -> Chroma:
     """Open (creating if necessary) the persisted Chroma collection for a scope."""
     from langchain_chroma import Chroma
@@ -88,7 +62,7 @@ def load_or_build(
     *,
     dirty_file_ids: frozenset[str],
     removed_file_ids: frozenset[str] = frozenset(),
-    embeddings_provider: str = "local",
+    embeddings_provider: str = "mistral",
     chunk_size: int = DEFAULT_CHUNK_SIZE,
     chunk_overlap: int = DEFAULT_CHUNK_OVERLAP,
     verbose: bool = False,
@@ -108,6 +82,13 @@ def load_or_build(
         if verbose:
             print(f"Dropping vectors for {len(removed_file_ids)} removed file(s).")
         store.delete(where={"file_id": {"$in": list(removed_file_ids)}})
+
+    # New model-specific stores must embed even files whose download hash is unchanged.
+    indexed = store.get(include=["metadatas"])
+    indexed_ids = {metadata["file_id"] for metadata in indexed["metadatas"] or [] if metadata}
+    dirty_file_ids = dirty_file_ids | frozenset(
+        doc.file_id for doc in documents if doc.file_id not in indexed_ids
+    )
 
     if not dirty_file_ids:
         if verbose:

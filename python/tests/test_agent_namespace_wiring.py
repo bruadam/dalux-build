@@ -43,6 +43,8 @@ def test_agent_resolves_scope_and_launches(monkeypatch):
     assert launch_kwargs["scope"] == "the-resolved-scope"
     assert launch_kwargs["client"] is client
     assert launch_kwargs["skill"] == "legal-contract-review"
+    assert launch_kwargs["provider"] == "mistral"
+    assert launch_kwargs["embeddings_provider"] == "mistral"
 
 
 @pytest.mark.parametrize("resource_name", ["file", "file_area", "folder"])
@@ -77,12 +79,10 @@ def test_agent_pick_model_resolves_model_before_launch(monkeypatch):
         return "handle"
 
     monkeypatch.setattr(agent_engine, "launch_agent", fake_launch_agent)
-    monkeypatch.setattr(
-        agent_models, "pick_openrouter_model", lambda *, free_only: "picked-model-id"
-    )
+    monkeypatch.setattr(agent_models, "pick_mistral_model", lambda: "picked-model-id")
     proxy = AIEndpointProxy(endpoint=object(), resource_name="file", client=_Client())
 
-    result = proxy.agent(pick_model=True, free_only=True)
+    result = proxy.agent(pick_model=True)
 
     assert result == "handle"
     assert captured["launch_agent"]["model"] == "picked-model-id"
@@ -93,10 +93,10 @@ def test_agent_explicit_model_wins_over_pick_model(monkeypatch):
     captured = {}
     monkeypatch.setattr(agent_engine, "launch_agent", lambda **kwargs: captured.update(kwargs))
 
-    def fail_if_called(*, free_only):
-        raise AssertionError("pick_openrouter_model should not be called when model is explicit")
+    def fail_if_called():
+        raise AssertionError("pick_mistral_model should not be called when model is explicit")
 
-    monkeypatch.setattr(agent_models, "pick_openrouter_model", fail_if_called)
+    monkeypatch.setattr(agent_models, "pick_mistral_model", fail_if_called)
     proxy = AIEndpointProxy(endpoint=object(), resource_name="file", client=_Client())
 
     proxy.agent(model="explicit-model-id", pick_model=True)
@@ -116,11 +116,11 @@ def test_agent_passes_provider_through_to_launch(monkeypatch):
     assert captured["model"] == "mistral-large-latest"
 
 
-def test_agent_pick_model_rejected_for_non_openrouter_provider():
+def test_agent_pick_model_rejected_for_unsupported_provider():
     proxy = AIEndpointProxy(endpoint=object(), resource_name="file", client=_Client())
 
-    with pytest.raises(ValueError, match="provider='openrouter'"):
-        proxy.agent(provider="mistral", pick_model=True)
+    with pytest.raises(ValueError, match="provider='mistral'"):
+        proxy.agent(provider="unsupported", pick_model=True)
 
 
 def test_ai_namespace_exposes_file_areas_proxy():

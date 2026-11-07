@@ -24,7 +24,7 @@ repos:
         name: mypy (webhook-server)
         entry: >-
           uv run --frozen --directory webhook-server --extra dev
-          --with-editable ../python[dev,webhook]
+          --with-editable ../python[dev,webhook,ai,rag]
           mypy -p dalux_webhook
         language: system
         always_run: true

@@ -3,7 +3,7 @@
  * Builds (or refreshes) the persistent reference-docs search index — run this
  * whenever the dalux-build-docs corpus changes, or as a deploy/rebuild step
  * before restarting the server, not from inside a conversation: indexing
- * costs one OpenAI embedding call per chunk and can take minutes for a large
+ * costs one Mistral embedding call per chunk and can take minutes for a large
  * corpus, which is a bad thing to let a model trigger via a tool call. The
  * MCP server's `search_docs` tool only ever reads what this script wrote
  * (see cachePaths.docsIndexRoot — persists under ~/.dalux-mcp by default, so

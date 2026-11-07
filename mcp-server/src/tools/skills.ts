@@ -171,7 +171,7 @@ by relevance across more of their content instead, no OData required:
 
 - \`search_tasks(projectId, query, typeId?, filter?, includeChanges?, topK?)\` — ad hoc, no setup: fetches the
   project's tasks (optionally narrowed with \`typeId\`/\`filter\` first), ranks them against \`query\` by BM25 (or
-  embeddings if the server has \`OPENAI_API_KEY\` set) over subject, type, status, description and custom fields,
+  embeddings if the server has \`MISTRAL_API_KEY\` set) over subject, type, status, description and custom fields,
   and returns the best matches with a \`score\`. Pass \`includeChanges: true\` to also match against each task's
   change-history text — costs one extra API call to fetch every change on the project.
 - \`build_task_index(projectId, typeId?, filter?)\` + \`search_task_index(indexId | scope, query, topK?)\` — for

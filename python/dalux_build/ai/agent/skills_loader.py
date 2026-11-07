@@ -1,12 +1,7 @@
 """Minimal reader for SKILL.md files (the Agent Skills standard).
 
-This is independent of deepagents' own ``SkillsMiddleware`` parser, which
-loads skills at agent runtime for automatic, description-based activation.
-This module exists for two things the middleware doesn't do: human-facing
-search (see ``dalux_build.ai.skills_cli``) and forcing a specific skill's
-instructions into the system prompt when a caller passes ``skill=<name>``
-explicitly to ``.agent(...)``, rather than leaving selection entirely to the
-model.
+Supports the runtime read_skill tool, human-facing skill search, and explicit
+skill instructions passed to .agent(skill=...).
 """
 
 from __future__ import annotations
@@ -53,7 +48,7 @@ def load_skills(directory: Path | None = None) -> list[Skill]:
     """Load every skill under *directory* (defaults to the bundled skills/ dir).
 
     Each skill lives at ``<directory>/<skill-name>/SKILL.md``, per the Agent
-    Skills standard: https://docs.langchain.com/oss/python/deepagents/skills
+    Skills standard: https://agentskills.io/specification
     """
     root = directory or SKILLS_DIR
     return [_parse_skill_md(skill_md) for skill_md in sorted(root.glob("*/SKILL.md"))]

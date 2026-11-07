@@ -51,11 +51,11 @@ describe('search_docs (env-pinned scope, no owner/repo/ref/path/indexId args —
 
   beforeAll(() => {
     cache = mkdtempSync(path.join(tmpdir(), 'dalux-docs-cache-'));
-    for (const key of ['DALUX_MCP_CACHE_DIR', 'DALUX_MCP_DOCS_DIR', 'OPENAI_API_KEY', 'DOCS_GITHUB_OWNER', 'DOCS_GITHUB_REPO', 'DOCS_GITHUB_REF', 'DOCS_GITHUB_PATH']) {
+    for (const key of ['DALUX_MCP_CACHE_DIR', 'DALUX_MCP_DOCS_DIR', 'MISTRAL_API_KEY', 'DOCS_GITHUB_OWNER', 'DOCS_GITHUB_REPO', 'DOCS_GITHUB_REF', 'DOCS_GITHUB_PATH']) {
       originalEnv[key] = process.env[key];
     }
     process.env.DALUX_MCP_CACHE_DIR = cache;
-    delete process.env.OPENAI_API_KEY;
+    delete process.env.MISTRAL_API_KEY;
     process.env.DOCS_GITHUB_OWNER = 'bruadam';
     process.env.DOCS_GITHUB_REPO = 'search-docs-repo';
     process.env.DOCS_GITHUB_REF = 'main';

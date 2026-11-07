@@ -74,7 +74,7 @@ def _base_patches(monkeypatch, tmp_path, processes):
         return process
 
     monkeypatch.setattr(subprocess, "Popen", fake_popen)
-    monkeypatch.setenv("OPENROUTER_API_KEY", "or-secret")
+    monkeypatch.setenv("MISTRAL_API_KEY", "mistral-secret")
 
 
 def test_launch_agent_passes_credentials_via_environment(monkeypatch, tmp_path):
@@ -87,9 +87,9 @@ def test_launch_agent_passes_credentials_via_environment(monkeypatch, tmp_path):
         backend_env = backend.captured["kwargs"]["env"]
         backend_command = backend.captured["command"]
         assert "top-secret" not in " ".join(backend_command)
-        assert "or-secret" not in " ".join(backend_command)
+        assert "mistral-secret" not in " ".join(backend_command)
         assert backend_env["DALUX_API_KEY"] == "top-secret"
-        assert backend_env["OPENROUTER_API_KEY"] == "or-secret"
+        assert backend_env["MISTRAL_API_KEY"] == "mistral-secret"
         assert backend_env["DALUX_AGENT_FILE_AREA_ID"] == "fa1"
         assert handle.backend_url == "http://127.0.0.1:9001"
         assert handle.ui_url == "http://localhost:9002"
@@ -103,13 +103,13 @@ def test_launch_agent_passes_credentials_via_environment(monkeypatch, tmp_path):
     assert not handle.is_running
 
 
-def test_launch_agent_raises_without_openrouter_key(monkeypatch, tmp_path):
+def test_launch_agent_raises_without_default_provider_key(monkeypatch, tmp_path):
     backend = FakeProcess(101)
     ui = FakeProcess(102)
     _base_patches(monkeypatch, tmp_path, [backend, ui])
-    monkeypatch.delenv("OPENROUTER_API_KEY", raising=False)
+    monkeypatch.delenv("MISTRAL_API_KEY", raising=False)
 
-    with pytest.raises(engine.AgentStartupError, match="OPENROUTER_API_KEY"):
+    with pytest.raises(engine.AgentStartupError, match="MISTRAL_API_KEY"):
         engine.launch_agent(scope=_scope(), client=_Client(), open_browser=False)
 
 

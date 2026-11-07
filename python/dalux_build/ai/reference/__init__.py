@@ -25,7 +25,7 @@ def crawl_and_index_byggerietsregler(
     *,
     api_key: str | None = None,
     limit: int = 10000,
-    embeddings_provider: str = "local",
+    embeddings_provider: str = "mistral",
     verbose: bool = False,
 ) -> None:
     """Crawl byggerietsregler.dk, save it as a themed markdown sitemap, and index it.

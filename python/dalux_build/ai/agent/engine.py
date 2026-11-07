@@ -35,13 +35,14 @@ _GRAPH_NAME = "dalux_agent"
 _DEEP_AGENTS_UI_REPO = "https://github.com/langchain-ai/deep-agents-ui.git"
 
 _REQUIRED_MODULES = (
-    "deepagents",
+    "langchain",
+    "langchain_mistralai",
+    "mistralai",
     "langgraph_cli",
     "langchain_core",
     "langchain_chroma",
     "langchain_community",
     "langchain_text_splitters",
-    "langchain_huggingface",
     "pypdf",
     "platformdirs",
     "yaml",
@@ -49,7 +50,6 @@ _REQUIRED_MODULES = (
 
 # Maps a provider name to the env var carrying its API key.
 _PROVIDER_API_KEY_ENV_VARS = {
-    "openrouter": "OPENROUTER_API_KEY",
     "mistral": "MISTRAL_API_KEY",
 }
 
@@ -191,9 +191,9 @@ def launch_agent(
     scope: AgentScope,
     client: DaluxClient,
     skill: str | None = None,
-    provider: str = "openrouter",
+    provider: str = "mistral",
     model: str | None = None,
-    embeddings_provider: str = "local",
+    embeddings_provider: str = "mistral",
     recursive: bool = True,
     file_type: str | None = "document",
     open_browser: bool = True,
@@ -206,9 +206,7 @@ def launch_agent(
     """Sync scope PDFs into a local vector index, then launch the LangGraph
     backend and the deep-agents-ui chat frontend against it.
 
-    ``startup_timeout`` defaults high because the LangGraph backend loads the
-    embeddings model (downloading it from Hugging Face on first use) before
-    it can serve requests, which can take several minutes on a cold start.
+    Documents are embedded with mistral-embed before the backend starts.
     """
     _require_dependencies()
     _require_external_tools()

@@ -101,7 +101,7 @@ beforeAll(async () => {
   await refresh();
 
   const index = (kind: string, project_id: string | null, file_area_id: string | null) =>
-    insert('indexes', { connection_id: ids.conn, kind, project_id, file_area_id, scope: {} });
+    insert('indexes', { connection_id: ids.conn, kind, external_id: `${kind}-${project_id}`, project_id, file_area_id, scope: {} });
   ids.filesP1 = await index('file', 'P1', 'FA1');
   ids.filesP2 = await index('file', 'P2', 'FA9');
   ids.tasksP1 = await index('task', 'P1', null);
@@ -171,7 +171,13 @@ describe('row-level security on index data (mcp role)', () => {
     const mcp = t.as('mcp');
     expect(await mcp.select().from(chunks)).toEqual([]);
     expect(await mcp.select().from(documents)).toEqual([]);
-    expect(await mcp.select().from(indexes)).toEqual([]);
+    expect(await mcp.select({ id: indexes.id }).from(indexes)).toEqual([]);
+  });
+
+  it('build_state (names of skipped and failed files) is not readable by the mcp role', async () => {
+    expect(await pgError(withAccount(t.as('mcp'), ids.alice, (tx) => tx.select().from(indexes)))).toMatch(
+      /permission denied/,
+    );
   });
 
   it('only the worker role writes index data', async () => {
@@ -180,7 +186,7 @@ describe('row-level security on index data (mcp role)', () => {
     expect(
       await pgError(withAccount(mcp, ids.alice, (tx) => tx.update(documents).set({ folderAncestorIds: ['F2'] }))),
     ).toMatch(/permission denied/);
-    expect(await pgError(mcp.insert(indexes).values({ connectionId: ids.conn, kind: 'docs', scope: {} }))).toMatch(
+    expect(await pgError(mcp.insert(indexes).values({ connectionId: ids.conn, kind: 'docs', externalId: 'x', scope: {} }))).toMatch(
       /permission denied/,
     );
     expect(await pgError(t.as('web').select().from(chunks))).toMatch(/permission denied/);

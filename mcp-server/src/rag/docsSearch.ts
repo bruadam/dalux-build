@@ -37,21 +37,39 @@ interface Candidate {
   vector: Float32Array | null;
 }
 
+function selectDocs(manifest: DocsIndexManifest, options: DocsIndexSearchOptions): string[] {
+  const needle = options.pathContains?.toLowerCase();
+  return Object.keys(manifest.docs).filter((docPath) => !needle || docPath.toLowerCase().includes(needle));
+}
+
+function rankingWarnings(embedding: DocsIndexManifest['embedding'], missingVectors: boolean): string[] {
+  const warnings: string[] = [];
+  if (embedding && embedding.model !== EMBEDDING_MODEL) {
+    warnings.push('Embedding model changed — ranking lexically until the index is rebuilt.');
+  }
+  if (embedding && !embeddingsAvailable()) {
+    warnings.push('MISTRAL_API_KEY is not set — ranking lexically (BM25) instead of semantically.');
+  }
+  if (missingVectors) {
+    warnings.push(
+      'Some documents have no embeddings (indexed before the key was set) — ranking lexically so scores stay comparable. Re-run `npm run docs:build -- --refresh` to embed them.',
+    );
+  }
+  return warnings;
+}
+
 async function collectCandidates(
   manifest: DocsIndexManifest,
   options: DocsIndexSearchOptions,
 ): Promise<{ candidates: Candidate[]; docsSearched: number; missingVectors: boolean }> {
   const store = indexStores().docs;
-  const needle = options.pathContains?.toLowerCase();
   const dimensions = manifest.embedding?.dimensions ?? 0;
 
   const candidates: Candidate[] = [];
   let docsSearched = 0;
   let missingVectors = false;
 
-  for (const docPath of Object.keys(manifest.docs)) {
-    if (needle && !docPath.toLowerCase().includes(needle)) continue;
-
+  for (const docPath of selectDocs(manifest, options)) {
     const document = await store.readDocument(manifest.indexId, docPath);
     if (!document) continue;
     const vectors = dimensions ? await store.readVectors(manifest.indexId, docPath, dimensions) : null;
@@ -92,25 +110,36 @@ export async function searchDocsIndex(
 
   const topK = options.topK ?? 8;
   const perDocLimit = options.perDocLimit === undefined ? 3 : options.perDocLimit;
-  const warnings: string[] = [];
+  const store = indexStores().docs;
+  if (store.search) {
+    const paths = selectDocs(manifest, options);
+    const semanticWanted = manifest.embedding?.model === EMBEDDING_MODEL && embeddingsAvailable();
+    const { missingVectors, matches } = await store.search(indexId, {
+      query,
+      embedQuery: semanticWanted ? async () => (await embedTexts([query]))[0] : null,
+      topK,
+      perDocumentLimit: perDocLimit,
+      documentIds: options.pathContains ? paths : undefined,
+    });
+    return {
+      indexId,
+      mode: semanticWanted && !missingVectors ? 'embeddings' : 'lexical',
+      query,
+      docsSearched: paths.length,
+      chunksSearched: paths.reduce((total, docPath) => total + manifest.docs[docPath].chunkCount, 0),
+      matches: matches.map((match) => ({ ...match.chunk, path: match.documentId, score: match.score })),
+      warnings: rankingWarnings(manifest.embedding, missingVectors),
+    };
+  }
 
+  const warnings: string[] = [];
   const { candidates, docsSearched, missingVectors } = await collectCandidates(manifest, options);
   if (!candidates.length) {
     return { indexId, mode: 'lexical', query, docsSearched, chunksSearched: 0, matches: [], warnings };
   }
 
   const semantic = manifest.embedding?.model === EMBEDDING_MODEL && embeddingsAvailable() && !missingVectors;
-  if (manifest.embedding && manifest.embedding.model !== EMBEDDING_MODEL) {
-    warnings.push('Embedding model changed — ranking lexically until the index is rebuilt.');
-  }
-  if (manifest.embedding && !embeddingsAvailable()) {
-    warnings.push('MISTRAL_API_KEY is not set — ranking lexically (BM25) instead of semantically.');
-  }
-  if (missingVectors) {
-    warnings.push(
-      'Some documents have no embeddings (indexed before the key was set) — ranking lexically so scores stay comparable. Re-run `npm run docs:build -- --refresh` to embed them.',
-    );
-  }
+  warnings.push(...rankingWarnings(manifest.embedding, missingVectors));
 
   let scored: DocsSearchMatch[];
   if (semantic) {

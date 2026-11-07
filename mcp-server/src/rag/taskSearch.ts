@@ -44,6 +44,39 @@ interface Candidate {
   vector: Float32Array | null;
 }
 
+function rankingWarnings(embedding: TaskIndexManifest['embedding'], missingVectors: boolean): string[] {
+  const warnings: string[] = [];
+  if (embedding && embedding.model !== EMBEDDING_MODEL) {
+    warnings.push('Embedding model changed — ranking lexically until the index is rebuilt.');
+  }
+  if (embedding && !embeddingsAvailable()) {
+    warnings.push('MISTRAL_API_KEY is not set — ranking lexically (BM25) instead of semantically.');
+  }
+  if (missingVectors) {
+    warnings.push(
+      'Some tasks have no embeddings (indexed before the key was set) — ranking lexically so scores stay comparable. Re-run build_task_index with refresh=true to embed them.',
+    );
+  }
+  return warnings;
+}
+
+function taskMatch(
+  taskId: string,
+  entry: TaskManifestEntry,
+  chunk: { location: string; text: string },
+  score: number,
+): TaskSearchMatch {
+  return {
+    taskId,
+    subject: entry.subject,
+    number: entry.number,
+    usage: entry.usage,
+    location: chunk.location,
+    text: chunk.text,
+    score,
+  };
+}
+
 async function collectCandidates(
   manifest: TaskIndexManifest,
 ): Promise<{ candidates: Candidate[]; tasksSearched: number; missingVectors: boolean }> {
@@ -100,33 +133,39 @@ export async function searchTaskIndex(
   const perTaskLimit = options.perTaskLimit === undefined ? 3 : options.perTaskLimit;
   const warnings: string[] = [];
 
+  const store = indexStores().tasks;
+  if (store.search) {
+    const semanticWanted = manifest.embedding?.model === EMBEDDING_MODEL && embeddingsAvailable();
+    const { missingVectors, matches } = await store.search(indexId, {
+      query,
+      embedQuery: semanticWanted ? async () => (await embedTexts([query]))[0] : null,
+      topK,
+      perDocumentLimit: perTaskLimit,
+    });
+    const entries = Object.values(manifest.tasks);
+    return {
+      indexId,
+      mode: semanticWanted && !missingVectors ? 'embeddings' : 'lexical',
+      query,
+      tasksSearched: entries.length,
+      chunksSearched: entries.reduce((total, entry) => total + entry.chunkCount, 0),
+      matches: matches.map((match) =>
+        taskMatch(match.documentId, manifest.tasks[match.documentId], match.chunk, match.score),
+      ),
+      warnings: rankingWarnings(manifest.embedding, missingVectors),
+    };
+  }
+
   const { candidates, tasksSearched, missingVectors } = await collectCandidates(manifest);
   if (!candidates.length) {
     return { indexId, mode: 'lexical', query, tasksSearched, chunksSearched: 0, matches: [], warnings };
   }
 
   const semantic = manifest.embedding?.model === EMBEDDING_MODEL && embeddingsAvailable() && !missingVectors;
-  if (manifest.embedding && manifest.embedding.model !== EMBEDDING_MODEL) {
-    warnings.push('Embedding model changed — ranking lexically until the index is rebuilt.');
-  }
-  if (manifest.embedding && !embeddingsAvailable()) {
-    warnings.push('MISTRAL_API_KEY is not set — ranking lexically (BM25) instead of semantically.');
-  }
-  if (missingVectors) {
-    warnings.push(
-      'Some tasks have no embeddings (indexed before the key was set) — ranking lexically so scores stay comparable. Re-run build_task_index with refresh=true to embed them.',
-    );
-  }
+  warnings.push(...rankingWarnings(manifest.embedding, missingVectors));
 
-  const toMatch = (candidate: Candidate, score: number): TaskSearchMatch => ({
-    taskId: candidate.taskId,
-    subject: candidate.entry.subject,
-    number: candidate.entry.number,
-    usage: candidate.entry.usage,
-    location: candidate.chunk.location,
-    text: candidate.chunk.text,
-    score,
-  });
+  const toMatch = (candidate: Candidate, score: number): TaskSearchMatch =>
+    taskMatch(candidate.taskId, candidate.entry, candidate.chunk, score);
 
   let scored: TaskSearchMatch[];
   if (semantic) {

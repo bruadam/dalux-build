@@ -16,7 +16,7 @@ import { pool } from '../concurrency';
 import { extractDocument } from '../extract';
 import { EMBEDDING_DIMENSIONS, EMBEDDING_MODEL, embedTexts, embeddingsAvailable } from '../search/rank';
 import { indexIdFor, listIndexableFiles, type IndexScope, type IndexableFile } from './scope';
-import { indexStores } from '../store';
+import { buildIndexStores } from '../store';
 import { summarizeSkips, type FailedFile, type IndexManifest, type SkipSummary } from '../store/types';
 
 /** Indexes nobody has touched for a week are deleted on the next build. */
@@ -111,7 +111,7 @@ export async function buildIndex(
   const warnings: string[] = [];
   const useEmbeddings = embeddingsAvailable();
 
-  const store = indexStores().fileAreas;
+  const store = buildIndexStores().fileAreas;
   const existing = await store.readManifest(indexId);
   const manifest: IndexManifest = existing ?? {
     indexId,

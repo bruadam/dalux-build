@@ -101,3 +101,14 @@ def test_missing_mcp_server_build_raises(monkeypatch):
 
     with pytest.raises(ConsistencyCheckError, match="not built"):
         consistency.check_consistency(client, "P", "FA")
+
+
+def test_tool_errors_are_unwrapped_from_task_groups():
+    error = ConsistencyCheckError("check_document_consistency failed: bad focus")
+    group = type("Group", (Exception,), {})
+    inner, outer = group(), group()
+    inner.exceptions, outer.exceptions = (error,), (inner,)
+    wrapped = outer
+
+    assert consistency._find_consistency_error(wrapped) is error
+    assert consistency._find_consistency_error(RuntimeError("other")) is None

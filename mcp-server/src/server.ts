@@ -12,6 +12,7 @@ import * as scheduling from './tools/scheduling';
 import * as documents from './tools/documents';
 import * as drawings from './tools/drawings';
 import * as fileAreaIndex from './tools/fileAreaIndex';
+import * as consistency from './tools/consistency';
 import * as taskIndex from './tools/taskIndex';
 import * as docsIndex from './tools/docsIndex';
 import * as feedback from './tools/feedback';
@@ -164,6 +165,41 @@ export const TOOLS = [
     description: 'Delete a temporary document index from this server\'s local cache. Does not touch anything in Dalux.',
     inputSchema: fileAreaIndex.dropFileAreaIndexInput,
     handler: fileAreaIndex.dropFileAreaIndex,
+  }),
+
+  // Cross-document consistency (see tools/consistency.ts — a local report, read-only towards Dalux)
+  tool({
+    name: 'check_document_consistency',
+    description:
+      'Find statements in different documents of a Dalux file area or folder that contradict each other: fire class, BoQ quantity, handover date, standard edition, drawing revision. Reads PDF, Word, Excel and CSV; read-only. If complete=false, call again with the same arguments. Verdict "candidate" means unreviewed: judge it with the document-consistency-review skill (get_skill).',
+    inputSchema: consistency.checkDocumentConsistencyInput,
+    handler: consistency.checkDocumentConsistency,
+  }),
+  tool({
+    name: 'list_inconsistencies',
+    description:
+      'Page through the findings of a check_document_consistency report, filtered by severity, type or file. Each statement has file, location and verbatim quote.',
+    inputSchema: consistency.listInconsistenciesInput,
+    handler: consistency.listInconsistencies,
+  }),
+  tool({
+    name: 'export_inconsistency_report',
+    description:
+      'Export a consistency report as xlsx (one row per statement), docx (summary and table) or md, and return a download link. The file is written locally and never uploaded to Dalux.',
+    inputSchema: consistency.exportInconsistencyReportInput,
+    handler: consistency.exportInconsistencyReport,
+  }),
+  tool({
+    name: 'list_consistency_reports',
+    description: 'List the document consistency reports currently on this server, with their scope, progress and number of findings.',
+    inputSchema: consistency.listConsistencyReportsInput,
+    handler: consistency.listConsistencyReports,
+  }),
+  tool({
+    name: 'drop_consistency_report',
+    description: 'Delete a document consistency report from this server\'s local cache. Does not touch anything in Dalux.',
+    inputSchema: consistency.dropConsistencyReportInput,
+    handler: consistency.dropConsistencyReport,
   }),
 
   // Cross-task search (see tools/taskIndex.ts — a temporary local index over tasks + change history + attachments)

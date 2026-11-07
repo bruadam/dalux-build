@@ -63,6 +63,20 @@ export function taskIndexDir(indexId: string): string {
   return dir;
 }
 
+/** Root under which every document-consistency report lives (see consistency/report.ts). */
+export function consistencyRoot(): string {
+  const dir = path.join(mcpCacheRoot(), 'consistency');
+  mkdirSync(dir, { recursive: true });
+  return dir;
+}
+
+/** Directory holding one consistency report: manifest, per-file facts, findings and exports. */
+export function consistencyReportDir(reportId: string): string {
+  const dir = path.join(consistencyRoot(), reportId);
+  mkdirSync(dir, { recursive: true });
+  return dir;
+}
+
 /**
  * Root under which the docs-repo index lives (see rag/docsStore.ts) — persistent,
  * unlike the file-area and task indexes above.

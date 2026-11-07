@@ -480,11 +480,17 @@ Scripts can run the same check without a chat model in the loop. It needs a buil
 Node.js. Nothing is uploaded to Dalux; the report is saved locally.
 
 ```python
-report = dalux.ai.check_consistency("P123", "FA123", folder_path="Files/Udbud")
+report = dalux.ai.check_consistency("P123", "FA123", folder_path="Files/Files/Udbud")
 for finding in report.findings:
     print(finding["severity"], finding["summary"])
 print(report.report_path)  # .xlsx by default; report_format="docx" or "md"
 ```
+
+`folder_path` is the full Dalux path: the file area name, then the root folder
+name, then the subfolders. The server inherits your environment; it sends
+document text to Mistral only when `MISTRAL_API_KEY` is set and
+`DALUX_MCP_ALLOW_EXTERNAL_MODEL_IO=true`. Otherwise it runs the deterministic
+checks and says so in the report warnings.
 
 Migration: replace previous provider keys with `MISTRAL_API_KEY`; use
 `provider="mistral"` and `embeddings_provider="mistral"`. Model selection now uses

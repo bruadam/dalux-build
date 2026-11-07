@@ -232,10 +232,13 @@ class AINamespace:
         Runs the Dalux MCP server's consistency check to completion and exports
         the report locally (nothing is uploaded to Dalux). Requires
         ``pip install dalux-build[rag]`` and a built ``mcp-server`` (or
-        DALUX_MCP_SERVER_PATH pointing at its ``dist/cli.js``).
+        DALUX_MCP_SERVER_PATH pointing at its ``dist/cli.js``). ``folder_path``
+        starts with the file area name, then the root folder name. The server
+        only uses Mistral when MISTRAL_API_KEY is set and
+        DALUX_MCP_ALLOW_EXTERNAL_MODEL_IO=true.
 
         Usage:
-            report = dalux.ai.check_consistency("P1", "FA1", folder_path="Files/Udbud")
+            report = dalux.ai.check_consistency("P1", "FA1", folder_path="Files/Files/Udbud")
             for finding in report.findings:
                 print(finding["severity"], finding["summary"])
             print(report.report_path)

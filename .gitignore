@@ -14,6 +14,8 @@ build/
 mcp-server/src/ui/ifcViewerBundle.generated.ts
 # same, for mcp-server/scripts/build-task-timeline.mjs.
 mcp-server/src/ui/taskTimelineBundle.generated.ts
+# skills/*/SKILL.md bundled by mcp-server/scripts/build-skills.mjs.
+mcp-server/src/tools/skillsBundle.generated.ts
 *.tgz
 
 # ── Python build ─────────────────────────────────────────

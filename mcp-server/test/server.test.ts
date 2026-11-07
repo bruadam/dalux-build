@@ -33,7 +33,8 @@ describe('tools/list schemas', () => {
     });
 
     // ~4.3 chars per o200k token for this payload; tighten as tools/list shrinks.
-    expect(JSON.stringify(modelTools).length).toBeLessThanOrEqual(64_000);
+    // 64k before the five document consistency tools (about 3.8k) were added.
+    expect(JSON.stringify(modelTools).length).toBeLessThanOrEqual(68_000);
   });
 
   it('still validates arguments against the original schema', async () => {
@@ -51,8 +52,8 @@ describe('tools/list schemas', () => {
 });
 
 describe('TOOLS registry', () => {
-  it('has 63 tools with unique names', () => {
-    expect(TOOLS).toHaveLength(63);
+  it('has 68 tools with unique names', () => {
+    expect(TOOLS).toHaveLength(68);
     const names = TOOLS.map((t) => t.name);
     expect(new Set(names).size).toBe(names.length);
   });

@@ -7,6 +7,7 @@ from .mixin import AiMixin
 if TYPE_CHECKING:
     from dalux_build import DaluxClient
 
+    from .agent.consistency import ConsistencyReport, ReportFormat
     from .agent.engine import AgentHandle
 
 _AGENT_CAPABLE_RESOURCES = ("file", "folder", "file_area")
@@ -211,6 +212,49 @@ class AINamespace:
                 self._client.projects, "project", client=self._client
             )
         return self._projects_proxy
+
+    def check_consistency(
+        self,
+        project_id: str,
+        file_area_id: str,
+        *,
+        folder_path: str | None = None,
+        file_ids: list[str] | None = None,
+        extensions: list[str] | None = None,
+        focus: list[str] | None = None,
+        max_files: int | None = None,
+        time_budget_seconds: int | None = None,
+        use_model: bool | None = None,
+        report_format: "ReportFormat" = "xlsx",
+    ) -> "ConsistencyReport":
+        """Find statements that contradict each other across documents in a file area.
+
+        Runs the Dalux MCP server's consistency check to completion and exports
+        the report locally (nothing is uploaded to Dalux). Requires
+        ``pip install dalux-build[rag]`` and a built ``mcp-server`` (or
+        DALUX_MCP_SERVER_PATH pointing at its ``dist/cli.js``).
+
+        Usage:
+            report = dalux.ai.check_consistency("P1", "FA1", folder_path="Files/Udbud")
+            for finding in report.findings:
+                print(finding["severity"], finding["summary"])
+            print(report.report_path)
+        """
+        from .agent.consistency import check_consistency
+
+        return check_consistency(
+            self._client,
+            project_id,
+            file_area_id,
+            folder_path=folder_path,
+            file_ids=file_ids,
+            extensions=extensions,
+            focus=focus,
+            max_files=max_files,
+            time_budget_seconds=time_budget_seconds,
+            use_model=use_model,
+            report_format=report_format,
+        )
 
     def list_providers(self) -> None:
         """Print list of configured AI providers."""

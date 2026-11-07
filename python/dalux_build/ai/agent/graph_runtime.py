@@ -16,7 +16,6 @@ from __future__ import annotations
 import asyncio
 import os
 from collections.abc import Callable
-from pathlib import Path
 from typing import Protocol
 
 from langchain.agents import create_agent
@@ -25,10 +24,11 @@ from langchain_core.language_models.chat_models import BaseChatModel
 from langchain_core.tools import BaseTool, tool
 from langchain_mistralai import ChatMistralAI
 
-from ..rag.adaptive import build_adaptive_rag
+from ..rag.adaptive import build_adaptive_rag, format_documents, spread_across_files
 from ..rag.vectorstore import open_vectorstore
 from ..reference import BYGGERIETSREGLER_CORPUS
 from ..reference.store import open_reference_store, reference_store_exists
+from .mcp_server import MCP_SERVER_NAME, resolve_mcp_server_entrypoint, stdio_connection
 from .skills_loader import find_skill, load_skills
 from .subagents import build_specialist_subagents
 
@@ -58,6 +58,9 @@ class _Retriever(Protocol):
     def invoke(self, query: str) -> list[_RetrievedDocument]: ...
 
 
+_COMPARE_CANDIDATES = 30
+_COMPARE_PASSAGES = 8
+
 _DEFAULT_SYSTEM_PROMPT = (
     "You are a document Q&A assistant for construction project files retrieved "
     "from Dalux. Always ground your answers in the search_dalux_documents tool's "
@@ -67,8 +70,13 @@ _DEFAULT_SYSTEM_PROMPT = (
     "relevant specialist via the task tool: legal-specialist (general "
     "contractual/legal language), construction-pm-specialist (schedules, "
     "scope, budget, risk), or entrepriseret-specialist (Danish construction "
-    "contract law — AB18/ABT18/ABR18). Synthesize their reports into your "
-    "final answer to the user.\n\n"
+    "contract law — AB18/ABT18/ABR18). When the user asks about "
+    "inconsistencies, contradictions, uoverensstemmelser or modstrid between "
+    "documents, delegate to consistency-specialist with the projectId, "
+    "fileAreaId and any folder or files in scope. Synthesize their reports into "
+    "your final answer to the user.\n\n"
+    "Cite sources as [file, page]. To compare what several documents say about "
+    "the same thing, use compare_dalux_documents.\n\n"
     "If a web_search tool is available and a question needs a specific law, "
     "regulation, or publicly available document not covered by the indexed "
     "documents or reference corpora, use it — but still prefer indexed "
@@ -83,16 +91,29 @@ def _env(name: str) -> str:
     return value
 
 
+def _scope_note() -> str:
+    project_id = os.environ.get("DALUX_AGENT_PROJECT_ID")
+    file_area_id = os.environ.get("DALUX_AGENT_FILE_AREA_ID")
+    if not project_id or not file_area_id:
+        return ""
+    note = f"\n\nThe indexed documents come from projectId {project_id}, fileAreaId {file_area_id}"
+    folder_id = os.environ.get("DALUX_AGENT_FOLDER_ID")
+    if folder_id:
+        note += f", folderId {folder_id} (including subfolders)"
+    return note + ". Use these IDs when a tool or specialist needs them."
+
+
 def _build_system_prompt(skill_name: str | None) -> str:
+    prompt = _DEFAULT_SYSTEM_PROMPT + _scope_note()
     if not skill_name:
-        return _DEFAULT_SYSTEM_PROMPT
+        return prompt
     skill = find_skill(skill_name)
     if skill is None:
         raise RuntimeError(f"Unknown skill {skill_name!r}; check `skills.sh` for available names")
     # The explicitly requested skill's instructions are folded directly into
     # the system prompt so it governs behavior immediately, in addition to
     # (not instead of) being discoverable via the read_skill tool below.
-    return f"{_DEFAULT_SYSTEM_PROMPT}\n\n{skill.body}"
+    return f"{prompt}\n\n{skill.body}"
 
 
 def _adaptive_answer(retriever: _Retriever) -> Callable[[str], str]:
@@ -120,7 +141,7 @@ def _adaptive_answer(retriever: _Retriever) -> Callable[[str], str]:
     )
 
 
-def _build_retriever_tool() -> BaseTool:
+def _build_retriever_tools() -> list[BaseTool]:
     cache_key = _env("DALUX_AGENT_CACHE_KEY")
     embeddings_provider = os.environ.get("DALUX_AGENT_EMBEDDINGS_PROVIDER", "mistral")
     verbose = bool(os.environ.get("DALUX_AGENT_VERBOSE"))
@@ -132,7 +153,15 @@ def _build_retriever_tool() -> BaseTool:
         """Answer a question about Dalux PDFs with relevance and grounding checks and citations."""
         return answer(query)
 
-    return search_dalux_documents
+    @tool
+    def compare_dalux_documents(query: str) -> str:
+        """Return raw passages about one subject from several different Dalux PDFs, each
+        labelled [file, page], so statements in different documents can be compared."""
+        candidates = store.similarity_search(query, k=_COMPARE_CANDIDATES)
+        passages = spread_across_files(candidates, limit=_COMPARE_PASSAGES, per_file=2)
+        return format_documents(passages) or "No matching passages in the indexed documents."
+
+    return [search_dalux_documents, compare_dalux_documents]
 
 
 def _build_reference_tools() -> list[BaseTool]:
@@ -198,24 +227,6 @@ def _build_web_search_tools() -> list[BaseTool]:
     return [web_search_tool]
 
 
-def _resolve_mcp_server_entrypoint() -> Path | None:
-    """Locate the built dalux-mcp CLI (mcp-server/dist/cli.js).
-
-    Looks next to this monorepo checkout by default (python/dalux_build/ai/agent/graph.py
-    -> repo root is 4 parents up); override with DALUX_MCP_SERVER_PATH when
-    running outside that layout. Returns None (not an error) if the server
-    hasn't been built — same "skip silently, agent still works" convention
-    as the other optional tool groups below.
-    """
-    override = os.environ.get("DALUX_MCP_SERVER_PATH")
-    if override:
-        path = Path(override)
-        return path if path.exists() else None
-    repo_root = Path(__file__).resolve().parents[4]
-    candidate = repo_root / "mcp-server" / "dist" / "cli.js"
-    return candidate if candidate.exists() else None
-
-
 def _build_dalux_api_tools() -> list[BaseTool]:
     """Read-only Dalux API tools (files/folders/tasks/projects/...), loaded
     from the TypeScript MCP server (see mcp-server/) over stdio.
@@ -225,7 +236,7 @@ def _build_dalux_api_tools() -> list[BaseTool]:
     is plain JSON-RPC over stdin/stdout, so this works regardless of the
     server being written in a different language than the agent.
     """
-    entrypoint = _resolve_mcp_server_entrypoint()
+    entrypoint = resolve_mcp_server_entrypoint()
     if entrypoint is None:
         return []
 
@@ -233,14 +244,7 @@ def _build_dalux_api_tools() -> list[BaseTool]:
         from langchain_mcp_adapters.client import MultiServerMCPClient
 
         client = MultiServerMCPClient(
-            {
-                "dalux-api": {
-                    "transport": "stdio",
-                    "command": "node",
-                    "args": [str(entrypoint), "--transport", "stdio"],
-                    "env": dict(os.environ),
-                }
-            }
+            {MCP_SERVER_NAME: stdio_connection(entrypoint, dict(os.environ))}
         )
         return asyncio.run(client.get_tools())
     except Exception as exc:  # noqa: BLE001 - optional tool group, must not crash the agent
@@ -274,7 +278,10 @@ def _build_skill_tool() -> BaseTool:
 
 def _build_delegation_tool(model: BaseChatModel, tools: list[BaseTool]) -> BaseTool:
     specialists = {
-        spec["name"]: create_agent(model=model, tools=tools, system_prompt=spec["system_prompt"])
+        spec["name"]: (
+            create_agent(model=model, tools=tools, system_prompt=spec["system_prompt"]),
+            spec["recursion_limit"],
+        )
         for spec in build_specialist_subagents()
     }
     descriptions = "\n".join(
@@ -283,12 +290,12 @@ def _build_delegation_tool(model: BaseChatModel, tools: list[BaseTool]) -> BaseT
 
     @tool(description=f"Delegate a question to a specialist in a fresh context.\n{descriptions}")
     async def task(subagent_type: str, description: str) -> str:
-        specialist = specialists.get(subagent_type)
-        if specialist is None:
+        if subagent_type not in specialists:
             return f"Unknown specialist {subagent_type!r}. Choose from {', '.join(specialists)}."
+        specialist, recursion_limit = specialists[subagent_type]
         result = await specialist.ainvoke(
             {"messages": [{"role": "user", "content": description}]},
-            config={"recursion_limit": 30},
+            config={"recursion_limit": recursion_limit},
         )
         return str(result["messages"][-1].text)
 
@@ -299,7 +306,7 @@ def build_graph() -> object:
     """Build a Mistral LangChain agent and isolated specialist agents."""
     model = _build_chat_model()
     tools = [
-        _build_retriever_tool(),
+        *_build_retriever_tools(),
         *_build_reference_tools(),
         *_build_web_search_tools(),
         *_build_dalux_api_tools(),

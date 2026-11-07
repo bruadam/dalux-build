@@ -8,7 +8,14 @@ pytest.importorskip("langgraph")
 from langchain_core.documents import Document
 from langchain_core.messages import AIMessage
 
-from dalux_build.ai.rag.adaptive import AnswerGrade, Grade, Route, build_adaptive_rag
+from dalux_build.ai.rag.adaptive import (
+    AnswerGrade,
+    Grade,
+    Route,
+    build_adaptive_rag,
+    citation_label,
+    spread_across_files,
+)
 
 
 class Model:
@@ -76,3 +83,20 @@ def test_web_route_when_configured():
 
     assert build_adaptive_rag(Model(route="websearch"), retrieve, web)("current question")
     assert queries == ["current question"]
+
+
+def test_citation_label_uses_printed_page_number():
+    assert citation_label({"file_name": "a.pdf", "page": 0, "page_label": "iv"}) == "a.pdf, page iv"
+    assert citation_label({"file_name": "a.pdf", "page": 0}) == "a.pdf, page 1"
+    assert citation_label({"source": "https://example.test"}) == "https://example.test"
+
+
+def test_spread_across_files_caps_passages_per_file():
+    ranked = [
+        Document(page_content=f"{file_id}{n}", metadata={"file_id": file_id})
+        for file_id, n in [("a", 1), ("a", 2), ("a", 3), ("b", 1), ("c", 1), ("b", 2)]
+    ]
+
+    kept = spread_across_files(ranked, limit=4, per_file=2)
+
+    assert [doc.page_content for doc in kept] == ["a1", "a2", "b1", "c1"]

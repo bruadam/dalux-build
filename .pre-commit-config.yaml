@@ -13,7 +13,7 @@ repos:
       - id: mypy-dalux-build
         name: mypy (dalux-build)
         entry: >-
-          uv run --frozen --directory python --extra dev --extra webhook
+          uv run --frozen --directory python --extra dev --extra webhook --extra ai --extra rag
           mypy -p dalux_build
         language: system
         always_run: true

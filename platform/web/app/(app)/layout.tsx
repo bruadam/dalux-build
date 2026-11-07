@@ -18,6 +18,8 @@ const ADMIN_LINKS = [
   { href: '/admin/groups', label: 'Groups' },
   { href: '/admin/connections', label: 'Connections' },
   { href: '/admin/grants', label: 'Grants' },
+  { href: '/admin/indexes', label: 'Indexes' },
+  { href: '/admin/dalux-users', label: 'Dalux users' },
   { href: '/admin/settings', label: 'Settings' },
 ];
 

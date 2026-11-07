@@ -8,7 +8,7 @@
  * chunks, element properties, selection members — so the iframe makes no
  * network requests and renders with plain WebGL (three.js).
  */
-import { App, PostMessageTransport } from '@modelcontextprotocol/ext-apps';
+import { App } from '@modelcontextprotocol/ext-apps';
 import { gunzipSync } from 'fflate';
 import * as THREE from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
@@ -26,9 +26,10 @@ interface ViewResult {
 interface ElementDetails {
   expressId: number; type: string; name: string; globalId: string; description?: string; material?: string;
   sets: { name: string; kind: 'pset' | 'qto'; values: Record<string, string | number | boolean | null> }[];
+  truncated?: boolean;
 }
 
-/** One element's slice of a chunk: vertex range (for picking) and index range (for drawing). */
+/** One mesh piece's slice of a chunk: vertex range (for picking) and index range (for drawing). An element can have several. */
 interface Element { id: number; type: string; chunk: number; v0: number; v1: number; i0: number; i1: number; rgba: [number, number, number, number] }
 interface Chunk { positions: THREE.BufferAttribute; colors: THREE.BufferAttribute; indices: Uint32Array; solid: THREE.Mesh; ghost: THREE.Mesh; elements: Element[] }
 
@@ -52,7 +53,8 @@ button:focus-visible,select:focus-visible,input:focus-visible{outline:2px solid 
 .chip{display:flex;align-items:center;gap:6px;background:var(--accent);color:#fff;border-radius:14px;padding:3px 4px 3px 10px}
 .chip button{background:#fff2;color:#fff;border:0;border-radius:10px;padding:2px 8px}
 #section{display:flex;align-items:center;gap:4px;background:var(--panel);border:1px solid var(--line);border-radius:6px;padding:2px 6px}
-#status{position:absolute;left:8px;bottom:8px;color:var(--muted);font-size:12px;pointer-events:none}
+#status{position:absolute;left:8px;bottom:8px;display:flex;gap:8px;align-items:center;color:var(--muted);font-size:12px;pointer-events:none}
+#status progress{width:120px}
 #msg{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;text-align:center;padding:16px;color:var(--muted)}
 #panel{width:320px;min-width:220px;max-width:70%;background:var(--panel);border-left:1px solid var(--line);display:flex;flex-direction:column;position:relative}
 #panel[hidden]{display:none}
@@ -98,7 +100,7 @@ class Viewer {
   readonly solidMat = new THREE.MeshPhongMaterial({ vertexColors: true, flatShading: true, side: THREE.DoubleSide, clippingPlanes: [this.clip] });
   readonly ghostMat = new THREE.MeshBasicMaterial({ color: 0x8892a6, transparent: true, opacity: 0.12, depthWrite: false, side: THREE.DoubleSide, clippingPlanes: [this.clip] });
   readonly chunks: Chunk[] = [];
-  readonly byId = new Map<number, Element>();
+  readonly byId = new Map<number, Element[]>();
   bounds = new THREE.Box3();
   private frame = 0;
 
@@ -143,7 +145,7 @@ class Viewer {
     });
   }
 
-  addChunk(bytes: Uint8Array, types: string[]): void {
+  addChunk(bytes: Uint8Array, types: string[]): Chunk {
     const c = unpackChunk(bytes);
     const positions = new THREE.BufferAttribute(c.positions, 3);
     const colors = new THREE.BufferAttribute(new Uint8Array((c.positions.length / 3) * 3), 3, true);
@@ -156,7 +158,9 @@ class Viewer {
       v = e.v1;
       i = e.i1;
       elements.push(e);
-      if (!this.byId.has(e.id)) this.byId.set(e.id, e);
+      const parts = this.byId.get(e.id);
+      if (parts) parts.push(e);
+      else this.byId.set(e.id, [e]);
     }
     const make = (mat: THREE.Material) => {
       const g = new THREE.BufferGeometry();
@@ -171,11 +175,12 @@ class Viewer {
     this.chunks.push(chunk);
     chunk.solid.geometry.computeBoundingBox();
     this.bounds.union(chunk.solid.geometry.boundingBox!);
+    return chunk;
   }
 
-  /** Rebuilds each chunk's solid/ghost index buffers and tints from `state`. */
-  apply(state: ViewState): void {
-    for (const chunk of this.chunks) {
+  /** Rebuilds the solid/ghost index buffers and tints of `chunks` (all chunks by default) from `state`. */
+  apply(state: ViewState, chunks: Chunk[] = this.chunks): void {
+    for (const chunk of chunks) {
       const solid: number[] = [];
       const ghost: number[] = [];
       const col = chunk.colors.array as Uint8Array;
@@ -200,10 +205,10 @@ class Viewer {
     const box = new THREE.Box3();
     const p = new THREE.Vector3();
     for (const id of ids) {
-      const e = this.byId.get(id);
-      if (!e) continue;
-      const pos = this.chunks[e.chunk].positions;
-      for (let v = e.v0; v < e.v1; v++) box.expandByPoint(p.fromBufferAttribute(pos, v));
+      for (const e of this.byId.get(id) ?? []) {
+        const pos = this.chunks[e.chunk].positions;
+        for (let v = e.v0; v < e.v1; v++) box.expandByPoint(p.fromBufferAttribute(pos, v));
+      }
     }
     return box.isEmpty() ? this.bounds.clone() : box;
   }
@@ -295,7 +300,7 @@ async function main(): Promise<void> {
       msg.textContent = `Failed to load ${data.fileName ?? 'the model'}: ${err instanceof Error ? err.message : String(err)}`;
     });
   });
-  await app.connect(new PostMessageTransport(window.parent, window.parent));
+  await app.connect();
 
   async function load(data: ViewResult): Promise<void> {
     const ref = data.model!;
@@ -306,7 +311,29 @@ async function main(): Promise<void> {
       return;
     }
     applyTheme();
-    msg.textContent = `Loading ${data.fileName ?? 'model'}…`;
+    const name = data.fileName ?? 'model';
+    msg.textContent = `Loading ${name}…`;
+    const v = viewer;
+
+    const state: ViewState = { mode: data.selection?.mode ?? 'xray', hiddenTypes: new Set(), xray: false };
+    let selectionLabel = '';
+    if (data.selection) {
+      const ids: number[] = [];
+      for (let offset = 0, total = 1; offset < total; offset = ids.length) {
+        const page = await callTool<{ label: string; total: number; expressIds: number[] }>(app, 'ifc_viewer_selection', { ...ref, selectionId: data.selection.selectionId, offset });
+        ids.push(...page.expressIds);
+        selectionLabel = page.label;
+        total = page.expressIds.length ? page.total : ids.length;
+      }
+      state.selection = new Set(ids);
+    }
+
+    // Each chunk is one small tool result; draw it as soon as it arrives.
+    const progress = el('progress', { max: 1, value: 0 });
+    const progressText = el('span');
+    status.replaceChildren(progress, progressText);
+    let cameraMoved = false;
+    v.controls.addEventListener('start', () => { cameraMoved = true; });
     let types: string[] = [];
     let total = 1;
     let meshCount = 0;
@@ -315,19 +342,16 @@ async function main(): Promise<void> {
       const g = await callTool<{ chunkCount: number; types: string[]; meshCount: number; triangleCount: number; data: string }>(app, 'ifc_viewer_geometry', { ...ref, chunk });
       ({ types, meshCount, triangleCount } = g);
       total = g.chunkCount;
-      viewer.addChunk(gunzipSync(base64ToBytes(g.data)), types);
-      msg.textContent = `Loading ${data.fileName ?? 'model'}… ${chunk + 1}/${total}`;
+      v.apply(state, [v.addChunk(gunzipSync(base64ToBytes(g.data)), types)]);
+      if (chunk === 0) {
+        msg.hidden = true;
+        v.fit(v.boxOf(state.selection && state.mode === 'isolate' ? state.selection : undefined));
+      }
+      progress.max = total;
+      progress.value = chunk + 1;
+      progressText.textContent = `Loading ${name}… ${chunk + 1}/${total}`;
     }
-    msg.hidden = true;
 
-    const state: ViewState = { mode: data.selection?.mode ?? 'xray', hiddenTypes: new Set(), xray: false };
-    let selectionLabel = '';
-    if (data.selection) {
-      const sel = await callTool<{ label: string; expressIds: number[] }>(app, 'ifc_viewer_selection', { ...ref, selectionId: data.selection.selectionId });
-      state.selection = new Set(sel.expressIds);
-      selectionLabel = sel.label;
-    }
-    const v = viewer;
     const elementCount = new Set(v.byId.keys()).size;
     status.textContent = `${data.fileName ?? ''} · ${meshCount} meshes · ${triangleCount.toLocaleString()} triangles`;
 
@@ -421,6 +445,7 @@ async function main(): Promise<void> {
       const attrs: [string, string][] = [['GlobalId', d.globalId], ['Express id', String(d.expressId)]];
       if (d.description) attrs.push(['Description', d.description]);
       if (d.material) attrs.push(['Material', d.material]);
+      if (d.truncated) attrs.push(['Note', 'Some long values or property sets are not shown.']);
       const table = (rows: [string, string][]) => el('table', {}, ...rows.map(([k, val]) => el('tr', {}, el('td', {}, k), el('td', {}, val))));
       body.append(el('details', { open: true }, el('summary', {}, 'Attributes'), table(attrs)));
       for (const s of d.sets) {
@@ -464,7 +489,7 @@ async function main(): Promise<void> {
     (window as unknown as { __viewer: unknown }).__viewer = { openPanel, state, refresh, viewer: v };
 
     refresh();
-    fitVisible();
+    if (!cameraMoved) fitVisible();
   }
 }
 

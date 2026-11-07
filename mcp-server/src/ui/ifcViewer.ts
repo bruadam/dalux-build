@@ -1,4 +1,5 @@
 import type { McpServer } from '@modelcontextprotocol/server';
+import { registerAppResource, registerAppTool, RESOURCE_MIME_TYPE } from '@modelcontextprotocol/ext-apps/server';
 import { z } from 'zod';
 import type { DaluxClient } from 'dalux-build-api';
 import { buildToolContext } from '../ifc/runtime';
@@ -9,6 +10,7 @@ import {
   getSelection,
   resolveSelectionSpec,
   saveSelection,
+  SELECTION_PAGE_SIZE,
   viewerGeometry,
 } from '../ifc/viewerData';
 import { IFC_VIEWER_BUNDLE_JS } from './ifcViewerBundle.generated';
@@ -21,19 +23,12 @@ import { IFC_VIEWER_BUNDLE_JS } from './ifcViewerBundle.generated';
  * `ifc_viewer_*` tools below — tessellated geometry, element properties,
  * named selections. Nothing is fetched over the network from inside the
  * iframe, so it works over stdio and HTTP alike and needs no CSP domains.
- *
- * Registers directly via `server.registerResource`/`registerTool` rather than
- * through `@modelcontextprotocol/ext-apps/server`'s wrappers: that package is
- * ESM-only, which ts-jest can't load without a Babel transform just for two
- * constants and the `_meta` shape this file writes by hand.
+ * Every result the app reads stays under APP_RESULT_MAX_CHARS (see
+ * ../ifc/viewerData.ts): geometry comes in chunks, selections in pages.
  */
 
 export const RESOURCE_URI = 'ui://dalux-build/ifc-viewer';
 
-/** MCP Apps (SEP-1865) resource MIME type. */
-const RESOURCE_MIME_TYPE = 'text/html;profile=mcp-app';
-/** Pre-2.0 hosts read the UI resource URI from this flat `_meta` key instead of `_meta.ui.resourceUri`; set both for compatibility. */
-const LEGACY_RESOURCE_URI_META_KEY = 'ui/resourceUri';
 /** Tools only the viewer app calls; hosts keep them out of the model's tool list. */
 const APP_ONLY_META = { ui: { resourceUri: RESOURCE_URI, visibility: ['app'] } };
 
@@ -106,7 +101,8 @@ function pickRef(args: IfcRef): IfcRef {
 
 /** Registers `view_model_3d`, its `ui://` resource, and the app-only `ifc_viewer_*` tools on `server`. */
 export function registerIfcViewer(server: McpServer, client: DaluxClient): void {
-  server.registerResource(
+  registerAppResource(
+    server,
     'ifc-viewer',
     RESOURCE_URI,
     {
@@ -119,14 +115,15 @@ export function registerIfcViewer(server: McpServer, client: DaluxClient): void 
     }),
   );
 
-  server.registerTool(
+  registerAppTool(
+    server,
     'view_model_3d',
     {
       title: 'View 3D Model',
       description: 'Show an IFC model in an interactive 3D viewer in the chat, optionally highlighting a selectionId from ifc_query_elements.',
       inputSchema: viewModel3dInput,
       outputSchema: viewModel3dOutput,
-      _meta: { ui: { resourceUri: RESOURCE_URI }, [LEGACY_RESOURCE_URI_META_KEY]: RESOURCE_URI },
+      _meta: { ui: { resourceUri: RESOURCE_URI } },
     },
     async (args) => {
       const ref = pickRef(args);
@@ -169,7 +166,8 @@ export function registerIfcViewer(server: McpServer, client: DaluxClient): void 
     },
   );
 
-  server.registerTool(
+  registerAppTool(
+    server,
     'ifc_viewer_geometry',
     {
       description: '3D viewer app only.',
@@ -195,7 +193,8 @@ export function registerIfcViewer(server: McpServer, client: DaluxClient): void 
     },
   );
 
-  server.registerTool(
+  registerAppTool(
+    server,
     'ifc_viewer_element',
     {
       description: '3D viewer app only.',
@@ -212,20 +211,23 @@ export function registerIfcViewer(server: McpServer, client: DaluxClient): void 
     },
   );
 
-  server.registerTool(
+  registerAppTool(
+    server,
     'ifc_viewer_selection',
     {
       description: '3D viewer app only.',
-      inputSchema: z.object({ ...bareRef, selectionId: z.string() }),
+      inputSchema: z.object({ ...bareRef, selectionId: z.string(), offset: z.number().int().min(0).optional() }),
       _meta: APP_ONLY_META,
     },
     async (args) => {
       await openModel(client, pickRef(args)); // authorization check
       const saved = getSelection(args.selectionId, args.fileId);
       if (!saved) throw new Error(`Unknown or expired selectionId: ${args.selectionId}`);
+      const offset = args.offset ?? 0;
+      const total = saved.expressIds.length;
       return {
-        content: [{ type: 'text' as const, text: `${saved.label}: ${saved.expressIds.length} element(s).` }],
-        structuredContent: { label: saved.label, expressIds: saved.expressIds },
+        content: [{ type: 'text' as const, text: `${saved.label}: ${total} element(s).` }],
+        structuredContent: { label: saved.label, total, offset, expressIds: saved.expressIds.slice(offset, offset + SELECTION_PAGE_SIZE) },
       };
     },
   );

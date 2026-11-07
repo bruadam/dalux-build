@@ -22,6 +22,14 @@ describe('tools/list schemas', () => {
     expect(listed).not.toContain(String(Number.MAX_SAFE_INTEGER));
   });
 
+  it('stay within the tools/list size budget', async () => {
+    const client = await connectedClient({});
+    const { tools } = await client.listTools();
+
+    // ~4.3 chars per o200k token for this payload; tighten as tools/list shrinks.
+    expect(JSON.stringify(tools).length).toBeLessThanOrEqual(64_000);
+  });
+
   it('still validates arguments against the original schema', async () => {
     const listProjects = jest.fn().mockResolvedValue({ items: [{ projectId: 'p1' }] });
     const client = await connectedClient({ projects: { listProjects } });

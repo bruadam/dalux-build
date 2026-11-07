@@ -20,8 +20,8 @@ export const pageInput = {
     .min(1)
     .max(MAX_LIMIT)
     .optional()
-    .describe(`Max items to return (default ${DEFAULT_LIMIT}, max ${MAX_LIMIT}).`),
-  offset: z.number().int().min(0).optional().describe('Items to skip; pass the previous result\'s nextOffset.'),
+    .describe(`Page size (default ${DEFAULT_LIMIT}).`),
+  offset: z.number().int().min(0).optional().describe('Start index; pass the previous nextOffset.'),
 };
 
 export interface PaginationParams {
@@ -60,7 +60,7 @@ export function fieldsInput(defaults: readonly string[]) {
   return z
     .array(z.string())
     .optional()
-    .describe(`Extra item fields to return besides the default ${defaults.join(', ')}; ["*"] returns every field.`);
+    .describe(`Extra item fields beyond ${defaults.join(', ')}; ["*"] for all.`);
 }
 
 /** Reduces each item of a page to the default fields plus any requested extras. */

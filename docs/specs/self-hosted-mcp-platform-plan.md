@@ -80,6 +80,11 @@ draft PR into it. Tasks in the same wave touch different folders.
 - **W3-python**: MCP-backed retriever for the Python RAG agent.
 - **W3-hardening**: audit UI, security review against `SECURITY-ANALYSIS.md`, docs, backup.
 
+### Wave 4
+
+- **W4-memory**: memory tables + RLS migration, MCP memory tools, interface page, Python memory retriever.
+- **W4-agents**: hosted agent definitions, worker runtime (pg-boss, in-process tools under the owner's restricted context), run log, templates.
+
 ## Definition of done per task
 
 Tests for new behavior; existing suites green (`npm test --workspace=mcp-server`,

@@ -1,10 +1,10 @@
 # PRD: Self-hosted Dalux MCP platform
 
-_Status: draft v2 for review · Date: 2026-11-07 · Owner: Bruno Adam_
+_Status: draft v3 for review · Date: 2026-11-07 · Owner: Bruno Adam_
 _v2 adds the decisions from the first review: groups, admin-only indexing,
 row-level security with folder access, header mode off by default, Dalux user
 mapping by email, capability-based permissions, and shared indexes for the
-Python RAG agent._
+Python RAG agent. v3 adds per-person project memory (6.10) and hosted agents (6.11)._
 
 ## 1. Summary
 
@@ -71,6 +71,8 @@ Today (see `mcp-server/README.md` and `mcp-server/SECURITY-ANALYSIS.md`):
 - G7. MCP clients connect with a platform token or OAuth; the Python RAG agent
   uses the shared indexes.
 - G8. The whole platform runs with one `docker compose up` on a single host.
+- G9. Each person can keep a private, switchable project memory that agents read
+  and write through MCP, and run hosted agents on a schedule.
 
 ## 4. Non-goals (v1)
 
@@ -137,6 +139,7 @@ and the MCP tool groups (`mcp-server/src/tools/*.ts`):
 | `scheduling` | `scheduling:read` | `scheduling:write` |
 | `directory` | `directory:read` | — |
 | `models` | `models:read` (IFC tools) | `models:write` |
+| `memory` | `memory:read`, `memory:write` (own project memory; platform data, not Dalux) | — |
 
 The exact list is derived from the tool registry during the plan phase. Write
 capabilities can be split further when write tools are designed (e.g.
@@ -352,6 +355,76 @@ stored in a file-area folder.
 - P1. The adaptive RAG loop from PR #167 works unchanged on top of the new
   retriever (same document shape: text, file name, page or location).
 
+### 6.10 Project memory (per person)
+
+A personal, persistent memory per project that agents read and write through
+MCP, stored next to the project's indexes.
+
+- P0. A **memory entry** belongs to one personal account and one project on one
+  connection. Fields: kind (`fact`, `decision`, `preference`, `open_question`,
+  `summary`), text, optional citations (file + location, task ID), source
+  (`user`, `agent:<name>`, `hosted_agent:<id>`), tags, `vector(1024)` embedding,
+  created/updated, and `superseded_by` (old entries are kept, not overwritten).
+- P0. **Off by default.** Each person turns memory on or off per project in the
+  interface or with an MCP tool. When off, nothing is read or written. Turning
+  it off keeps the entries; deleting them is a separate, explicit action
+  (delete one, delete all for a project, or export as JSON/Markdown).
+- P0. **Private to its owner.** RLS on memory tables: only the owner's
+  `app.account_id` can read or write their entries, and only while the owner
+  still has read access to that project (the policy also checks
+  `effective_access`). Admins cannot read other people's memory. Robots have
+  no memory of their own; hosted agents write into their owner's memory (6.11).
+- P0. MCP tools (capability `memory:read` / `memory:write`, platform mode only;
+  writes go to the platform database, never to Dalux):
+  `memory_status` / `memory_set_enabled`, `memory_search` (hybrid vector +
+  full-text, top-k with citations), `memory_list` (filter by kind/tag/date),
+  `memory_write`, `memory_update` (creates a new version), `memory_forget`.
+- P0. **Token use.** `memory_search` returns short entries (≤ 500 characters
+  each, top 8 by default) with IDs for drill-down. A maintained `summary`
+  entry per project ("project brief", ≤ 2,000 characters) lets an agent start a
+  conversation without re-reading documents.
+- P0. **Content from documents is data, not instructions.** Entries written by
+  agents keep their citations; the interface shows which agent wrote what, and
+  the owner can edit or delete any entry.
+- P0. The Python RAG agent retrieves from memory alongside document indexes
+  (through MCP, so the same RLS applies) and may write to memory only when it is
+  on for that project.
+- P1. Shared team memory per project (visible by grant), as a separate kind of
+  memory with its own capability. Not in v1.
+
+### 6.11 Hosted agents and scheduled tasks
+
+Agents that run on the platform on a schedule, without an open chat.
+
+- P0. A **hosted agent** is owned by a personal account and has: name,
+  instructions, connection and project scope, schedule (cron) or manual trigger,
+  allowed tools, and limits per run (max model tokens, max tool calls, max
+  duration). Admins can see and stop all hosted agents; owners manage their own.
+- P0. **It runs on behalf of its owner, with less access, never more.** Its
+  access is the owner's effective access limited to the capabilities chosen for
+  it (like a restricted token). If the owner is disabled or loses access, the
+  agent stops at its next run. It writes only to its owner's memory (when on
+  for that project) and to its own run outputs.
+- P0. **Runtime.** The worker runs agent jobs with pg-boss schedules. The model
+  is Mistral, with the organization key from settings (the same key as
+  embeddings, or a separate one). Tool calls go through the MCP tool layer in
+  process, inside `runWithContext`, so capability checks, RLS, and the audit
+  log apply exactly as for a person.
+- P0. **Read-only towards Dalux**, like all other tools in v1.
+- P0. **Runs and outputs.** Each run stores status, tokens used, tool calls,
+  duration, and its output (Markdown, plus exported files such as a
+  consistency report). The owner sees runs in the interface; failures are
+  shown and retried with backoff; three failures in a row pause the agent.
+- P0. Built-in templates (each is just instructions + tools + schedule):
+  - **Project brief**: daily, updates the project's `summary` memory entry from
+    task changes and new file revisions.
+  - **Consistency watch**: nightly, runs `check_document_consistency` on chosen
+    file areas and reports new findings since the last run.
+  - **Overdue tasks digest**: weekly list of tasks past their deadline.
+- P1. Delivery of run outputs by email or webhook.
+- P1. Monthly token budget per hosted agent and per organization.
+- P2. Event-triggered runs (e.g. on Dalux webhook events via `webhook-server`).
+
 ## 7. Non-functional requirements
 
 ### 7.1 Deployment
@@ -458,6 +531,12 @@ stored in a file-area folder.
 12. The audit log shows every tool call with account, Dalux user ID, and
     project, and holds no document text.
 13. Header mode and stdio mode pass the existing test suite unchanged.
+14. With memory off for a project, every memory tool for that project returns a
+    clear "memory is off" result and writes nothing; another account (admin
+    included) never sees a person's memory, even querying as the `mcp` role.
+15. A hosted agent whose owner loses access to a project cannot read that
+    project in its next run, and its tool calls appear in the audit log under
+    the owner with the agent's name.
 
 ## 10. Milestones
 
@@ -472,6 +551,8 @@ stored in a file-area folder.
 | M7 | Dalux user mapping | Email matching per connection, manual links, audit integration | M3 |
 | M8 | Python RAG on shared indexes | MCP-backed retriever over HTTP, token handling | M4, M5, M6 |
 | M9 | Audit and hardening | Audit logs, security review against `SECURITY-ANALYSIS.md`, backup docs | M3–M8 |
+| M10 | Project memory | Memory tables + RLS, enable/disable, MCP memory tools, interface, Python retriever | M4, M5 |
+| M11 | Hosted agents | Agent definitions, pg-boss schedules, in-process tool runtime, run log, templates | M6, M10 |
 
 M1 can ship alone. M4 is the gate before any real project data is indexed
 into the shared store.
@@ -502,6 +583,11 @@ into the shared store.
 4. **Group sync from SSO** (P1): which identity provider must be supported first?
 5. **Dalux users per connection.** If the same person has different emails in
    different Dalux companies, is manual linking enough?
+7. **Memory retention.** Should memory entries expire (e.g. after the project
+   ends), and should a person's memory be deleted automatically when their
+   account is deleted? This PRD assumes deletion with the account.
+8. **Hosted agent model key.** Same Mistral key as embeddings, or a separate key
+   with its own budget?
 6. **Write capability names.** The reserved `*:write` capabilities are
    placeholders. They should be split into concrete actions when the first
    write tool is designed, based on the Dalux API docs.

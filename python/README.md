@@ -465,6 +465,27 @@ if evidence is insufficient. `FIRECRAWL_API_KEY` optionally enables web retrieva
 LangChain agents provide specialist delegation and a `read_skill` tool; all agents
 use the configured Mistral model (`mistral-large-latest` by default).
 
+### Cross-document consistency checks
+
+The agent's `consistency-specialist` handles questions about inconsistencies
+between documents (uoverensstemmelser, modstrid). It loads the
+`document-consistency-review` and `danish-construction-contracts` skills from the
+Dalux MCP server's `get_skill` tool, runs the server's consistency check, verifies
+candidate findings against the indexed documents, and exports a report. The
+`compare_dalux_documents` tool returns passages from several different files,
+each labelled `[file, page]`, so their statements can be compared.
+
+Scripts can run the same check without a chat model in the loop. It needs a built
+`mcp-server/` (or `DALUX_MCP_SERVER_PATH` pointing at its `dist/cli.js`) and
+Node.js. Nothing is uploaded to Dalux; the report is saved locally.
+
+```python
+report = dalux.ai.check_consistency("P123", "FA123", folder_path="Files/Udbud")
+for finding in report.findings:
+    print(finding["severity"], finding["summary"])
+print(report.report_path)  # .xlsx by default; report_format="docx" or "md"
+```
+
 Migration: replace previous provider keys with `MISTRAL_API_KEY`; use
 `provider="mistral"` and `embeddings_provider="mistral"`. Model selection now uses
 `pick_mistral_model()`; the `free_only` option is removed. Scope indexes rebuild

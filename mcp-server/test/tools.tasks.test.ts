@@ -68,6 +68,15 @@ describe('tools/tasks', () => {
     expect(full.nextOffset).toBe(1);
   });
 
+  it('listProjectTasks keeps the fields an OData select asked for', async () => {
+    const getProjectTasks = jest.fn().mockResolvedValue({ items: [{ taskId: 't1', location: { x: 1 } }] });
+    const client = fakeClient({ tasks: { getProjectTasks } });
+
+    const result = await tasks.listProjectTasks(client, { projectId: 'p1', select: 'taskId,location' });
+
+    expect(result.items).toEqual([{ taskId: 't1', location: { x: 1 } }]);
+  });
+
   it('listProjectTasks translates filter/select/orderby to their OData $-prefixed names', async () => {
     const getProjectTasks = jest.fn().mockResolvedValue({ items: [] });
     const client = fakeClient({ tasks: { getProjectTasks } });

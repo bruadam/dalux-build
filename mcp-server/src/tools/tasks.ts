@@ -158,8 +158,9 @@ export async function listProjectTasks(
   const items = await collectAllDaluxItems((pageParams) =>
     client.tasks.getProjectTasks(projectId, { ...params, ...pageParams }),
   );
-  const matching = applyConditions(items, conditions).map(unwrapTask);
-  return pickFields(paginateForLlm(matching, { limit, offset }), TASK_FIELDS, fields);
+  const page = paginateForLlm(applyConditions(items, conditions).map(unwrapTask), { limit, offset });
+  // An OData `select` already chose the fields; the lean default applies only without one.
+  return select === undefined ? pickFields(page, TASK_FIELDS, fields) : page;
 }
 
 // ---------- search_tasks ----------

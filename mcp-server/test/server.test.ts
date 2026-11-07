@@ -1,9 +1,59 @@
 import { z } from 'zod';
-import { TOOLS, toolResultContent } from '../src/server';
+import { Client, InMemoryTransport } from '@modelcontextprotocol/client';
+import type { DaluxClient } from 'dalux-build-api';
+import { buildServer, TOOLS, toolResultContent } from '../src/server';
+
+async function connectedClient(dalux: Partial<Record<string, unknown>>): Promise<Client> {
+  const server = buildServer(dalux as unknown as DaluxClient);
+  const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
+  const client = new Client({ name: 'test-client', version: '1.0.0' });
+  await Promise.all([client.connect(clientTransport), server.connect(serverTransport)]);
+  return client;
+}
+
+describe('tools/list schemas', () => {
+  it('carry no $schema dialect key or safe-integer bounds, on any tool', async () => {
+    const client = await connectedClient({});
+    const { tools } = await client.listTools();
+
+    expect(tools.length).toBeGreaterThan(TOOLS.length);
+    const listed = JSON.stringify(tools.map((tool) => [tool.inputSchema, tool.outputSchema]));
+    expect(listed).not.toContain('$schema');
+    expect(listed).not.toContain(String(Number.MAX_SAFE_INTEGER));
+  });
+
+  it('stay within the tools/list size budget', async () => {
+    const client = await connectedClient({});
+    const { tools } = await client.listTools();
+    // MCP Apps hosts "MUST NOT include tools in the agent's tool list when their visibility does not include
+    // \"model\"" (ext-apps specification/2026-01-26/apps.mdx, Visibility), so app-only tools cost no model context.
+    const modelTools = tools.filter((tool) => {
+      const visibility = (tool._meta?.ui as { visibility?: string[] } | undefined)?.visibility;
+      return !(visibility?.length === 1 && visibility[0] === 'app');
+    });
+
+    // ~4.3 chars per o200k token for this payload; tighten as tools/list shrinks.
+    // 64k before the five document consistency tools (about 3.8k) were added.
+    expect(JSON.stringify(modelTools).length).toBeLessThanOrEqual(68_000);
+  });
+
+  it('still validates arguments against the original schema', async () => {
+    const listProjects = jest.fn().mockResolvedValue({ items: [{ projectId: 'p1' }] });
+    const client = await connectedClient({ projects: { listProjects } });
+
+    const rejected = await client.callTool({ name: 'list_projects', arguments: { limit: 0 } });
+    const accepted = await client.callTool({ name: 'list_projects', arguments: { limit: 1 } });
+
+    expect(rejected.isError).toBe(true);
+    expect(listProjects).toHaveBeenCalledTimes(1);
+    expect(accepted.isError).toBeFalsy();
+    expect(JSON.parse((accepted.content as { text: string }[])[0].text)).toMatchObject({ items: [{ projectId: 'p1' }] });
+  });
+});
 
 describe('TOOLS registry', () => {
-  it('has 63 tools with unique names', () => {
-    expect(TOOLS).toHaveLength(63);
+  it('has 68 tools with unique names', () => {
+    expect(TOOLS).toHaveLength(68);
     const names = TOOLS.map((t) => t.name);
     expect(new Set(names).size).toBe(names.length);
   });

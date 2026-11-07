@@ -82,6 +82,7 @@ API groups): [javascript/README.md](javascript/README.md) ·
 | **Webhook server**                     | Turning Dalux's polling-only API into real webhooks | [webhook-server/](webhook-server/README.md)               |
 | **Webhook UI**                         | Registering/managing webhook jobs without curl      | [webhook-ui/](webhook-ui/README.md)                       |
 | **Playground**                         | Exercising the JS client interactively, server-side | [playground/](playground/README.md)                       |
+| **Raycast extension**                  | Searching files, tasks and users from Raycast       | [raycast-extension/](raycast-extension/README.md)         |
 | **n8n node**                           | Wiring Dalux into n8n workflows                     | [n8n-nodes-dalux-build/](n8n-nodes-dalux-build/README.md) |
 
 Not sure how they fit together? See

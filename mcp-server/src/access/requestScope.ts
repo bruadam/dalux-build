@@ -14,8 +14,12 @@ export function currentContext(): RequestContext {
   return storage.getStore() ?? UNRESTRICTED_CONTEXT;
 }
 
-/** Account and connection of the current caller; undefined when no account is involved (stdio, header mode). */
+/**
+ * Who owns what the current caller creates (jobs, edit sessions, viewer selections):
+ * account and connection, else the header-mode file namespace; undefined in stdio
+ * and non-platform HTTP, where everything is shared as before.
+ */
 export function currentCaller(): string | undefined {
-  const { account, connection } = currentContext();
-  return account ? `${account.id}/${connection?.id ?? ''}` : undefined;
+  const { account, connection, fileNamespace } = currentContext();
+  return account ? `${account.id}/${connection?.id ?? ''}` : fileNamespace;
 }

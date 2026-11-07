@@ -1,45 +1,78 @@
+import { z } from 'zod';
+
 export interface PaginatedForLlm<T> {
   items: T[];
   totalCount: number;
   returnedCount: number;
   truncated: boolean;
-}
-
-export function fullListForLlm<T>(items: readonly T[]): PaginatedForLlm<T> {
-  return {
-    items: [...items],
-    totalCount: items.length,
-    returnedCount: items.length,
-    truncated: false,
-  };
-}
-
-export interface PaginationParams {
-  /** Max items to return (default 50, capped at 200). */
-  limit?: number;
-  /** Number of items to skip before returning results. */
-  offset?: number;
+  /** Offset of the next page; present only when `truncated` is true. */
+  nextOffset?: number;
 }
 
 const DEFAULT_LIMIT = 50;
 const MAX_LIMIT = 200;
 
+/** The `limit`/`offset` arguments every list tool accepts. */
+export const pageInput = {
+  limit: z
+    .number()
+    .int()
+    .min(1)
+    .max(MAX_LIMIT)
+    .optional()
+    .describe(`Page size (default ${DEFAULT_LIMIT}).`),
+  offset: z.number().int().min(0).optional().describe('Start index; pass the previous nextOffset.'),
+};
+
+export interface PaginationParams {
+  limit?: number;
+  offset?: number;
+}
+
 /**
  * Truncate an already-fetched list of items to an LLM-safe page, reporting
- * enough metadata (`totalCount`/`truncated`) for the caller to know whether
- * to narrow its query. The underlying `dalux-build-api` `getAllX()` helpers
- * already follow bookmark pagination to completion and can return thousands
- * of items — this is the boundary that keeps a single tool call from
- * blowing an LLM's context window.
+ * enough metadata (`totalCount`/`truncated`/`nextOffset`) for the caller to
+ * fetch the next page or narrow its query. The underlying `dalux-build-api`
+ * `getAllX()` helpers already follow bookmark pagination to completion and
+ * can return thousands of items — this is the boundary that keeps a single
+ * tool call from blowing an LLM's context window.
  */
 export function paginateForLlm<T>(items: readonly T[], params: PaginationParams = {}): PaginatedForLlm<T> {
   const offset = Math.max(0, params.offset ?? 0);
   const limit = Math.min(MAX_LIMIT, Math.max(1, params.limit ?? DEFAULT_LIMIT));
   const page = items.slice(offset, offset + limit);
+  const end = offset + page.length;
+  const truncated = end < items.length;
   return {
     items: page,
     totalCount: items.length,
     returnedCount: page.length,
-    truncated: offset + page.length < items.length,
+    truncated,
+    ...(truncated && { nextOffset: end }),
   };
+}
+
+/**
+ * The optional `fields` argument of list tools that return a lean item by
+ * default: names extra top-level item fields to return, or ["*"] for all.
+ */
+export function fieldsInput(defaults: readonly string[]) {
+  return z
+    .array(z.string())
+    .optional()
+    .describe(`Extra item fields beyond ${defaults.join(', ')}; ["*"] for all.`);
+}
+
+/** Reduces each item of a page to the default fields plus any requested extras. */
+export function pickFields<T>(
+  page: PaginatedForLlm<T>,
+  defaults: readonly string[],
+  fields: readonly string[] = [],
+): PaginatedForLlm<unknown> {
+  if (fields.includes('*')) return page;
+  const keep = new Set([...defaults, ...fields]);
+  const items = page.items.map((item) =>
+    Object.fromEntries(Object.entries(item as Record<string, unknown>).filter(([key]) => keep.has(key))),
+  );
+  return { ...page, items };
 }

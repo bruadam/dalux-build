@@ -19,7 +19,7 @@ docker compose up -d --build
 | `migrate` | Applies migrations and sets the role passwords, then exits; `web` and `mcp` start after it |
 | `web` | The interface (Next.js), connected as the `web` role |
 | `mcp` | The MCP server (`mcp-server/Dockerfile`), connected as the `mcp` role |
-| `caddy` | One HTTPS origin: `/mcp*`, `/.well-known/*`, `/authorize`, `/token`, `/register`, `/models/*` go to `mcp`, everything else to `web` |
+| `caddy` | One HTTPS origin: `/mcp*`, `/.well-known/*`, `/authorize`, `/token`, `/register` go to `mcp`, everything else to `web` |
 
 Environment (all required unless a default is given):
 

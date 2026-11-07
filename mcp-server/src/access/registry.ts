@@ -113,6 +113,14 @@ export const TOOL_ACCESS: Record<string, ToolAccess> = {
   list_file_area_indexes: listing('files:read'),
   drop_file_area_index: { capability: 'files:read', adminOnly: true, scopes: connectionWide },
 
+  // Document consistency reports. Reports are kept per caller (see RequestContext.fileNamespace),
+  // so the reportId tools need no Dalux scope; the check itself reads only files the caller can list.
+  check_document_consistency: listing('files:read'),
+  list_inconsistencies: { capability: 'files:read', scopes: noResource },
+  export_inconsistency_report: { capability: 'files:read', scopes: noResource },
+  list_consistency_reports: { capability: 'files:read', scopes: noResource },
+  drop_consistency_report: { capability: 'files:read', scopes: noResource },
+
   // Task indexes
   build_task_index: read('tasks:read', { adminOnly: true }),
   search_task_index: listing('tasks:read'),
@@ -184,6 +192,10 @@ export const TOOL_ACCESS: Record<string, ToolAccess> = {
   ifc_edit_review: { capability: 'models:read', scopes: noResource },
   ifc_edit_save: { capability: 'models:read', scopes: noResource },
   view_model_3d: ifcRead,
+  // App-only tools of the 3D viewer; selections are owned by their caller (see viewerData.ts).
+  ifc_viewer_geometry: ifcRead,
+  ifc_viewer_element: ifcRead,
+  ifc_viewer_selection: ifcRead,
 
   // Server itself
   get_skill: none,

@@ -20,8 +20,9 @@ export interface RequestContext {
    */
   access: 'unrestricted' | EffectiveAccess[];
   /**
-   * Keeps the temporary file indexes of a caller without an account apart from
-   * everyone else's: header mode in platform mode sets it to a hash of the Dalux credentials.
+   * Keeps a caller's files in the cache (temporary indexes, consistency reports)
+   * apart from everyone else's. Platform mode sets it for every caller: a hash of
+   * the account and connection, or in header mode of the Dalux credentials.
    */
   fileNamespace?: string;
 }

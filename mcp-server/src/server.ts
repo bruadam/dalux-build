@@ -1,4 +1,4 @@
-import { McpServer } from '@modelcontextprotocol/server';
+import { McpServer, type StandardSchemaWithJSON } from '@modelcontextprotocol/server';
 import type { DaluxClient } from 'dalux-build-api';
 import type { z } from 'zod';
 
@@ -12,11 +12,12 @@ import * as scheduling from './tools/scheduling';
 import * as documents from './tools/documents';
 import * as drawings from './tools/drawings';
 import * as fileAreaIndex from './tools/fileAreaIndex';
+import * as consistency from './tools/consistency';
 import * as taskIndex from './tools/taskIndex';
 import * as docsIndex from './tools/docsIndex';
 import * as feedback from './tools/feedback';
 import * as ifc from './tools/ifc';
-import { registerIfcViewer, type IfcHostingOptions } from './ui/ifcViewer';
+import { registerIfcViewer } from './ui/ifcViewer';
 import { registerTaskTimeline } from './ui/taskTimeline';
 import { registerSkills } from './tools/skills';
 import { UNRESTRICTED_CONTEXT, type RequestContext } from './access/context';
@@ -51,7 +52,7 @@ export const TOOLS = [
   }),
   tool({
     name: 'list_folders',
-    description: 'List all folders in a file area.',
+    description: 'List the folders in a file area, one page at a time.',
     inputSchema: files.listFoldersInput,
     handler: files.listFolders,
   }),
@@ -76,7 +77,7 @@ export const TOOLS = [
   }),
   tool({
     name: 'get_folder_tree',
-    description: 'Get the full folder tree (folders only, no files) for a file area — useful for navigation before drilling into a specific folder.',
+    description: 'Get the folder tree (ids and names only, no files, depth-limited) for a file area or below one folder — useful for navigation before drilling into a specific folder.',
     inputSchema: files.getFolderTreeInput,
     handler: files.getFolderTree,
   }),
@@ -88,7 +89,7 @@ export const TOOLS = [
   }),
   tool({
     name: 'list_files',
-    description: 'List all files in a file area.',
+    description: 'List the files in a file area, one page at a time.',
     inputSchema: files.listFilesInput,
     handler: files.listFiles,
   }),
@@ -112,7 +113,7 @@ export const TOOLS = [
       'single-use link (valid ~15 min, only reachable from the same machine this server runs on) the user can ' +
       'click to fetch the actual file. An image also comes back as an actual image (up to maxInlineBytes, ' +
       'default 10 MB, hard ceiling 500 MB). A PDF/Word/Excel/Markdown/HTML file also comes back as its extracted ' +
-      'text (up to maxInlineChars, default 200,000 characters, hard ceiling 2,000,000) — raw document bytes ' +
+      'text (up to maxInlineChars, default 40,000 characters, hard ceiling 2,000,000) — raw document bytes ' +
       'cannot usefully reach the model, so text is what streams instead. Other formats (zip, dwg, ifc, ...) get ' +
       'the link and the local cache path only.',
     inputSchema: documents.downloadFileInput,
@@ -168,6 +169,41 @@ export const TOOLS = [
     description: 'Delete a temporary document index from this server\'s local cache. Does not touch anything in Dalux.',
     inputSchema: fileAreaIndex.dropFileAreaIndexInput,
     handler: fileAreaIndex.dropFileAreaIndex,
+  }),
+
+  // Cross-document consistency (see tools/consistency.ts — a local report, read-only towards Dalux)
+  tool({
+    name: 'check_document_consistency',
+    description:
+      'Find statements in different documents of a Dalux file area or folder that contradict each other: fire class, BoQ quantity, handover date, standard edition, drawing revision. Reads PDF, Word, Excel and CSV; read-only. If complete=false, call again with the same arguments. Verdict "candidate" means unreviewed: judge it with the document-consistency-review skill (get_skill).',
+    inputSchema: consistency.checkDocumentConsistencyInput,
+    handler: consistency.checkDocumentConsistency,
+  }),
+  tool({
+    name: 'list_inconsistencies',
+    description:
+      'Page through the findings of a check_document_consistency report, filtered by severity, type or file. Each statement has file, location and verbatim quote.',
+    inputSchema: consistency.listInconsistenciesInput,
+    handler: consistency.listInconsistencies,
+  }),
+  tool({
+    name: 'export_inconsistency_report',
+    description:
+      'Export a consistency report as xlsx (one row per statement), docx (summary and table) or md, and return a download link. The file is written locally and never uploaded to Dalux.',
+    inputSchema: consistency.exportInconsistencyReportInput,
+    handler: consistency.exportInconsistencyReport,
+  }),
+  tool({
+    name: 'list_consistency_reports',
+    description: 'List the document consistency reports currently on this server, with their scope, progress and number of findings.',
+    inputSchema: consistency.listConsistencyReportsInput,
+    handler: consistency.listConsistencyReports,
+  }),
+  tool({
+    name: 'drop_consistency_report',
+    description: 'Delete a document consistency report from this server\'s local cache. Does not touch anything in Dalux.',
+    inputSchema: consistency.dropConsistencyReportInput,
+    handler: consistency.dropConsistencyReport,
   }),
 
   // Cross-task search (see tools/taskIndex.ts — a temporary local index over tasks + change history + attachments)
@@ -298,7 +334,7 @@ export const TOOLS = [
   tool({
     name: 'search_projects_by_name',
     description:
-      'Find projects whose name contains a substring, case-insensitively — for when only part of the project name is known, or its exact casing isn\'t. Returns every match, not just one.',
+      'Find projects whose name contains a substring, case-insensitively — for when only part of the project name is known, or its exact casing isn\'t. Can return several matches, not just one.',
     inputSchema: projects.searchProjectsByNameInput,
     handler: projects.searchProjectsByName,
   }),
@@ -394,7 +430,7 @@ export const TOOLS = [
   }),
   tool({
     name: 'ifc_query_elements',
-    description: 'Filter IFC elements by type and/or a property comparison (= != > < >= <= contains exists matches).',
+    description: 'Filter IFC elements by type and/or a property comparison (= != > < >= <= contains exists matches). Returns a selectionId for view_model_3d.',
     inputSchema: ifc.ifcQueryElementsInput,
     handler: ifc.ifcQueryElements,
   }),
@@ -556,11 +592,53 @@ export function toolResultContent(result: unknown): [TextContent] | [ImageConten
   return [{ type: 'text', text: JSON.stringify(result) }];
 }
 
+/** Drops what zod's JSON Schema output carries for no model benefit: the root `$schema` dialect URI and safe-integer bounds. */
+function stripSchemaNoise(json: Record<string, unknown>): Record<string, unknown> {
+  const clean = (node: unknown): unknown => {
+    if (Array.isArray(node)) return node.map(clean);
+    if (!node || typeof node !== 'object') return node;
+    return Object.fromEntries(
+      Object.entries(node)
+        .filter(
+          ([key, value]) =>
+            !(key === 'maximum' && value === Number.MAX_SAFE_INTEGER) &&
+            !(key === 'minimum' && value === Number.MIN_SAFE_INTEGER),
+        )
+        .map(([key, value]) => [key, clean(value)]),
+    );
+  };
+  const { $schema: _dialect, ...rest } = json;
+  return clean(rest) as Record<string, unknown>;
+}
+
+function withLeanJsonSchema<S extends StandardSchemaWithJSON>(schema: S): S {
+  const std = schema['~standard'];
+  const jsonSchema: typeof std.jsonSchema = {
+    input: (options) => stripSchemaNoise(std.jsonSchema.input(options)),
+    output: (options) => stripSchemaNoise(std.jsonSchema.output(options)),
+  };
+  return Object.create(schema, { '~standard': { value: { ...std, jsonSchema } } }) as S;
+}
+
+/**
+ * Lists every tool's input/output schema through stripSchemaNoise — including
+ * tools registered outside this file (get_skill, the UI tools) — so tools/list
+ * stays lean in one place. Validation still runs on the original schema.
+ */
+function leanToolSchemas(server: McpServer): void {
+  type ToolConfig = { inputSchema?: StandardSchemaWithJSON; outputSchema?: StandardSchemaWithJSON } & Record<string, unknown>;
+  const register = server.registerTool.bind(server) as (name: string, config: ToolConfig, cb: unknown) => unknown;
+  server.registerTool = ((name: string, config: ToolConfig, cb: unknown) =>
+    register(name, {
+      ...config,
+      inputSchema: config.inputSchema && withLeanJsonSchema(config.inputSchema),
+      outputSchema: config.outputSchema && withLeanJsonSchema(config.outputSchema),
+    }, cb)) as typeof server.registerTool;
+}
+
 export interface BuildServerOptions {
   name?: string;
   version?: string;
-  /** Enables the view_model_3d tool's 3D viewer — see ui/ifcViewer.ts. Only set on the HTTP deployment (--public-url); leave unset for stdio. */
-  hosting?: IfcHostingOptions;
   /** Who is calling and what they may access. Unrestricted in stdio and Dalux-header mode. */
   context?: RequestContext;
   /** Places files and folders in the folder tree, so folder grants can be checked (platform mode). */
@@ -598,6 +676,7 @@ export function buildServer(client: DaluxClient, options: BuildServerOptions = {
   const hidden = (name: string) =>
     context.access !== 'unrestricted' && TOOL_ACCESS[name]?.adminOnly && context.account?.role !== 'admin';
 
+  leanToolSchemas(server);
   for (const spec of TOOLS) {
     if (hidden(spec.name)) continue;
     server.registerTool(
@@ -615,7 +694,7 @@ export function buildServer(client: DaluxClient, options: BuildServerOptions = {
     );
   }
 
-  registerIfcViewer(server, client, options.hosting, guard);
+  registerIfcViewer(server, client, guard);
   registerTaskTimeline(server, client, guard);
   registerSkills(server);
 

@@ -23,10 +23,13 @@ guidance without an extra tool round-trip.
   `get_folder_by_path(projectId, fileAreaId, "Files/4_Design/C07_Geometry")` resolves a folder path directly —
   prefer it over walking `list_folders` yourself. `get_folder_tree` is for browsing/orientation (folders only,
   no files), not for finding one known folder.
-- **Don't paginate yourself.** Every `list_*` tool already follows Dalux's bookmark pagination to completion
-  server-side and returns `totalCount`/`returnedCount`/`truncated` on the result. There is no `bookmark` param to
-  manage and no MCP-side page cap — if you find yourself passing a cursor back in, stop, that's not how these
-  tools work.
+- **Page with `offset`, not Dalux bookmarks.** Every `list_*` tool follows Dalux's bookmark pagination to completion
+  server-side, then returns one page: `limit` (default 50, max 200) and `offset`, with `totalCount`/`returnedCount`/
+  `truncated` and, when more remain, `nextOffset` to pass as the next `offset`. Prefer narrowing the query (filters,
+  `search_*_by_name`) over walking many pages.
+- **List items are lean by default.** `list_files`/`list_files_in_folder`/`search_files_by_name` and
+  `list_project_tasks` (without `select`) return only the key fields; pass `fields: [...]` (or `["*"]`) for more, or
+  `get_file`/`get_task` for one full item. `search_tasks` matches carry id/number/subject/type/status/snippet only.
 - **Check the real shape before trusting a field name.** Task/task-change/attachment objects are intentionally
   loose (`extra`/passthrough on the Dalux side — task *type* determines the rest of the schema). Before filtering,
   selecting, or reasoning about a field that isn't in the tables below, call `get_task` on one real task or run
@@ -120,5 +123,5 @@ orderby: "created desc"
    the exact clause it choked on.
 2. Narrow to one condition at a time to isolate which clause is the problem.
 3. If a field path genuinely isn't filterable server-side, fall back to fetching the (already fully paginated)
-   unfiltered list and filtering client-side in the conversation — `list_project_tasks` returns everything in
-   one structured result, so this is a normal fallback, not a hack.
+   unfiltered list and filtering client-side — `list_project_tasks`' `conditions` argument does this
+   server-side before paging, so prefer it over walking every page in the conversation.

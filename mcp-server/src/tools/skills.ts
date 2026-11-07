@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import type { McpServer } from '@modelcontextprotocol/server';
+import { BUNDLED_SKILLS } from './skillsBundle.generated';
 
 /**
  * Self-hosted usage documentation ("skills"), served over MCP itself so any
@@ -266,6 +267,49 @@ it is. A private repo needs \`DOCS_GITHUB_TOKEN\` (or \`GITHUB_TOKEN\`, or a \`g
 \`DOCS_GITHUB_USE_GH_CLI=1\`) set wherever \`docs:build\` runs. Each document's git blob SHA doubles as its revision
 key, so re-running \`docs:build\` after editing a few files only re-indexes those. Reads the same formats as
 \`search_file_content\` (\`.md\`, \`.html\`, \`.pdf\`, \`.docx\`, \`.xlsx\`).
+
+## Cross-document consistency: \`check_document_consistency\`
+
+Finds statements in *different* documents that contradict each other — a door schedule says D-101 is EI60 while
+the specification says EI30, the tender letter's handover date differs from the time schedule, a BoQ quantity
+differs from the description, two documents cite different editions of DS/EN 1992-1-1, or a drawing is
+referenced with different revisions. Reads PDF, Word, Excel and CSV (\`;\`-separated Danish exports included);
+IFC is out of scope. Read-only towards Dalux: the report lives in the server's local cache.
+
+\`\`\`
+check_document_consistency(projectId, fileAreaId, folderPath?, fileIds?, extensions?, focus?, maxFiles?, timeBudgetSeconds?, useModel?)
+    -> { reportId, complete, filesInScope, filesAnalyzed, skipped, findingsCount, bySeverity, topFindings, warnings }
+list_inconsistencies(reportId, severity?, type?, fileId?, offset?, limit?)  ->  { total, findings }
+export_inconsistency_report(reportId, format: 'xlsx' | 'docx' | 'md' | 'annotated-pdf')
+    -> { reportId, format, fileName, filePath, downloadUrl, findingsCount, annotatedFiles?, unmatchedQuotes? }
+list_consistency_reports() / drop_consistency_report(reportId)
+\`\`\`
+
+- **Workflow**: run \`check_document_consistency\` on a folder (e.g. the tender folder); while \`complete\` is
+  false, call it again with the *same* arguments. Then page through \`list_inconsistencies\` (high severity first)
+  and, if the user wants a document, \`export_inconsistency_report\` and share the \`downloadUrl\`.
+- **Annotated PDFs**: \`format: 'annotated-pdf'\` returns a zip with a copy of every PDF that has findings
+  (\`<name>.annotated.pdf\`) plus the xlsx register. Each quote is highlighted (red high, orange medium, yellow
+  low) with a comment in the document's language (Danish or English) naming the conflicting value and where it
+  is, e.g. "Dette dokument: EI30. Modstrid med Dørliste.xlsx, ark 'Døre', række 14: EI60". Quotes that cannot
+  be found get a note at the top of the page and are counted in \`unmatchedQuotes\`; encrypted PDFs are skipped
+  and listed on the register's Annotations sheet. Findings in Word/Excel/CSV only appear in the register and as
+  the other side of the PDF comments. The PDFs are downloaded again from Dalux for this; nothing is uploaded.
+- **Findings**: each has a type (\`value_conflict\`, \`quantity_conflict\`, \`date_conflict\`,
+  \`reference_conflict\`, \`revision_conflict\`, \`other\`), a severity (fire, structural, deadline and money
+  conflicts are high) and at least two statements from different files, each with file, location and verbatim
+  quote. Values are compared after normalisation, so \`EI 60\`/\`EI60\`, \`1.200 mm\`/\`1,2 m\` and
+  \`01-03-2027\`/\`1. marts 2027\` agree.
+- **Verdicts**: with \`MISTRAL_API_KEY\` set, \`DALUX_MCP_ALLOW_EXTERNAL_MODEL_IO=true\` (the server operator's
+  opt-in to sending document text to Mistral) and \`useModel\` not false, Mistral also extracts facts the
+  patterns miss and judges each finding: false alarms are dropped and the rest become \`confirmed\` with an
+  explanation and a precedence note. If either variable is missing, the check runs patterns only and a warning
+  says which. A large file is read by the model in batches within \`timeBudgetSeconds\`; its progress is saved and
+  the next call continues it. Without the model, findings stay \`candidate\` — check each one against its
+  quotes yourself, using the \`document-consistency-review\` and \`danish-construction-contracts\` skills, before
+  presenting it as a conflict.
+- **Incremental**: facts are kept per file revision, so a later call only re-reads changed files. Reports untouched
+  for a week are deleted automatically.
 `,
 };
 
@@ -403,11 +447,12 @@ idle or on restart, and queued edits are **not** persisted.
 
 ## \`view_model_3d\` — interactive 3D viewer
 
-Renders an \`.ifc\` file as an interactive 3D view inline, using MCP Apps in supporting hosts (currently Claude.ai
-and Claude Desktop). **This only works on the HTTP transport with \`PUBLIC_URL\` configured** — on stdio (the
-common local Claude Desktop/Claude Code setup) the tool still appears in the tool list, but replies with
-instructions to use \`download_file\` instead of erroring. If you see that reply, that's expected behaviour for
-this deployment, not a bug.
+Renders an \`.ifc\` file as an interactive 3D view inline, using MCP Apps in supporting hosts (Claude.ai, Claude
+Desktop, and other MCP Apps hosts), on stdio and HTTP alike. The user can orbit, click an element for its
+properties, toggle IFC classes, x-ray and section. To show the answer to a question in 3D, run
+\`ifc_query_elements\` and pass its \`selectionId\` (or a \`filter\` / up to 200 \`globalIds\`) with a \`mode\`:
+\`isolate\` hides the rest, \`xray\` (default) ghosts it, \`highlight\` colours the selection. The element the user
+clicks is shared back as model context.
 
 ## Forms
 
@@ -429,7 +474,7 @@ not: they download and parse the model locally, and \`ifc_clash_*\` / \`ifc_volu
 `,
 };
 
-const DOCS: Record<SkillTopic, SkillDoc> = {
+const BUILT_IN_DOCS: Record<SkillTopic, SkillDoc> = {
   overview: OVERVIEW,
   tasks: TASKS,
   documents: DOCUMENTS,
@@ -437,9 +482,89 @@ const DOCS: Record<SkillTopic, SkillDoc> = {
   models_and_quality: MODELS_AND_QUALITY,
 };
 
+export interface MarkdownSkill {
+  name: string;
+  description: string;
+  tags: string[];
+  /** The whole SKILL.md body, frontmatter stripped. */
+  content: string;
+}
+
+function unquote(value: string): string {
+  const trimmed = value.trim();
+  if (/^(['"]).*\1$/.test(trimmed)) return trimmed.slice(1, -1);
+  return trimmed;
+}
+
+/**
+ * Reads the Agent Skills frontmatter fields this server uses: `name`,
+ * `description` (plain, quoted or a `>`/`|` block) and `metadata.tags`
+ * (flow `[a, b]` or block list). Not a general YAML parser.
+ */
+export function parseSkillMarkdown(markdown: string, fallbackName: string): MarkdownSkill {
+  const match = /^---\r?\n([\s\S]*?)\r?\n---\r?\n?/.exec(markdown);
+  const frontmatter = match ? match[1].split(/\r?\n/) : [];
+  const content = (match ? markdown.slice(match[0].length) : markdown).trim();
+
+  const fields: Record<string, string> = {};
+  let tags: string[] = [];
+  for (let i = 0; i < frontmatter.length; i += 1) {
+    const line = frontmatter[i];
+    const top = /^([A-Za-z_-]+):\s*(.*)$/.exec(line);
+    if (top && (top[2] === '>' || top[2] === '|' || top[2] === '>-' || top[2] === '|-')) {
+      const block: string[] = [];
+      while (i + 1 < frontmatter.length && /^\s+\S|^\s*$/.test(frontmatter[i + 1])) {
+        block.push(frontmatter[(i += 1)].trim());
+      }
+      fields[top[1]] = block.join(top[2].startsWith('>') ? ' ' : '\n').trim();
+    } else if (top) {
+      fields[top[1]] = unquote(top[2]);
+    }
+    const tagLine = /^\s+tags:\s*(.*)$/.exec(line);
+    if (tagLine) {
+      if (tagLine[1].startsWith('[')) {
+        tags = tagLine[1].replace(/^\[|\]$/g, '').split(',').map(unquote).filter(Boolean);
+      } else {
+        while (i + 1 < frontmatter.length && /^\s+-\s+/.test(frontmatter[i + 1])) {
+          tags.push(unquote(frontmatter[(i += 1)].replace(/^\s+-\s+/, '')));
+        }
+      }
+    }
+  }
+
+  return {
+    name: fields.name || fallbackName,
+    description: fields.description ?? '',
+    tags,
+    content,
+  };
+}
+
+/** Every skills/<name>/SKILL.md, bundled at build time by scripts/build-skills.mjs. */
+export const MARKDOWN_SKILLS: MarkdownSkill[] = BUNDLED_SKILLS.map((skill) =>
+  parseSkillMarkdown(skill.markdown, skill.directory),
+).filter((skill) => !(SKILL_TOPICS as readonly string[]).includes(skill.name));
+
+export function markdownSkill(name: string): MarkdownSkill | undefined {
+  return MARKDOWN_SKILLS.find((skill) => skill.name === name);
+}
+
+const DOCS: Record<string, SkillDoc> = {
+  ...BUILT_IN_DOCS,
+  ...Object.fromEntries(
+    MARKDOWN_SKILLS.map((skill) => [
+      skill.name,
+      { title: skill.name, content: skill.content.startsWith('#') ? skill.content : `# ${skill.name}\n\n${skill.content}` },
+    ]),
+  ),
+};
+
+/** Built-in usage topics followed by the bundled markdown skills. */
+export const ALL_TOPICS = [...SKILL_TOPICS, ...MARKDOWN_SKILLS.map((skill) => skill.name)] as [string, ...string[]];
+
 export const getSkillInput = z.object({
   topic: z
-    .enum(SKILL_TOPICS)
+    .enum(ALL_TOPICS)
     .optional()
     .describe(
       'Which usage doc to fetch. Omit on the first call of a conversation to get the overview, which lists every other topic.',
@@ -448,20 +573,41 @@ export const getSkillInput = z.object({
 export type GetSkillInput = z.infer<typeof getSkillInput>;
 
 const getSkillOutput = z.object({
-  topic: z.enum(SKILL_TOPICS),
+  topic: z.enum(ALL_TOPICS),
   title: z.string(),
   content: z.string().describe('Full usage doc for this topic, as markdown.'),
-  availableTopics: z.array(z.enum(SKILL_TOPICS)).describe('Every topic get_skill accepts.'),
+  availableTopics: z.array(z.enum(ALL_TOPICS)).describe('Every topic get_skill accepts.'),
 });
 export type GetSkillOutput = z.infer<typeof getSkillOutput>;
+
+function overviewWithSkills(): string {
+  if (!MARKDOWN_SKILLS.length) return OVERVIEW.content;
+  const rows = MARKDOWN_SKILLS.map(
+    (skill) => `| \`${skill.name}\` | ${skill.description.replace(/\\/g, '\\\\').replace(/\|/g, '\\|')} |`,
+  );
+  return `${OVERVIEW.content}
+## Domain skills
+
+Also fetchable with \`get_skill\` (or as \`dalux-build://skill/<name>\` resources):
+
+| topic | covers |
+| --- | --- |
+${rows.join('\n')}
+`;
+}
 
 export function getSkill(args: GetSkillInput): GetSkillOutput {
   const topic = args.topic ?? 'overview';
   const doc = DOCS[topic];
-  return { topic, title: doc.title, content: doc.content, availableTopics: [...SKILL_TOPICS] };
+  return {
+    topic,
+    title: doc.title,
+    content: topic === 'overview' ? overviewWithSkills() : doc.content,
+    availableTopics: [...ALL_TOPICS],
+  };
 }
 
-function resourceUri(topic: SkillTopic): string {
+function resourceUri(topic: string): string {
   return `dalux-build://skill/${topic}`;
 }
 
@@ -474,18 +620,18 @@ function resourceUri(topic: SkillTopic): string {
  * `server`).
  */
 export function registerSkills(server: McpServer): void {
-  for (const topic of SKILL_TOPICS) {
-    const doc = DOCS[topic];
+  for (const topic of ALL_TOPICS) {
+    const skill = markdownSkill(topic);
     server.registerResource(
       `skill-${topic}`,
       resourceUri(topic),
       {
-        title: doc.title,
-        description: `dalux-build MCP usage doc: ${topic}`,
+        title: DOCS[topic].title,
+        description: skill?.description || `dalux-build MCP usage doc: ${topic}`,
         mimeType: 'text/markdown',
       },
       async (uri) => ({
-        contents: [{ uri: uri.href, mimeType: 'text/markdown', text: doc.content }],
+        contents: [{ uri: uri.href, mimeType: 'text/markdown', text: getSkill({ topic }).content }],
       }),
     );
   }
@@ -497,7 +643,7 @@ export function registerSkills(server: McpServer): void {
       description:
         "Read this server's own usage documentation — call it first, with no arguments, before exploring an " +
         'unfamiliar project or writing an OData filter for list_project_tasks. Returns the overview topic by ' +
-        'default, which lists every other topic (tasks, documents, files, models_and_quality) to fetch next.',
+        `default, which lists every other topic (${ALL_TOPICS.filter((t) => t !== 'overview').join(', ')}) to fetch next.`,
       inputSchema: getSkillInput,
       outputSchema: getSkillOutput,
     },

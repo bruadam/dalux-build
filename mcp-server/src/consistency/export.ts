@@ -189,7 +189,7 @@ export function toDocx(manifest: ReportManifest, findings: readonly Finding[]): 
 }
 
 function md(text: string): string {
-  return text.replace(/\|/g, '\\|').replace(/\s+/g, ' ');
+  return text.replace(/\\/g, '\\\\').replace(/\|/g, '\\|').replace(/\s+/g, ' ');
 }
 
 export function toMarkdown(manifest: ReportManifest, findings: readonly Finding[]): string {

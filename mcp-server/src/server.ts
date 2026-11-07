@@ -19,6 +19,8 @@ import * as ifc from './tools/ifc';
 import { registerIfcViewer, type IfcHostingOptions } from './ui/ifcViewer';
 import { registerTaskTimeline } from './ui/taskTimeline';
 import { registerSkills } from './tools/skills';
+import { checkAccess } from './access/checkAccess';
+import { UNRESTRICTED_CONTEXT, type RequestContext } from './access/context';
 
 interface ToolSpec<Schema extends z.ZodTypeAny> {
   name: string;
@@ -557,6 +559,8 @@ export interface BuildServerOptions {
   version?: string;
   /** Enables the view_model_3d tool's 3D viewer — see ui/ifcViewer.ts. Only set on the HTTP deployment (--public-url); leave unset for stdio. */
   hosting?: IfcHostingOptions;
+  /** Who is calling and what they may access. Unrestricted in stdio and Dalux-header mode. */
+  context?: RequestContext;
 }
 
 /**
@@ -564,6 +568,7 @@ export interface BuildServerOptions {
  * Does not start any transport — call `.connect(transport)` (or use `cli.ts`).
  */
 export function buildServer(client: DaluxClient, options: BuildServerOptions = {}): McpServer {
+  const context = options.context ?? UNRESTRICTED_CONTEXT;
   const server = new McpServer(
     {
       name: options.name ?? 'dalux-build',
@@ -584,6 +589,10 @@ export function buildServer(client: DaluxClient, options: BuildServerOptions = {
       spec.name,
       { description: spec.description, inputSchema: spec.inputSchema },
       async (args: unknown) => {
+        const decision = checkAccess(context, spec.name, args as Record<string, unknown>);
+        if (!decision.allowed) {
+          return { content: [{ type: 'text' as const, text: `Error: ${decision.reason}` }], isError: true };
+        }
         try {
           const result = await spec.handler(client, args as never);
           return { content: [...toolResultContent(result)] };
@@ -595,8 +604,8 @@ export function buildServer(client: DaluxClient, options: BuildServerOptions = {
     );
   }
 
-  registerIfcViewer(server, client, options.hosting);
-  registerTaskTimeline(server, client);
+  registerIfcViewer(server, client, options.hosting, context);
+  registerTaskTimeline(server, client, context);
   registerSkills(server);
 
   return server;

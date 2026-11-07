@@ -3,6 +3,7 @@ import { serveStdio } from '@modelcontextprotocol/server/stdio';
 import { createClient } from 'dalux-build-api';
 import { buildServer } from './server';
 import { buildHttpApp } from './http';
+import { UNRESTRICTED_CONTEXT } from './access/context';
 
 interface CliOptions {
   transport: 'stdio' | 'http';
@@ -47,7 +48,7 @@ async function main(): Promise<void> {
 
   if (options.transport === 'stdio') {
     const client = createClient();
-    await serveStdio(() => buildServer(client));
+    await serveStdio(() => buildServer(client, { context: UNRESTRICTED_CONTEXT }));
     console.error('dalux-mcp running on stdio');
     return;
   }

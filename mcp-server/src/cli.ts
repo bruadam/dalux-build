@@ -3,6 +3,7 @@ import { serveStdio } from '@modelcontextprotocol/server/stdio';
 import { createClient } from 'dalux-build-api';
 import { buildServer } from './server';
 import { buildHttpApp } from './http';
+import { parseToolsets, type Toolset } from './toolsets';
 
 interface CliOptions {
   transport: 'stdio' | 'http';
@@ -10,6 +11,7 @@ interface CliOptions {
   host: string;
   token?: string;
   publicUrl?: string;
+  toolsets: Toolset[];
 }
 
 const LOOPBACK_HOSTS = new Set(['127.0.0.1', 'localhost', '::1']);
@@ -20,6 +22,7 @@ function parseArgs(argv: string[]): CliOptions {
     port: process.env.PORT ? Number(process.env.PORT) : 8080,
     host: process.env.HOST ?? '127.0.0.1',
     publicUrl: process.env.PUBLIC_URL,
+    toolsets: parseToolsets(process.env.DALUX_MCP_TOOLSETS),
   };
   for (let i = 0; i < argv.length; i += 1) {
     const arg = argv[i];
@@ -37,6 +40,8 @@ function parseArgs(argv: string[]): CliOptions {
       options.token = argv[++i];
     } else if (arg === '--public-url') {
       options.publicUrl = argv[++i];
+    } else if (arg === '--toolsets') {
+      options.toolsets = parseToolsets(argv[++i]);
     }
   }
   return options;
@@ -47,7 +52,7 @@ async function main(): Promise<void> {
 
   if (options.transport === 'stdio') {
     const client = createClient();
-    await serveStdio(() => buildServer(client));
+    await serveStdio(() => buildServer(client, { toolsets: options.toolsets }));
     console.error('dalux-mcp running on stdio');
     return;
   }
@@ -57,7 +62,7 @@ async function main(): Promise<void> {
   // not from server-side env vars — see http.ts.
   const token = options.token ?? process.env.DALUX_MCP_TOKEN;
   const localhostOnly = LOOPBACK_HOSTS.has(options.host);
-  const { start } = buildHttpApp({ token, localhostOnly, publicUrl: options.publicUrl });
+  const { start } = buildHttpApp({ token, localhostOnly, publicUrl: options.publicUrl, toolsets: options.toolsets });
   await start(options.port, options.host);
   console.error(`dalux-mcp running on http://${options.host}:${options.port}`);
 }

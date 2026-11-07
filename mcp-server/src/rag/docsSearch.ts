@@ -3,6 +3,7 @@
  * GitHub-sourced sibling of rag/search.ts (file-area indexes).
  */
 
+import { semanticRankingWarning } from '../mistral';
 import { EMBEDDING_MODEL, bm25Scores, cosineSimilarity, embedTexts, embeddingsAvailable, type RankMode } from '../search/rank';
 import type { TextChunk } from '../extract';
 import { readDocument, readManifest, readVectors, type DocsIndexManifest } from './docsStore';
@@ -101,9 +102,8 @@ export async function searchDocsIndex(
   if (manifest.embedding && manifest.embedding.model !== EMBEDDING_MODEL) {
     warnings.push('Embedding model changed — ranking lexically until the index is rebuilt.');
   }
-  if (manifest.embedding && !embeddingsAvailable()) {
-    warnings.push('MISTRAL_API_KEY is not set — ranking lexically (BM25) instead of semantically.');
-  }
+  const rankingWarning = semanticRankingWarning(Boolean(manifest.embedding));
+  if (rankingWarning) warnings.push(rankingWarning);
   if (missingVectors) {
     warnings.push(
       'Some documents have no embeddings (indexed before the key was set) — ranking lexically so scores stay comparable. Re-run `npm run docs:build -- --refresh` to embed them.',

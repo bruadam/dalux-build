@@ -6,7 +6,7 @@ import { pageInput, paginateForLlm, type PaginatedForLlm } from '../serialize';
 // ---------- list_forms ----------
 
 export const listFormsInput = z.object({
-  projectId: z.string().describe('The Dalux project ID.'),
+  projectId: z.string(),
   ...pageInput,
 });
 export type ListFormsInput = z.infer<typeof listFormsInput>;
@@ -22,7 +22,7 @@ export async function listForms(
 // ---------- get_form ----------
 
 export const getFormInput = z.object({
-  projectId: z.string().describe('The Dalux project ID.'),
+  projectId: z.string(),
   formId: z.string().describe('The form ID.'),
 });
 export type GetFormInput = z.infer<typeof getFormInput>;

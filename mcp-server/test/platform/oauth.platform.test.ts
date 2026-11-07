@@ -1,5 +1,6 @@
 import { createHash, randomBytes } from 'node:crypto';
-import { createAuthorizationCode, encryptSecret, type Db } from '@dalux-platform/db';
+import { encryptSecret, type Db } from '@dalux-platform/db';
+import { decideAuthorization, listOAuthSessions, parseAuthorizationRequest, revokeOAuthSession } from '../../../platform/web/lib/server/oauth';
 import { createTestDatabase, type TestDatabase } from '../../../platform/db/test/testDatabase';
 
 jest.setTimeout(30_000);
@@ -99,18 +100,30 @@ const pkce = () => {
 
 let clientId: string;
 
-/** What the consent page does when the user approves (platform/web `approveAuthorization`). */
-async function consent(capabilities: string[] | null = null) {
-  const { verifier, challenge } = pkce();
-  const code = await createAuthorizationCode(webDb, {
-    clientId,
-    accountId: ids.alice,
-    connectionId: ids.site,
-    redirectUri: REDIRECT_URI,
-    codeChallenge: challenge,
-    capabilities,
+const alice = () => ({ accountId: ids.alice, role: 'user' as const, name: 'Alice', email: 'alice@example.com' });
+
+function authorizeParams(challenge: string, extra: Record<string, string> = {}) {
+  return new URLSearchParams({
+    response_type: 'code',
+    client_id: clientId,
+    redirect_uri: REDIRECT_URI,
+    code_challenge: challenge,
+    code_challenge_method: 'S256',
+    state: 'xyz',
+    resource: `${ISSUER}/mcp/c/site`,
+    ...extra,
   });
-  return { code, verifier };
+}
+
+/** Alice approves on the consent page (platform/web `/authorize`). */
+async function consent(capabilities = ['projects:read', 'tasks:read']) {
+  const { verifier, challenge } = pkce();
+  const target = new URL(
+    await decideAuthorization(webDb, alice(), authorizeParams(challenge), { approve: true, connectionId: ids.site, capabilities }),
+  );
+  expect(`${target.origin}${target.pathname}`).toBe(REDIRECT_URI);
+  expect(target.searchParams.get('state')).toBe('xyz');
+  return { code: target.searchParams.get('code')!, verifier };
 }
 
 async function exchange(code: string, verifier: string, redirectUri = REDIRECT_URI) {
@@ -186,6 +199,30 @@ describe('platform OAuth: discovery and registration', () => {
       }),
     );
     expect(response.status).toBe(400);
+  });
+});
+
+describe('platform OAuth: authorization endpoint (web consent)', () => {
+  it('shows an error instead of redirecting for an unregistered redirect URI', async () => {
+    const result = await parseAuthorizationRequest(webDb, authorizeParams('c', { redirect_uri: 'https://evil.example.com/cb' }));
+    expect(result).toEqual({ error: expect.stringContaining('Unknown client or redirect URI') });
+  });
+
+  it('redirects with an error when PKCE S256 is missing', async () => {
+    const result = await parseAuthorizationRequest(webDb, authorizeParams('c', { code_challenge_method: 'plain' }));
+    expect('redirect' in result && new URL(result.redirect!).searchParams.get('error')).toBe('invalid_request');
+  });
+
+  it('sends access_denied when the user denies', async () => {
+    const target = await decideAuthorization(webDb, alice(), authorizeParams('c'), { approve: false, connectionId: ids.site, capabilities: [] });
+    expect(new URL(target).searchParams.get('error')).toBe('access_denied');
+  });
+
+  it('keeps the connection the client asked for', async () => {
+    const params = authorizeParams('c', { resource: `${ISSUER}/mcp/c/other` });
+    await expect(decideAuthorization(webDb, alice(), params, { approve: true, connectionId: ids.site, capabilities: ['projects:read'] })).rejects.toThrow(
+      'asked for the connection "other"',
+    );
   });
 });
 
@@ -274,7 +311,9 @@ describe('platform OAuth: full flow', () => {
     const { code, verifier } = await consent();
     const { body } = await exchange(code, verifier);
     expect((await rpc(body.access_token, 'tools/list')).status).toBe(200);
-    await t.owner.query('UPDATE oauth_sessions SET revoked_at = now() WHERE revoked_at IS NULL');
+    const [session] = await listOAuthSessions(webDb, ids.alice);
+    expect(session).toMatchObject({ clientName: 'Claude', connectionName: 'Site', capabilities: null, revokedAt: null });
+    await revokeOAuthSession(webDb, alice(), session.id);
 
     const now = Date.now();
     const clock = jest.spyOn(Date, 'now').mockReturnValue(now + 61_000);

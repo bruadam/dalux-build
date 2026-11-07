@@ -8,7 +8,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { authClient } from '@/lib/auth-client';
 
-export function LoginForm() {
+export function LoginForm({ next }: { next: string }) {
   const router = useRouter();
   const [error, setError] = useState<string>();
   const [pending, setPending] = useState(false);
@@ -21,7 +21,7 @@ export function LoginForm() {
     });
     setPending(false);
     if (error) return setError(error.message ?? 'Sign-in failed');
-    router.replace('/');
+    router.replace(next);
     router.refresh();
   }
 

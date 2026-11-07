@@ -43,9 +43,15 @@ jest.mock('dalux-build-api', () => ({
     },
     files: {
       listFiles: async () => ({ items: FILES }),
-      getFile: async (_projectId: string, _fileAreaId: string, fileId: string) => {
+      getFile: async (_projectId: string, _fileAreaId: string, fileId: string, options?: { download?: boolean; savePath?: string }) => {
         daluxCalls.push(`getFile ${fileId}`);
-        return { data: FILES.find((f) => f.fileId === fileId) };
+        const data = FILES.find((f) => f.fileId === fileId);
+        if (!options?.download || !data) return { data };
+        const fs = require('node:fs');
+        fs.mkdirSync(options.savePath, { recursive: true });
+        const downloadedFilePath = require('node:path').join(options.savePath, data.fileName);
+        fs.writeFileSync(downloadedFilePath, '# Site notes\n\nThe crane foundation needs rebar inspection.\n');
+        return { data, downloadedFilePath };
       },
       downloadFileFromLink: async (_link: string, name: string, dir: string) => {
         const target = require('node:path').join(dir, name);
@@ -56,6 +62,20 @@ jest.mock('dalux-build-api', () => ({
     tasks: {
       getTask: async (_projectId: string, taskId: string) => ({ data: { taskId, subject: 'A task' } }),
     },
+  }),
+}));
+
+const mistralKeys: string[] = [];
+jest.mock('@mistralai/mistralai', () => ({
+  Mistral: jest.fn().mockImplementation(({ apiKey }: { apiKey: string }) => {
+    mistralKeys.push(apiKey);
+    return {
+      embeddings: {
+        create: async ({ inputs }: { inputs: string[] }) => ({
+          data: inputs.map((text, index) => ({ index, embedding: [text.includes('crane') ? 1 : 0, 1] })),
+        }),
+      },
+    };
   }),
 }));
 
@@ -213,6 +233,9 @@ async function rpc(
   return { status: response.status, body: JSON.parse(data) };
 }
 
+// IFC tools are outside the default toolsets, as on main.
+const IFC_PATH = '/mcp/c/site-a?toolsets=ifc';
+
 const bearer = (value: string) => ({ Authorization: `Bearer ${value}` });
 
 async function listTools(value: string, path = '/mcp/c/site-a'): Promise<string[]> {
@@ -322,16 +345,16 @@ describe('platform mode: access', () => {
   });
 
   it('requires files:read on the folder for IFC tools (G1)', async () => {
-    const denied = await call(tokens.alice, 'ifc_model_info', { projectId: 'p1', fileAreaId: 'fa1', fileId: 'x2' });
+    const denied = await call(tokens.alice, 'ifc_model_info', { projectId: 'p1', fileAreaId: 'fa1', fileId: 'x2' }, IFC_PATH);
     expect(denied).toEqual({ isError: true, text: expect.stringContaining('files:read') });
-    const bobDenied = await call(tokens.bob, 'ifc_model_info', { projectId: 'p1', fileAreaId: 'fa1', fileId: 'x1' });
+    const bobDenied = await call(tokens.bob, 'ifc_model_info', { projectId: 'p1', fileAreaId: 'fa1', fileId: 'x1' }, IFC_PATH);
     expect(bobDenied).toEqual({ isError: true, text: expect.stringContaining('models:read') });
   });
 
   it('checks the 3D viewer app-only tools like the other IFC tools (G1)', async () => {
-    const denied = await call(tokens.alice, 'ifc_viewer_selection', { projectId: 'p1', fileAreaId: 'fa1', fileId: 'x2', selectionId: 'sel_x' });
+    const denied = await call(tokens.alice, 'ifc_viewer_selection', { projectId: 'p1', fileAreaId: 'fa1', fileId: 'x2', selectionId: 'sel_x' }, IFC_PATH);
     expect(denied).toEqual({ isError: true, text: expect.stringContaining('files:read') });
-    const bobDenied = await call(tokens.bob, 'ifc_viewer_geometry', { projectId: 'p1', fileAreaId: 'fa1', fileId: 'x1', chunk: 0 });
+    const bobDenied = await call(tokens.bob, 'ifc_viewer_geometry', { projectId: 'p1', fileAreaId: 'fa1', fileId: 'x1', chunk: 0 }, IFC_PATH);
     expect(bobDenied).toEqual({ isError: true, text: expect.stringContaining('models:read') });
   });
 
@@ -456,6 +479,63 @@ describe('platform mode: misconfigured connection', () => {
       expect(JSON.stringify(log.mock.calls)).not.toContain('key-secret');
     } finally {
       log.mockRestore();
+    }
+  });
+});
+
+describe('platform mode: toolsets', () => {
+  it('serves the same default toolsets as outside platform mode, and ?toolsets= on /mcp/c/<slug>', async () => {
+    const defaults = await listTools(tokens.bob);
+    expect(defaults).toContain('list_files');
+    expect(defaults).not.toContain('ifc_model_info');
+    expect(defaults).not.toContain('check_document_consistency');
+
+    const withIfc = await listTools(tokens.bob, '/mcp/c/site-a?toolsets=ifc');
+    expect(withIfc).toEqual(expect.arrayContaining(['list_projects', 'ifc_model_info']));
+    expect(withIfc).not.toContain('list_files');
+  });
+
+  it('rejects an unknown toolset', async () => {
+    const { status, body } = await rpc('/mcp/c/site-a?toolsets=nope', 'tools/list', {}, bearer(tokens.bob));
+    expect(status).toBe(400);
+    expect(body.error).toBe('invalid_toolsets');
+  });
+});
+
+describe('platform mode: search-time embeddings', () => {
+  const searchArgs = { projectId: 'p1', fileAreaId: 'fa1', fileId: 'x4', query: 'crane' };
+  const setKey = (key: string | null) =>
+    owner.query(
+      'INSERT INTO settings (id, embedding_key_encrypted) VALUES (true, $1) ON CONFLICT (id) DO UPDATE SET embedding_key_encrypted = $1',
+      [key && encryptSecret(key, ENCRYPTION_KEY)],
+    );
+
+  beforeEach(() => {
+    mistralKeys.length = 0;
+    delete process.env.DALUX_MCP_ALLOW_EXTERNAL_MODEL_IO;
+  });
+  afterAll(() => setKey(null));
+
+  it("uses the admin's embedding key from the settings, without DALUX_MCP_ALLOW_EXTERNAL_MODEL_IO", async () => {
+    await setKey('settings-key');
+    const fresh = app().handleRequest;
+    const { body } = await rpc('/mcp/c/site-a', 'tools/call', { name: 'search_file_content', arguments: searchArgs }, bearer(tokens.bob), fresh);
+    expect(body.result.content[0].text).toContain('"ranking":"embeddings"');
+    expect(mistralKeys).toEqual(['settings-key']);
+  });
+
+  it('ranks lexically without a settings key, even when the environment opts in', async () => {
+    await setKey(null);
+    process.env.MISTRAL_API_KEY = 'env-key';
+    process.env.DALUX_MCP_ALLOW_EXTERNAL_MODEL_IO = 'true';
+    try {
+      const fresh = app().handleRequest;
+      const { body } = await rpc('/mcp/c/site-a', 'tools/call', { name: 'search_file_content', arguments: searchArgs }, bearer(tokens.bob), fresh);
+      expect(body.result.content[0].text).toContain('"ranking":"lexical"');
+      expect(mistralKeys).toEqual([]);
+    } finally {
+      delete process.env.MISTRAL_API_KEY;
+      delete process.env.DALUX_MCP_ALLOW_EXTERNAL_MODEL_IO;
     }
   });
 });

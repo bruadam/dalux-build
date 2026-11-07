@@ -8,8 +8,9 @@ WORKDIR /build
 COPY package.json package-lock.json ./
 COPY javascript/package.json javascript/package.json
 COPY platform/db/package.json platform/db/package.json
+COPY platform/web/package.json platform/web/package.json
 COPY mcp-server/package.json mcp-server/package.json
-RUN npm ci
+RUN npm ci --workspace=dalux-build-api --workspace=@dalux-platform/db --workspace=mcp-server
 
 COPY javascript ./javascript
 COPY platform/db ./platform/db

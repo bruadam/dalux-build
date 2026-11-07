@@ -1,10 +1,71 @@
 # Platform
 
 Self-hosted Dalux MCP platform (see `docs/specs/self-hosted-mcp-platform.md`).
-Today this folder holds the Postgres service and the `@dalux-platform/db`
-package; `web`, `mcp`, `worker`, and Caddy join `compose.yaml` later.
+This folder holds the Compose setup, the `@dalux-platform/db` package
+(schema, migrations, row-level security), and the `@dalux-platform/web`
+interface. The `worker` service joins `compose.yaml` in wave 3.
 
-## Postgres
+## Run with Docker Compose
+
+```bash
+cd platform
+cp .env.example .env   # then fill in every value
+docker compose up -d --build
+```
+
+| Service | What it does |
+| --- | --- |
+| `postgres` | Postgres 17 + pgvector |
+| `migrate` | Applies migrations and sets the role passwords, then exits; `web` and `mcp` start after it |
+| `web` | The interface (Next.js), connected as the `web` role |
+| `mcp` | The MCP server (`mcp-server/Dockerfile`), connected as the `mcp` role |
+| `caddy` | One HTTPS origin: `/mcp*`, `/.well-known/*`, `/authorize`, `/token`, `/register`, `/models/*` go to `mcp`, everything else to `web` |
+
+Environment (all required unless a default is given):
+
+| Variable | Used by | Meaning |
+| --- | --- | --- |
+| `PLATFORM_DB_MIGRATOR_PASSWORD` | postgres, migrate | Password of the owner role `migrator` |
+| `PLATFORM_DB_WEB_PASSWORD` / `_MCP_` / `_WORKER_` | migrate, web, mcp | Login passwords of the `web`, `mcp`, `worker` roles. The mcp service connects as `mcp` and writes index data as `worker` |
+| `PLATFORM_ENCRYPTION_KEY` | web, mcp | 32 bytes, base64 (`openssl rand -base64 32`); encrypts Dalux and embedding keys. Losing it makes stored keys unreadable |
+| `BETTER_AUTH_SECRET` | web | Signs interface sessions (`openssl rand -base64 32`) |
+| `PUBLIC_URL` | web, mcp | The public origin, e.g. `https://mcp.example.com`; used for invite links, cookies, and auth origin checks |
+| `PLATFORM_SITE_ADDRESS` | caddy | Host name Caddy serves and gets a certificate for (default `localhost`) |
+| `PLATFORM_HTTP_PORT` / `PLATFORM_HTTPS_PORT` / `PLATFORM_DB_PORT` | caddy, postgres | Host ports (defaults `80`, `443`, `5432`; Postgres binds to 127.0.0.1 only) |
+
+## Interface
+
+- The first sign-up on an empty install (`/signup`) creates the admin. After
+  that, sign-up only works through an invite link that an admin creates on
+  *Accounts*. Links work once, for 7 days, and only their sha256 hash is stored.
+- Logins use Better Auth (email and password, Argon2id hashes, rate-limited
+  sign-in, session cookies). Its tables have the `auth_` prefix; each
+  `auth_users` row links 1:1 to a personal row in `accounts`. Disabling an
+  account ends its sessions.
+- Admin screens: accounts, robots (with owner and tokens), groups, connections
+  (key verified with a Dalux read call, stored encrypted, only the last 4
+  characters shown, rotation), grants (account or group; connection, project,
+  file area, or folder scope by ID; the *Reader* preset = every `*:read`
+  capability from `mcp-server/src/access/registry.ts`), effective access per
+  account, and settings (embedding key, Dalux header mode).
+- Every account sees its own access and manages its own `dxm_` API tokens. A
+  token is shown once; the database stores `hashApiToken(token)` (sha256 hex of
+  the full token) and a 12-character display prefix.
+- Every admin change writes an `audit_log` row. Changes to grants, groups,
+  memberships, and account status call `refresh_effective_access()` in the
+  same transaction.
+- Secrets never reach the browser: the interface only encrypts keys and never
+  reads them back.
+
+Local development:
+
+```bash
+npm run build --workspace=dalux-build-api && npm run build --workspace=@dalux-platform/db
+DATABASE_URL=postgres://web:...@localhost:5432/platform PLATFORM_ENCRYPTION_KEY=... \
+BETTER_AUTH_SECRET=... PUBLIC_URL=http://localhost:3000 npm run dev --workspace=@dalux-platform/web
+```
+
+## Postgres (alone)
 
 ```bash
 cd platform
@@ -58,7 +119,11 @@ Losing this key makes stored API keys unreadable.
 cd platform
 docker compose -f compose.test.yaml up -d --wait
 npm test --workspace=@dalux-platform/db
+npm test --workspace=@dalux-platform/web
 ```
+
+`PLATFORM_TEST_DB_PORT` changes the host port (default 54329); set
+`TEST_DATABASE_URL` to match.
 
 Each test file creates and drops its own database on the test server
 (`TEST_DATABASE_URL`, default `postgres://migrator:migrator@localhost:54329/platform_test`).

@@ -1,0 +1,15 @@
+*
+!package.json
+!package-lock.json
+!javascript/
+!javascript/**
+!mcp-server/package.json
+!mcp-server/src/access/registry.ts
+!mcp-server/src/daluxUrl.ts
+!platform/db/
+!platform/db/**
+!platform/web/
+!platform/web/**
+**/node_modules
+**/dist
+platform/web/.next

@@ -11,12 +11,74 @@ services:
     volumes:
       - postgres-data:/var/lib/postgresql/data
     ports:
-      - "127.0.0.1:5432:5432"
+      - "127.0.0.1:${PLATFORM_DB_PORT:-5432}:5432"
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U migrator -d platform"]
       interval: 5s
       timeout: 5s
       retries: 10
 
+  # Applies migrations and sets the role passwords, then exits.
+  migrate:
+    build:
+      context: ..
+      dockerfile: platform/web/Dockerfile
+      target: builder
+    command: ["node", "platform/db/dist/migrate-cli.js"]
+    environment:
+      DATABASE_URL: postgres://migrator:${PLATFORM_DB_MIGRATOR_PASSWORD}@postgres:5432/platform
+      PLATFORM_DB_WEB_PASSWORD: ${PLATFORM_DB_WEB_PASSWORD:?set PLATFORM_DB_WEB_PASSWORD}
+      PLATFORM_DB_MCP_PASSWORD: ${PLATFORM_DB_MCP_PASSWORD:?set PLATFORM_DB_MCP_PASSWORD}
+      PLATFORM_DB_WORKER_PASSWORD: ${PLATFORM_DB_WORKER_PASSWORD:?set PLATFORM_DB_WORKER_PASSWORD}
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  web:
+    build:
+      context: ..
+      dockerfile: platform/web/Dockerfile
+    restart: unless-stopped
+    environment:
+      DATABASE_URL: postgres://web:${PLATFORM_DB_WEB_PASSWORD}@postgres:5432/platform
+      PLATFORM_ENCRYPTION_KEY: ${PLATFORM_ENCRYPTION_KEY:?set PLATFORM_ENCRYPTION_KEY}
+      BETTER_AUTH_SECRET: ${BETTER_AUTH_SECRET:?set BETTER_AUTH_SECRET}
+      PUBLIC_URL: ${PUBLIC_URL:?set PUBLIC_URL}
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+
+  mcp:
+    build:
+      context: ..
+      dockerfile: mcp-server/Dockerfile
+    restart: unless-stopped
+    environment:
+      DATABASE_URL: postgres://mcp:${PLATFORM_DB_MCP_PASSWORD}@postgres:5432/platform
+      DATABASE_URL_WORKER: postgres://worker:${PLATFORM_DB_WORKER_PASSWORD}@postgres:5432/platform
+      PLATFORM_ENCRYPTION_KEY: ${PLATFORM_ENCRYPTION_KEY}
+      PUBLIC_URL: ${PUBLIC_URL}
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+
+  caddy:
+    image: caddy:2
+    restart: unless-stopped
+    environment:
+      PLATFORM_SITE_ADDRESS: ${PLATFORM_SITE_ADDRESS:-localhost}
+    ports:
+      - "${PLATFORM_HTTP_PORT:-80}:80"
+      - "${PLATFORM_HTTPS_PORT:-443}:443"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data
+      - caddy-config:/config
+    depends_on:
+      - web
+      - mcp
+
 volumes:
   postgres-data:
+  caddy-data:
+  caddy-config:

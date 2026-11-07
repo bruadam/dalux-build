@@ -21,7 +21,7 @@ import { CHUNK_OVERLAP, CHUNK_SIZE, packLines } from '../extract/chunk';
 import { EMBEDDING_DIMENSIONS, EMBEDDING_MODEL, embedTexts, embeddingsAvailable } from '../search/rank';
 import { extractAttachmentTextsByTaskId, groupAttachmentsByTaskId } from './taskAttachments';
 import { groupChangesByTaskId, renderTaskLines, str, taskRevisionKey, unwrapTask, type AttachmentText } from './taskText';
-import { indexStores } from '../store';
+import { buildIndexStores } from '../store';
 import type { TaskChunk, TaskIndexManifest, TaskIndexScope } from '../store/types';
 
 /** Indexes nobody has touched for a week are deleted on the next build. */
@@ -94,7 +94,7 @@ export async function buildTaskIndex(
   const warnings: string[] = [];
   const useEmbeddings = embeddingsAvailable();
 
-  const store = indexStores().tasks;
+  const store = buildIndexStores().tasks;
   const existing = await store.readManifest(indexId);
   const manifest: TaskIndexManifest = existing ?? {
     indexId,

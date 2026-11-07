@@ -16,7 +16,7 @@ import { docsIndexRoot, pruneStaleIndexes } from '../cachePaths';
 import { extractDocument } from '../extract';
 import { EMBEDDING_DIMENSIONS, EMBEDDING_MODEL, embedTexts, embeddingsAvailable } from '../search/rank';
 import { fetchDocContent, listDocsEntries, type DocsRepoEntry, type DocsRepoScope } from './docsSource';
-import { indexStores } from '../store';
+import { buildIndexStores } from '../store';
 import { safeDocId } from '../store/file/docsStore';
 import type { DocsIndexManifest, FailedDoc } from '../store/types';
 
@@ -103,7 +103,7 @@ export async function buildDocsIndex(
   const warnings: string[] = [];
   const useEmbeddings = embeddingsAvailable();
 
-  const store = indexStores().docs;
+  const store = buildIndexStores().docs;
   const existing = await store.readManifest(indexId);
   const manifest: DocsIndexManifest = existing ?? {
     indexId,

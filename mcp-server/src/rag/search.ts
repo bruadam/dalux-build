@@ -44,24 +44,43 @@ interface Candidate {
   vector: Float32Array | null;
 }
 
+function selectFiles(manifest: IndexManifest, options: IndexSearchOptions): string[] {
+  const wanted = options.fileIds?.length ? new Set(options.fileIds) : null;
+  const needle = options.fileNameContains?.toLowerCase();
+  return Object.keys(manifest.files).filter(
+    (fileId) =>
+      (!wanted || wanted.has(fileId)) && (!needle || manifest.files[fileId].fileName.toLowerCase().includes(needle)),
+  );
+}
+
+function rankingWarnings(embedding: IndexManifest['embedding'], missingVectors: boolean): string[] {
+  const warnings: string[] = [];
+  if (embedding && embedding.model !== EMBEDDING_MODEL) {
+    warnings.push('Embedding model changed — ranking lexically until the index is rebuilt.');
+  }
+  if (embedding && !embeddingsAvailable()) {
+    warnings.push('MISTRAL_API_KEY is not set — ranking lexically (BM25) instead of semantically.');
+  }
+  if (missingVectors) {
+    warnings.push(
+      'Some documents have no embeddings (indexed before the key was set) — ranking lexically so scores stay comparable. Re-run build_file_area_index with refresh=true to embed them.',
+    );
+  }
+  return warnings;
+}
+
 async function collectCandidates(
   manifest: IndexManifest,
   options: IndexSearchOptions,
 ): Promise<{ candidates: Candidate[]; filesSearched: number; missingVectors: boolean }> {
   const store = indexStores().fileAreas;
-  const wanted = options.fileIds?.length ? new Set(options.fileIds) : null;
-  const needle = options.fileNameContains?.toLowerCase();
   const dimensions = manifest.embedding?.dimensions ?? 0;
 
   const candidates: Candidate[] = [];
   let filesSearched = 0;
   let missingVectors = false;
 
-  for (const fileId of Object.keys(manifest.files)) {
-    if (wanted && !wanted.has(fileId)) continue;
-    const entry = manifest.files[fileId];
-    if (needle && !entry.fileName.toLowerCase().includes(needle)) continue;
-
+  for (const fileId of selectFiles(manifest, options)) {
     const document = await store.readDocument(manifest.indexId, fileId);
     if (!document) continue;
     const vectors = dimensions ? await store.readVectors(manifest.indexId, fileId, dimensions) : null;
@@ -110,25 +129,41 @@ export async function searchIndex(
 
   const topK = options.topK ?? 8;
   const perFileLimit = options.perFileLimit === undefined ? 3 : options.perFileLimit;
-  const warnings: string[] = [];
+  const store = indexStores().fileAreas;
+  if (store.search) {
+    const fileIds = selectFiles(manifest, options);
+    const semanticWanted = manifest.embedding?.model === EMBEDDING_MODEL && embeddingsAvailable();
+    const { missingVectors, matches } = await store.search(indexId, {
+      query,
+      embedQuery: semanticWanted ? async () => (await embedTexts([query]))[0] : null,
+      topK,
+      perDocumentLimit: perFileLimit,
+      documentIds: options.fileIds?.length || options.fileNameContains ? fileIds : undefined,
+    });
+    return {
+      indexId,
+      mode: semanticWanted && !missingVectors ? 'embeddings' : 'lexical',
+      query,
+      filesSearched: fileIds.length,
+      chunksSearched: fileIds.reduce((total, fileId) => total + manifest.files[fileId].chunkCount, 0),
+      matches: matches.map((match) => ({
+        ...match.chunk,
+        fileId: match.documentId,
+        fileName: manifest.files[match.documentId].fileName,
+        score: match.score,
+      })),
+      warnings: rankingWarnings(manifest.embedding, missingVectors),
+    };
+  }
 
+  const warnings: string[] = [];
   const { candidates, filesSearched, missingVectors } = await collectCandidates(manifest, options);
   if (!candidates.length) {
     return { indexId, mode: 'lexical', query, filesSearched, chunksSearched: 0, matches: [], warnings };
   }
 
   const semantic = manifest.embedding?.model === EMBEDDING_MODEL && embeddingsAvailable() && !missingVectors;
-  if (manifest.embedding && manifest.embedding.model !== EMBEDDING_MODEL) {
-    warnings.push('Embedding model changed — ranking lexically until the index is rebuilt.');
-  }
-  if (manifest.embedding && !embeddingsAvailable()) {
-    warnings.push('MISTRAL_API_KEY is not set — ranking lexically (BM25) instead of semantically.');
-  }
-  if (missingVectors) {
-    warnings.push(
-      'Some documents have no embeddings (indexed before the key was set) — ranking lexically so scores stay comparable. Re-run build_file_area_index with refresh=true to embed them.',
-    );
-  }
+  warnings.push(...rankingWarnings(manifest.embedding, missingVectors));
 
   let scored: SearchMatch[];
   if (semantic) {

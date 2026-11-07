@@ -20,6 +20,31 @@ export interface IndexStore<Manifest extends { indexId: string }, Document, Summ
   deleteDocument(indexId: string, documentId: string): Promise<void>;
   dropIndex(indexId: string): Promise<boolean>;
   listIndexes(): Promise<Summary[]>;
+  /**
+   * Ranks chunks inside the store. Searchers use it when present and otherwise
+   * score every chunk read through readDocument/readVectors (the file store).
+   */
+  search?(indexId: string, request: ChunkSearchRequest): Promise<ChunkSearchResult<ChunkOf<Document>>>;
+}
+
+export type ChunkOf<Document> = Document extends { chunks: (infer Chunk)[] } ? Chunk : never;
+
+export interface ChunkSearchRequest {
+  query: string;
+  /** Embeds the query for semantic ranking; null ranks lexically. */
+  embedQuery: (() => Promise<number[]>) | null;
+  topK: number;
+  /** Cap on matches from any single document; null for no cap. */
+  perDocumentLimit: number | null;
+  /** Only search these documents (file id, task id, or repo path). */
+  documentIds?: string[];
+}
+
+export interface ChunkSearchResult<Chunk> {
+  /** Some documents in the searched set have no embeddings, so the ranking fell back to lexical. */
+  missingVectors: boolean;
+  /** Best first, already limited to topK and perDocumentLimit. */
+  matches: { documentId: string; chunk: Chunk; score: number }[];
 }
 
 export interface IndexStores {

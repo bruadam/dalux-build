@@ -8,6 +8,8 @@
  * often beats embeddings anyway, and it needs no API key at all.
  */
 
+import { AsyncLocalStorage } from 'node:async_hooks';
+
 export const EMBEDDING_MODEL = 'mistral-embed';
 export const EMBEDDING_DIMENSIONS = 1024;
 
@@ -31,13 +33,48 @@ const EMBED_RETRY = {
 
 export type RankMode = 'embeddings' | 'lexical';
 
+export interface EmbeddingUsage {
+  calls: number;
+  tokens: number;
+  /** True when at least one response had no usage and its tokens were estimated (characters / 3). */
+  estimated: boolean;
+}
+
+interface EmbeddingSession {
+  apiKey: string | null;
+  usage: EmbeddingUsage;
+}
+
+const embeddingSession = new AsyncLocalStorage<EmbeddingSession>();
+
+/**
+ * Runs `fn` with an explicit embedding key instead of `MISTRAL_API_KEY`, and
+ * counts the tokens its embedding calls use. The platform worker passes the
+ * admin's key from the settings (setting it is the consent to send document
+ * text to the provider); `null` means lexical only, with no env fallback.
+ */
+export async function withEmbeddingKey<T>(
+  apiKey: string | null,
+  fn: () => Promise<T>,
+): Promise<{ result: T; usage: EmbeddingUsage }> {
+  const usage: EmbeddingUsage = { calls: 0, tokens: 0, estimated: false };
+  const result = await embeddingSession.run({ apiKey, usage }, fn);
+  return { result, usage };
+}
+
+function embeddingKey(): string | null {
+  const session = embeddingSession.getStore();
+  return session ? session.apiKey : process.env.MISTRAL_API_KEY || null;
+}
+
 export function embeddingsAvailable(): boolean {
-  return Boolean(process.env.MISTRAL_API_KEY);
+  return Boolean(embeddingKey());
 }
 
 export async function embedTexts(texts: readonly string[]): Promise<number[][]> {
-  const apiKey = process.env.MISTRAL_API_KEY;
+  const apiKey = embeddingKey();
   if (!apiKey) throw new Error('MISTRAL_API_KEY is not set.');
+  const usage = embeddingSession.getStore()?.usage;
   if (!texts.length) return [];
 
   const { Mistral } = await import('@mistralai/mistralai');
@@ -48,6 +85,12 @@ export async function embedTexts(texts: readonly string[]): Promise<number[][]> 
       model: EMBEDDING_MODEL,
       inputs: batch,
     });
+    if (usage) {
+      usage.calls += 1;
+      const tokens = response.usage?.promptTokens;
+      if (tokens === undefined) usage.estimated = true;
+      usage.tokens += tokens ?? Math.ceil(batch.reduce((total, input) => total + input.length, 0) / 3);
+    }
     const items = [...response.data].sort((a, b) => (a.index ?? -1) - (b.index ?? -1));
     if (items.length !== batch.length || items.some((item, index) =>
       item.index !== index || !item.embedding?.length || item.embedding.some((value) => !Number.isFinite(value))

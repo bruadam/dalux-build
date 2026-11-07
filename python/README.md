@@ -465,6 +465,71 @@ if evidence is insufficient. `FIRECRAWL_API_KEY` optionally enables web retrieva
 LangChain agents provide specialist delegation and a `read_skill` tool; all agents
 use the configured Mistral model (`mistral-large-latest` by default).
 
+### Using a self-hosted Dalux MCP platform
+
+With a self-hosted platform (see `docs/specs/self-hosted-mcp-platform.md`), the
+agent searches the platform's shared indexes instead of building a local vector
+store. Every search goes through the platform's MCP endpoint with a bearer
+token, so the platform's access rules decide what the agent can see.
+
+The mode is chosen by configuration. Without a platform URL, the agent indexes
+PDFs locally and starts the Dalux MCP server over stdio, as before.
+
+| Constructor argument  | Environment variable        | Meaning                                                 |
+| --------------------- | --------------------------- | ------------------------------------------------------- |
+| `platform_url`        | `DALUX_PLATFORM_URL`        | Platform base URL, e.g. `https://dalux.example.com`     |
+| `platform_token`      | `DALUX_PLATFORM_TOKEN`      | A `dxm_` API token or an OAuth access token             |
+| `platform_connection` | `DALUX_PLATFORM_CONNECTION` | Connection slug (calls `/mcp/c/<slug>`; omit for `/mcp`) |
+
+```python
+import os
+
+agent = dalux.ai.file_areas.agent(
+    file_area_id="FA123",
+    platform_url="https://dalux.example.com",
+    platform_token=os.environ["MY_DALUX_PLATFORM_TOKEN"],
+    platform_connection="site-a",
+)
+```
+
+- When the agent works for a person, use that person's own token (their
+  personal API token or OAuth access token). It then sees exactly what the
+  person may see.
+- Use a robot token only for unattended jobs. The job then has the robot's
+  grants.
+
+In platform mode, `search_dalux_documents` and `compare_dalux_documents` call
+the platform's `search_file_area` tool for the agent's scope (`projectId`,
+`fileAreaId`, and `folderId` if set). The platform must already have an index
+for that scope, built with the default options; `recursive` and `file_type`
+only apply to local indexing. The Dalux API tools, the task
+and reference-docs search tools, and the consistency tools all come from the
+same platform endpoint. Answers are cited as before: `[file, page N]`, or
+`[file, location]` for passages without a page (for example a spreadsheet range
+or a task's change history).
+
+Scripts can use the retriever directly. It is a LangChain retriever that
+returns `Document`s with `file_id`, `file_name`, `page` (0-based, like
+`PyPDFLoader`) or `location`, and `score` metadata:
+
+```python
+from dalux_build.ai.platform_config import PlatformConfig
+from dalux_build.ai.rag import PlatformRetriever
+
+platform = PlatformConfig.from_env()  # DALUX_PLATFORM_URL / _TOKEN / _CONNECTION
+files = PlatformRetriever(platform=platform, arguments={"projectId": "P1", "fileAreaId": "FA1"})
+tasks = PlatformRetriever(
+    platform=platform, tool="search_task_index", arguments={"projectId": "P1"}
+)
+docs = PlatformRetriever(platform=platform, tool="search_docs")
+
+for doc in files.invoke("fire rating of doors"):
+    print(doc.metadata["file_name"], doc.metadata.get("location"), doc.page_content[:80])
+```
+
+A failed call raises `PlatformError`, for example on a rejected token
+(`HTTP 401`) or a scope the platform has no index for.
+
 ### Cross-document consistency checks
 
 The agent's `consistency-specialist` handles questions about inconsistencies

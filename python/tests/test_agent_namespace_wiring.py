@@ -133,3 +133,20 @@ def test_ai_namespace_exposes_file_areas_proxy():
     assert proxy._resource_name == "file_area"
     assert proxy._client is client
     assert ai_namespace.file_areas is proxy  # cached
+
+
+def test_agent_platform_arguments_select_platform_mode(monkeypatch):
+    for name in ("DALUX_PLATFORM_URL", "DALUX_PLATFORM_TOKEN", "DALUX_PLATFORM_CONNECTION"):
+        monkeypatch.delenv(name, raising=False)
+    proxy = AIEndpointProxy(endpoint=object(), resource_name="file", client=_Client())
+    captured = []
+    monkeypatch.setattr(agent_scope, "resolve_scope", lambda client, **kwargs: "scope")
+    monkeypatch.setattr(agent_engine, "launch_agent", lambda **kwargs: captured.append(kwargs))
+
+    proxy.agent()
+    proxy.agent(platform_url="https://dalux.example.com", platform_token="oauth-access")
+
+    assert captured[0]["platform"] is None
+    platform = captured[1]["platform"]
+    assert platform.mcp_url == "https://dalux.example.com/mcp"
+    assert platform.token == "oauth-access"

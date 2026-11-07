@@ -184,3 +184,29 @@ def test_launch_agent_startup_failure_terminates_backend(monkeypatch, tmp_path):
 def test_invalid_port_is_rejected():
     with pytest.raises(ValueError, match="between 1 and 65535"):
         engine._available_port(70000)
+
+
+def test_launch_agent_in_platform_mode_skips_local_indexing(monkeypatch, tmp_path):
+    from dalux_build.ai.platform_config import PlatformConfig
+
+    backend = FakeProcess(101)
+    ui = FakeProcess(102)
+    _base_patches(monkeypatch, tmp_path, [backend, ui])
+
+    def no_local_index(*args, **kwargs):
+        raise AssertionError("platform mode must not index locally")
+
+    monkeypatch.setattr(engine, "resolve_pdf_files", no_local_index)
+    platform = PlatformConfig(url="https://dalux.example.com", token="dxm_t", connection="site-a")
+
+    handle = engine.launch_agent(
+        scope=_scope(), client=_Client(), open_browser=False, platform=platform
+    )
+    try:
+        backend_env = backend.captured["kwargs"]["env"]
+        assert backend_env["DALUX_PLATFORM_URL"] == "https://dalux.example.com"
+        assert backend_env["DALUX_PLATFORM_TOKEN"] == "dxm_t"
+        assert backend_env["DALUX_PLATFORM_CONNECTION"] == "site-a"
+        assert "dxm_t" not in " ".join(backend.captured["command"])
+    finally:
+        handle.stop()

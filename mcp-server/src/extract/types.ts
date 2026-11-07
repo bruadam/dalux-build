@@ -1,5 +1,5 @@
 /** Formats whose text this server can extract and search. */
-export type DocumentFormat = 'pdf' | 'docx' | 'xlsx' | 'md' | 'html';
+export type DocumentFormat = 'pdf' | 'docx' | 'xlsx' | 'csv' | 'md' | 'html';
 
 export interface TextChunk {
   /** 1-based page number for PDFs; null for formats that have no pages. */

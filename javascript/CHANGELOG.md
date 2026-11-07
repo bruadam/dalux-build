@@ -1,5 +1,17 @@
 # dalux-build-api
 
+## 3.1.0
+
+### Minor Changes
+
+- [#176](https://github.com/bruadam/dalux-build/pull/176) [`78c80fe`](https://github.com/bruadam/dalux-build/commit/78c80feebd22c5e16e44137c807cf1fabee1406f) Thanks [@bruadam](https://github.com/bruadam)! - Python RAG agent: add a `consistency-specialist` subagent and `dalux.ai.check_consistency()` for finding inconsistencies between documents through the Dalux MCP server, a `compare_dalux_documents` retrieval tool that returns passages from several files, and 1-based page numbers in citations.
+
+### Patch Changes
+
+- [#177](https://github.com/bruadam/dalux-build/pull/177) [`b9cd4f4`](https://github.com/bruadam/dalux-build/commit/b9cd4f43b3d41fc1169b1901e6533ce769b3815e) Thanks [@bruadam](https://github.com/bruadam)! - Document the full `folder_path` form and the `DALUX_MCP_ALLOW_EXTERNAL_MODEL_IO` opt-in for `check_consistency`.
+
+- [#182](https://github.com/bruadam/dalux-build/pull/182) [`6d14e3a`](https://github.com/bruadam/dalux-build/commit/6d14e3a1c2623ac2c859dff15db613d0c578a0c0) Thanks [@bruadam](https://github.com/bruadam)! - Fix `check_consistency`: send `focus` as a list (as the MCP tool expects) and raise `ConsistencyCheckError` instead of a wrapped exception group.
+
 ## 3.0.0
 
 ### Major Changes

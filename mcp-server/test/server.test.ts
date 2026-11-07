@@ -15,8 +15,9 @@ async function connectedClient(
   return client;
 }
 
-const DEFAULT_BUDGET = 68_000;
-const ALL_BUDGET = 68_000;
+// Measured: default 21,419, all toolsets 39,796 (68k for all tools before toolsets and compaction).
+const DEFAULT_BUDGET = 22_500;
+const ALL_BUDGET = 41_800;
 
 describe('tools/list schemas', () => {
   it('carry no $schema dialect key or safe-integer bounds, on any tool', async () => {

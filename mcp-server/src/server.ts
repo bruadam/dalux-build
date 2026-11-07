@@ -631,11 +631,8 @@ export function buildServer(client: DaluxClient, options: BuildServerOptions = {
     },
     {
       instructions:
-        'Read-only Dalux Build API access — no tool here creates, updates or deletes anything in a Dalux ' +
-        'project. (The ifc_edit_* tools do edit IFC property sets, but only on a private in-process copy, ' +
-        'saved as a new local file the user uploads themselves.) Call get_skill (no arguments) first — ' +
-        'before browsing an unfamiliar project or writing an OData filter for list_project_tasks — for this ' +
-        'server\'s own usage guide and links to deeper topics (tasks/documents/files/models_and_quality).',
+        'Read-only Dalux Build API access: no tool changes a Dalux project. Call get_skill (no arguments) first ' +
+        'for the usage guide, its topics, and the toolsets this connection has.',
     },
   );
 

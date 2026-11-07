@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { filesOfUser, folderPaths, safeFileName, toFileEntry, type FileEntry } from "../src/lib/files";
+import { filesOfUser, folderPaths, preferredFileAreas, safeFileName, toFileEntry, type FileEntry } from "../src/lib/files";
 
 test("folderPaths joins parents and treats unknown parents as root", () => {
   const paths = folderPaths([
@@ -54,4 +54,15 @@ test("filesOfUser keeps files the user uploaded or last modified", () => {
     filesOfUser(files, "u1").map((f) => f.fileId),
     ["a", "b"],
   );
+});
+
+test("preferredFileAreas matches name or ID and falls back to all areas", () => {
+  const areas = [
+    { fileAreaId: "A1", fileAreaName: "Documents" },
+    { fileAreaId: "B2", fileAreaName: "Drawings" },
+  ];
+  assert.deepEqual(preferredFileAreas(areas, " drawings "), [areas[1]]);
+  assert.deepEqual(preferredFileAreas(areas, "a1"), [areas[0]]);
+  assert.deepEqual(preferredFileAreas(areas, "Models"), areas);
+  assert.deepEqual(preferredFileAreas(areas, ""), areas);
 });

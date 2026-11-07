@@ -27,6 +27,7 @@ All lists have a detail pane (`⌘D`) and a reload action (`⌘R`). Every comman
    - **API Base URL** — must be an `https://….dalux.com` URL.
    - **API Key** — stored in Raycast's encrypted preferences.
    - **Default Project** (optional) — project name, number or ID used until you pick a project.
+   - **Preferred File Area** (optional) — file area name or ID. Search Files, Open File, Version Set Files and a user's files then show only that file area, which also makes loading faster. Projects without a file area of that name show all file areas.
 
 ## Data and caching
 

@@ -88,6 +88,22 @@ export function toFileEntry(file: DaluxFile, fileAreaName: string, paths: Map<st
   };
 }
 
+/**
+ * The file areas matching the "Preferred File Area" preference (name or ID,
+ * case-insensitive). All areas when the preference is empty or matches none
+ * in this project, so projects without that area still show their files.
+ */
+export function preferredFileAreas<T extends { fileAreaId: string; fileAreaName: string }>(
+  areas: readonly T[],
+  preferred: string | undefined,
+): T[] {
+  const wanted = preferred?.trim().toLowerCase();
+  const matches = wanted
+    ? areas.filter((a) => a.fileAreaId.toLowerCase() === wanted || a.fileAreaName.toLowerCase() === wanted)
+    : [];
+  return matches.length ? matches : [...areas];
+}
+
 /** Files the user uploaded or last modified. */
 export function filesOfUser(files: readonly FileEntry[], userId: string): FileEntry[] {
   return files.filter((file) => file.uploadedByUserId === userId || file.lastModifiedByUserId === userId);

@@ -4,10 +4,10 @@
  * the data changes and how expensive it is to load.
  */
 
-import { Toast, showToast } from "@raycast/api";
+import { Toast, getPreferenceValues, showToast } from "@raycast/api";
 import { getClient } from "./client";
 import { MINUTE, useCachedLoad } from "./cache";
-import { folderPaths, toFileEntry, type DaluxFile, type FileEntry, type Folder } from "./files";
+import { folderPaths, preferredFileAreas, toFileEntry, type DaluxFile, type FileEntry, type Folder } from "./files";
 import { collectAll, type ProgressCallback } from "./pagination";
 import { foldTaskChanges, toTaskSummary, type TaskChange, type TaskState, type TaskSummary } from "./tasks";
 import { toUserEntry, type UserEntry } from "./users";
@@ -120,12 +120,25 @@ async function loadFolders(projectId: string, fileAreaId: string): Promise<Folde
   return items.map((f) => ({ folderId: f.folderId, folderName: f.folderName, parentFolderId: f.parentFolderId }));
 }
 
-/** Every file area of a project with its folders and (non-deleted) files. */
+function preferredFileArea(): string {
+  return getPreferenceValues<Preferences>().preferredFileArea?.trim() ?? "";
+}
+
+async function loadFileAreas(projectId: string, preferred: string) {
+  const areas = await collectAll((params) => getClient().fileAreas.getFileAreas(projectId, params));
+  return preferredFileAreas(areas, preferred);
+}
+
+/**
+ * The project's file areas (only the preferred one, if set and present) with
+ * their folders and (non-deleted) files.
+ */
 export function useProjectFiles(projectId: string | undefined) {
-  return useCachedLoad<ProjectFiles>(projectId && `files:${projectId}`, 15 * MINUTE, () =>
+  const preferred = preferredFileArea();
+  return useCachedLoad<ProjectFiles>(projectId && `files:${projectId}:${preferred}`, 15 * MINUTE, () =>
     withProgress("Loading files", async (onProgress) => {
       const client = getClient();
-      const areas = await collectAll((params) => client.fileAreas.getFileAreas(projectId!, params));
+      const areas = await loadFileAreas(projectId!, preferred);
       const loadedPerArea = areas.map(() => 0);
       const perArea = await Promise.all(
         areas.map(async (area, index) => {
@@ -163,10 +176,17 @@ export function useProjectFiles(projectId: string | undefined) {
   );
 }
 
+/** Version sets of the project (only those in the preferred file area, if set and present). */
 export function useVersionSets(projectId: string | undefined) {
-  return useCachedLoad<VersionSet[]>(projectId && `version-sets:${projectId}`, 15 * MINUTE, async () => {
-    const items = await collectAll((params) => getClient().versionSets.getVersionSets(projectId!, params));
+  const preferred = preferredFileArea();
+  return useCachedLoad<VersionSet[]>(projectId && `version-sets:${projectId}:${preferred}`, 15 * MINUTE, async () => {
+    const [items, areas] = await Promise.all([
+      collectAll((params) => getClient().versionSets.getVersionSets(projectId!, params)),
+      preferred ? loadFileAreas(projectId!, preferred) : undefined,
+    ]);
+    const areaIds = areas && new Set(areas.map((a) => a.fileAreaId));
     return items
+      .filter((vs) => !areaIds || areaIds.has(vs.fileAreaId))
       .map((vs) => ({
         versionSetId: vs.versionSetId,
         name: vs.name,

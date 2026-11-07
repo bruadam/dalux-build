@@ -82,6 +82,14 @@
       "description": "Optional project name, number or ID to start with until you pick a project.",
       "type": "textfield",
       "required": false
+    },
+    {
+      "name": "preferredFileArea",
+      "title": "Preferred File Area",
+      "description": "Optional file area name or ID. File commands then show only that file area's files and version sets. Projects without it show all file areas.",
+      "type": "textfield",
+      "required": false,
+      "placeholder": "e.g. Documents"
     }
   ],
   "dependencies": {

@@ -328,6 +328,13 @@ describe('platform mode: access', () => {
     expect(bobDenied).toEqual({ isError: true, text: expect.stringContaining('models:read') });
   });
 
+  it('checks the 3D viewer app-only tools like the other IFC tools (G1)', async () => {
+    const denied = await call(tokens.alice, 'ifc_viewer_selection', { projectId: 'p1', fileAreaId: 'fa1', fileId: 'x2', selectionId: 'sel_x' });
+    expect(denied).toEqual({ isError: true, text: expect.stringContaining('files:read') });
+    const bobDenied = await call(tokens.bob, 'ifc_viewer_geometry', { projectId: 'p1', fileAreaId: 'fa1', fileId: 'x1', chunk: 0 });
+    expect(bobDenied).toEqual({ isError: true, text: expect.stringContaining('models:read') });
+  });
+
   it('hides admin-only tools from non-admins', async () => {
     const aliceTools = await listTools(tokens.alice);
     expect(aliceTools).not.toContain('build_file_area_index');

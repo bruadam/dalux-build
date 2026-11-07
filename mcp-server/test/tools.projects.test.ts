@@ -6,7 +6,7 @@ function fakeClient(overrides: Partial<Record<string, unknown>>): DaluxClient {
 }
 
 describe('tools/projects', () => {
-  it('listProjects unwraps the items envelope and returns all Dalux pages', async () => {
+  it('listProjects unwraps the items envelope and pages the result', async () => {
     const allProjects = Array.from({ length: 55 }, (_, i) => ({ projectId: `p${i}` }));
     const listProjects = jest.fn().mockResolvedValue({ items: allProjects });
     const client = fakeClient({ projects: { listProjects } });
@@ -14,10 +14,24 @@ describe('tools/projects', () => {
     const result = await projects.listProjects(client, { updatedAfter: '2026-01-01' });
 
     expect(listProjects).toHaveBeenCalledWith({ updatedAfter: '2026-01-01' });
-    expect(result.items).toHaveLength(55);
+    expect(result.items).toHaveLength(50);
     expect(result.totalCount).toBe(55);
-    expect(result.returnedCount).toBe(55);
+    expect(result.returnedCount).toBe(50);
+    expect(result.truncated).toBe(true);
+    expect(result.nextOffset).toBe(50);
+  });
+
+  it('listProjects returns the next page from offset without sending paging args to Dalux', async () => {
+    const allProjects = Array.from({ length: 55 }, (_, i) => ({ projectId: `p${i}` }));
+    const listProjects = jest.fn().mockResolvedValue({ items: allProjects });
+    const client = fakeClient({ projects: { listProjects } });
+
+    const result = await projects.listProjects(client, { offset: 50 });
+
+    expect(listProjects).toHaveBeenCalledWith({});
+    expect(result.items).toEqual(allProjects.slice(50));
     expect(result.truncated).toBe(false);
+    expect(result.nextOffset).toBeUndefined();
   });
 
   it('listProjects tolerates a missing items envelope', async () => {

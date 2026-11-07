@@ -1,12 +1,13 @@
 import { z } from 'zod';
 import type { DaluxClient } from 'dalux-build-api';
 import { collectAllDaluxItems } from '../daluxPagination';
-import { fullListForLlm, type PaginatedForLlm } from '../serialize';
+import { pageInput, paginateForLlm, type PaginatedForLlm } from '../serialize';
 
 // ---------- list_forms ----------
 
 export const listFormsInput = z.object({
   projectId: z.string().describe('The Dalux project ID.'),
+  ...pageInput,
 });
 export type ListFormsInput = z.infer<typeof listFormsInput>;
 
@@ -15,7 +16,7 @@ export async function listForms(
   args: ListFormsInput,
 ): Promise<PaginatedForLlm<unknown>> {
   const items = await collectAllDaluxItems((params) => client.forms.getProjectForms(args.projectId, params));
-  return fullListForLlm(items);
+  return paginateForLlm(items, args);
 }
 
 // ---------- get_form ----------

@@ -1,12 +1,13 @@
 import { z } from 'zod';
 import type { DaluxClient } from 'dalux-build-api';
 import { collectAllDaluxItems } from '../daluxPagination';
-import { fullListForLlm, type PaginatedForLlm } from '../serialize';
+import { pageInput, paginateForLlm, type PaginatedForLlm } from '../serialize';
 
 // ---------- list_project_users ----------
 
 export const listProjectUsersInput = z.object({
   projectId: z.string().describe('The Dalux project ID.'),
+  ...pageInput,
 });
 export type ListProjectUsersInput = z.infer<typeof listProjectUsersInput>;
 
@@ -15,7 +16,7 @@ export async function listProjectUsers(
   args: ListProjectUsersInput,
 ): Promise<PaginatedForLlm<unknown>> {
   const items = await collectAllDaluxItems((params) => client.users.listProjectUsers(args.projectId, params));
-  return fullListForLlm(items);
+  return paginateForLlm(items, args);
 }
 
 // ---------- get_user ----------
@@ -34,6 +35,7 @@ export async function getUser(client: DaluxClient, args: GetUserInput) {
 
 export const listProjectCompaniesInput = z.object({
   projectId: z.string().describe('The Dalux project ID.'),
+  ...pageInput,
 });
 export type ListProjectCompaniesInput = z.infer<typeof listProjectCompaniesInput>;
 
@@ -42,5 +44,5 @@ export async function listProjectCompanies(
   args: ListProjectCompaniesInput,
 ): Promise<PaginatedForLlm<unknown>> {
   const items = await collectAllDaluxItems((params) => client.companies.listProjectCompanies(args.projectId, params));
-  return fullListForLlm(items);
+  return paginateForLlm(items, args);
 }

@@ -76,7 +76,8 @@ export class Platform {
   ) {}
 
   async authenticate(token: string): Promise<AuthResult> {
-    const result = await this.tokens(hashApiToken(token), () => this.loadToken(hashApiToken(token)));
+    const tokenHash = hashApiToken(token);
+    const result = await this.tokens(tokenHash, () => this.loadToken(tokenHash));
     if ('caller' in result && result.caller.token.expiresAt && result.caller.token.expiresAt <= new Date()) {
       return { error: 'The API token has expired.' };
     }

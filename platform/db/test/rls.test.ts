@@ -1,4 +1,4 @@
-import { eq } from 'drizzle-orm';
+import { eq, sql } from 'drizzle-orm';
 import { chunks, documents, indexes } from '../src/schema';
 import { withAccount } from '../src/db';
 import { createTestDatabase, type TestDatabase } from './testDatabase';
@@ -155,6 +155,15 @@ describe('row-level security on index data (mcp role)', () => {
     expect(await visibleChunkDocs('bob')).toEqual(['f2.pdf', 'f3.pdf', 'law.pdf']);
     expect(await visibleDocuments('bob')).toEqual(['f2.pdf', 'f3.pdf', 'law.pdf']);
     expect(await visibleIndexes('bob')).toEqual(['docs', 'filesP1']);
+  });
+
+  it('folder grant: index document counts cover only the visible folder (G4)', async () => {
+    const result = await withAccount(t.as('mcp'), ids.bob, (tx) =>
+      tx.execute(sql`select count(d.id)::int as documents from indexes i
+                     left join documents d on d.index_id = i.id
+                     where i.id = ${ids.filesP1} group by i.id`),
+    );
+    expect(result.rows).toEqual([{ documents: 2 }]);
   });
 
   it('group grant gives access to members, including robots', async () => {

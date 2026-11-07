@@ -8,6 +8,7 @@ import { and, eq, sql } from 'drizzle-orm';
 import type { DaluxClient } from 'dalux-build-api';
 import { accounts, connections, daluxUserLinks, daluxUsers, type Db } from '@dalux-platform/db';
 import { collectAllDaluxItems } from '../daluxPagination';
+import { errorMessage } from './indexScopes';
 
 export interface DaluxUser {
   daluxUserId: string;
@@ -117,7 +118,7 @@ export async function syncConnectionUsers(db: Db, connectionId: string, clientFo
     });
     await matchConnection(db, connectionId);
   } catch (caught) {
-    error = caught instanceof Error ? caught.message : String(caught);
+    error = errorMessage(caught);
   }
   await db
     .update(connections)

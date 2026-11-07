@@ -45,6 +45,12 @@ interface RunSummary {
   warnings: string[];
 }
 
+/** The reason to show in the interface; for a failed query that is the database's error, not the SQL. */
+export function errorMessage(error: unknown): string {
+  if (!(error instanceof Error)) return String(error);
+  return error.cause instanceof Error ? error.cause.message : error.message;
+}
+
 /** Scopes to run now: a "Refresh now" newer than the last run, or an enabled scope whose interval has passed. */
 export async function dueScopes(db: Db): Promise<{ id: string; trigger: RunTrigger }[]> {
   const { rows } = await db.execute<{ id: string; manual: boolean }>(sql`
@@ -184,7 +190,7 @@ export async function runScope(deps: WorkerDeps, scopeId: string, trigger: RunTr
       embeddingTokensEstimated: usage.estimated,
     };
   } catch (error) {
-    values = { status: 'failed', error: error instanceof Error ? error.message : String(error) };
+    values = { status: 'failed', error: errorMessage(error) };
   }
 
   const finishedAt = new Date();

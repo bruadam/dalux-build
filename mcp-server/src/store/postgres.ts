@@ -147,6 +147,11 @@ function textArray(values: readonly string[]): string {
   return `{${values.map((value) => JSON.stringify(value)).join(',')}}`;
 }
 
+/** Postgres text and jsonb cannot hold NUL characters, which extracted text sometimes has. */
+function withoutNul<T>(value: T): T {
+  return JSON.parse(JSON.stringify(value, (_key, item) => (typeof item === 'string' ? item.replaceAll('\u0000', '') : item)));
+}
+
 function toVector(values: readonly number[]): string {
   return JSON.stringify(values);
 }
@@ -327,8 +332,9 @@ function createStore<Manifest extends ManifestBase, Document extends { chunks: o
         return { ...document.fields, chunks: chunks.map((chunk) => ({ ...chunk.location, text: chunk.text })) } as unknown as Document;
       }),
 
-    writeDocument: (indexId, document, vectors) =>
+    writeDocument: (indexId, stored, vectors) =>
       pools.worker.transaction(async (tx) => {
+        const document = withoutNul(stored);
         const access = mapping.access(document);
         const index = await ensureIndex(tx, indexId, {
           projectId: access?.projectId ?? null,

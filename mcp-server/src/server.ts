@@ -1,4 +1,4 @@
-import { McpServer } from '@modelcontextprotocol/server';
+import { McpServer, type StandardSchemaWithJSON } from '@modelcontextprotocol/server';
 import type { DaluxClient } from 'dalux-build-api';
 import type { z } from 'zod';
 
@@ -47,7 +47,7 @@ export const TOOLS = [
   }),
   tool({
     name: 'list_folders',
-    description: 'List all folders in a file area.',
+    description: 'List the folders in a file area, one page at a time.',
     inputSchema: files.listFoldersInput,
     handler: files.listFolders,
   }),
@@ -72,7 +72,7 @@ export const TOOLS = [
   }),
   tool({
     name: 'get_folder_tree',
-    description: 'Get the full folder tree (folders only, no files) for a file area — useful for navigation before drilling into a specific folder.',
+    description: 'Get the folder tree (ids and names only, no files, depth-limited) for a file area or below one folder — useful for navigation before drilling into a specific folder.',
     inputSchema: files.getFolderTreeInput,
     handler: files.getFolderTree,
   }),
@@ -84,7 +84,7 @@ export const TOOLS = [
   }),
   tool({
     name: 'list_files',
-    description: 'List all files in a file area.',
+    description: 'List the files in a file area, one page at a time.',
     inputSchema: files.listFilesInput,
     handler: files.listFiles,
   }),
@@ -108,7 +108,7 @@ export const TOOLS = [
       'single-use link (valid ~15 min, only reachable from the same machine this server runs on) the user can ' +
       'click to fetch the actual file. An image also comes back as an actual image (up to maxInlineBytes, ' +
       'default 10 MB, hard ceiling 500 MB). A PDF/Word/Excel/Markdown/HTML file also comes back as its extracted ' +
-      'text (up to maxInlineChars, default 200,000 characters, hard ceiling 2,000,000) — raw document bytes ' +
+      'text (up to maxInlineChars, default 40,000 characters, hard ceiling 2,000,000) — raw document bytes ' +
       'cannot usefully reach the model, so text is what streams instead. Other formats (zip, dwg, ifc, ...) get ' +
       'the link and the local cache path only.',
     inputSchema: documents.downloadFileInput,
@@ -294,7 +294,7 @@ export const TOOLS = [
   tool({
     name: 'search_projects_by_name',
     description:
-      'Find projects whose name contains a substring, case-insensitively — for when only part of the project name is known, or its exact casing isn\'t. Returns every match, not just one.',
+      'Find projects whose name contains a substring, case-insensitively — for when only part of the project name is known, or its exact casing isn\'t. Can return several matches, not just one.',
     inputSchema: projects.searchProjectsByNameInput,
     handler: projects.searchProjectsByName,
   }),
@@ -552,6 +552,50 @@ export function toolResultContent(result: unknown): [TextContent] | [ImageConten
   return [{ type: 'text', text: JSON.stringify(result) }];
 }
 
+/** Drops what zod's JSON Schema output carries for no model benefit: the root `$schema` dialect URI and safe-integer bounds. */
+function stripSchemaNoise(json: Record<string, unknown>): Record<string, unknown> {
+  const clean = (node: unknown): unknown => {
+    if (Array.isArray(node)) return node.map(clean);
+    if (!node || typeof node !== 'object') return node;
+    return Object.fromEntries(
+      Object.entries(node)
+        .filter(
+          ([key, value]) =>
+            !(key === 'maximum' && value === Number.MAX_SAFE_INTEGER) &&
+            !(key === 'minimum' && value === Number.MIN_SAFE_INTEGER),
+        )
+        .map(([key, value]) => [key, clean(value)]),
+    );
+  };
+  const { $schema: _dialect, ...rest } = json;
+  return clean(rest) as Record<string, unknown>;
+}
+
+function withLeanJsonSchema<S extends StandardSchemaWithJSON>(schema: S): S {
+  const std = schema['~standard'];
+  const jsonSchema: typeof std.jsonSchema = {
+    input: (options) => stripSchemaNoise(std.jsonSchema.input(options)),
+    output: (options) => stripSchemaNoise(std.jsonSchema.output(options)),
+  };
+  return Object.create(schema, { '~standard': { value: { ...std, jsonSchema } } }) as S;
+}
+
+/**
+ * Lists every tool's input/output schema through stripSchemaNoise — including
+ * tools registered outside this file (get_skill, the UI tools) — so tools/list
+ * stays lean in one place. Validation still runs on the original schema.
+ */
+function leanToolSchemas(server: McpServer): void {
+  type ToolConfig = { inputSchema?: StandardSchemaWithJSON; outputSchema?: StandardSchemaWithJSON } & Record<string, unknown>;
+  const register = server.registerTool.bind(server) as (name: string, config: ToolConfig, cb: unknown) => unknown;
+  server.registerTool = ((name: string, config: ToolConfig, cb: unknown) =>
+    register(name, {
+      ...config,
+      inputSchema: config.inputSchema && withLeanJsonSchema(config.inputSchema),
+      outputSchema: config.outputSchema && withLeanJsonSchema(config.outputSchema),
+    }, cb)) as typeof server.registerTool;
+}
+
 export interface BuildServerOptions {
   name?: string;
   version?: string;
@@ -579,6 +623,7 @@ export function buildServer(client: DaluxClient, options: BuildServerOptions = {
     },
   );
 
+  leanToolSchemas(server);
   for (const spec of TOOLS) {
     server.registerTool(
       spec.name,

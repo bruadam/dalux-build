@@ -1,5 +1,22 @@
 # dalux-build-api
 
+## 3.0.0
+
+### Major Changes
+
+- [#168](https://github.com/bruadam/dalux-build/pull/168) [`e54f30a`](https://github.com/bruadam/dalux-build/commit/e54f30a3c02455f2af616762dd081ddc8dc7f314) Thanks [@bruadam](https://github.com/bruadam)! - Standardize AI analysis, chat, OCR, and embeddings on Mistral using MISTRAL_API_KEY.
+  Replace the Python agent framework with LangChain agents and bounded adaptive RAG,
+  preserving specialist delegation and skills. Remove previous provider integrations
+  and local embeddings. Migrate vector caches to mistral-embed and update model selection.
+
+### Minor Changes
+
+- [`d457a1f`](https://github.com/bruadam/dalux-build/commit/d457a1f702483cf766fc24031622a205bcd37840) Thanks [@bruadam](https://github.com/bruadam)! - `FilesApi.getAllFiles`/`getFile` can now resolve `uploadedByUserId`/`lastModifiedByUserId` into full `ProjectUser` objects (and, through them, their company), the way the Python client's `get_files`/`get_file` already do via `recursively_populate`.
+  
+  Pass `recursivelyPopulate: true` — `getAllFiles(projectId, fileAreaId, params, verbose, true)`, or `getFile(projectId, fileAreaId, fileId, { recursivelyPopulate: true })` — to add `uploadedByUser`/`lastModifiedByUser` next to the existing id fields. `ProjectUser` itself gains an optional `company` field, populated the same way, matching the Python model.
+  
+  Defaults to `false`, unlike Python's `get_files` (which defaults to `true`): turning this on costs two extra requests (a project's users, then its companies) on every call, and flipping that on by default for an already-published client would be a behavior change for every existing caller, not an additive one.
+
 ## 2.5.1
 
 ### Patch Changes

@@ -29,7 +29,8 @@ Reads the same environment variables as the rest of the Dalux Build clients:
 | --- | --- | --- |
 | `DALUX_BASE_URL` | yes | Your Dalux Build API base URL |
 | `DALUX_API_KEY` | yes | Your company's X-API-KEY |
-| `MISTRAL_API_KEY` | no | Enables semantic (embedding-based) ranking in document search; without it, ranking falls back to BM25 |
+| `MISTRAL_API_KEY` | no | Enables semantic (embedding-based) ranking in document search; without it, ranking falls back to BM25. Also enables model-based fact extraction and judging in `check_document_consistency` |
+| `DALUX_MCP_ANALYSIS_MODEL` | no | Mistral chat model used by `check_document_consistency` (default `mistral-large-latest`, the same default as the Python client) |
 | `DALUX_MCP_CACHE_DIR` | no | Where downloads and the ephemeral file-area/task indexes are cached (default `$TMPDIR/dalux-mcp`). Set it when the temp directory is small or wiped between restarts. Also used by the docs index if `DALUX_MCP_DOCS_DIR` is unset |
 | `DALUX_MCP_DOCS_DIR` | no | Where the (persistent) docs-repo index is stored (default `~/.dalux-mcp/docs-index`) — separate from `DALUX_MCP_CACHE_DIR` because, unlike the other two indexes, this one is meant to survive restarts |
 | `DOCS_GITHUB_TOKEN` (or `GITHUB_TOKEN`) | only for a private docs repo | Token `npm run docs:build` sends to the GitHub API — required to read a private repo, optional (but raises the rate limit) for a public one. Needs read access to the repo's contents; no other scope |
@@ -133,6 +134,8 @@ This is fully additive: deployments that never set `PUBLIC_URL` behave exactly a
 
 **Cross-document search**: `build_file_area_index`, `search_file_area`, `list_file_area_indexes`, `drop_file_area_index`
 
+**Cross-document consistency**: `check_document_consistency`, `list_inconsistencies`, `export_inconsistency_report`, `list_consistency_reports`, `drop_consistency_report`
+
 **Tasks**: `list_project_tasks`, `search_tasks`, `get_task`, `list_task_changes`, `list_task_attachments`
 
 **Cross-task search**: `build_task_index`, `search_task_index`, `list_task_indexes`, `drop_task_index`
@@ -171,7 +174,7 @@ The server bundles its own usage documentation and serves it over MCP, so any co
 | --- | --- |
 | `overview` | tool categories, general usage principles, how errors are reported |
 | `tasks` | `list_project_tasks` filtering — OData `$filter`/`$select`/`$orderby` syntax, field paths, worked examples |
-| `documents` | `search_file_content`, `render_pdf_page`, cross-document search (`build_file_area_index`/`search_file_area`) |
+| `documents` | `search_file_content`, `render_pdf_page`, cross-document search (`build_file_area_index`/`search_file_area`), cross-document consistency checks (`check_document_consistency`) |
 | `files` | file areas/folders/files navigation, path-based lookups, projects, directory (users/companies) |
 | `models_and_quality` | IFC model tools (incl. `ifc_diff` and the `ifc_edit_*` group), the 3D viewer, forms, quality plans, scheduling |
 
@@ -227,6 +230,23 @@ Details worth knowing before pointing it at a large file area:
 - **Cost**: with a key, indexing embeds every chunk once (`text-embedding-3-small`); a 250-document folder is a few million tokens of embeddings. Without one, indexing makes no API calls at all.
 
 This is the TypeScript counterpart of the corpus-wide RAG agent in the Python package (`python/dalux_build/ai/`), which uses Chroma and LangChain and hosts its own LLM loop. Chunk size and overlap match (1000/150) so passages read the same through either path.
+
+### Cross-document consistency
+
+`check_document_consistency` finds statements in different documents of a file area or folder that contradict each other: a door schedule (xlsx) says D-101 is EI60 while the specification (docx) says EI30, the tender letter's handover date differs from the time schedule (`uge 12 2027`), a BoQ quantity differs from the description, or two documents cite different editions of the same DS/EN standard or different revisions of a drawing. It reads `.pdf`, `.docx`/`.docm`, `.xlsx`/`.xlsm` and `.csv` (delimiter sniffed, so `;`-separated Danish exports with `1.234,5` numbers work). Nothing in Dalux is modified.
+
+```
+check_document_consistency(projectId, fileAreaId, folderPath?, fileIds?, extensions?, focus?, maxFiles?, timeBudgetSeconds?, useModel?)
+    ->  { reportId, complete, filesInScope, filesAnalyzed, skipped, findingsCount, bySeverity, topFindings, warnings }
+list_inconsistencies(reportId, severity?, type?, fileId?, offset?, limit?)  ->  { total, findings }
+export_inconsistency_report(reportId, format: 'xlsx' | 'docx' | 'md')      ->  { reportId, format, fileName, filePath, downloadUrl, findingsCount }
+list_consistency_reports() / drop_consistency_report(reportId)
+```
+
+- **Deterministic first**: facts (element/door/room IDs, fire classes, concrete and exposure classes, U-values, sound requirements, dimensions, BoQ rows, milestone dates incl. Danish formats and week numbers, amounts in kr./DKK, standard editions, drawing revisions) are extracted with patterns, normalised, and compared per subject and attribute across *different* files. Equal values written differently (`EI 60`/`EI60`, `1.200 mm`/`1,2 m`, `01-03-2027`/`1. marts 2027`) do not conflict.
+- **With `MISTRAL_API_KEY`** (and `useModel` not false), Mistral (`DALUX_MCP_ANALYSIS_MODEL`) also extracts facts the patterns miss, then judges every finding: false alarms are dropped, the rest become `verdict: "confirmed"` with an explanation and a precedence note based on the `danish-construction-contracts` skill. Without a key, findings stay `verdict: "candidate"` for the calling agent to review with the `document-consistency-review` skill.
+- **Resumable and incremental**: same arguments give the same `reportId`; while `complete` is false, call again. Facts are cached per file revision, so later calls only re-read changed files. Reports untouched for a week are deleted.
+- **Export**: xlsx (one row per statement, grouped by finding), docx (summary and table) or md, written locally and returned as a download link — never uploaded to Dalux.
 
 ### Task search
 

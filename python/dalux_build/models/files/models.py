@@ -230,6 +230,7 @@ class File(BaseModel):
 
         # Use AI provider system
         from ...ai.config import ProviderConfig
+
         try:
             provider_config = ProviderConfig.create_provider_from_env(
                 provider=None, model=None, interactive=True

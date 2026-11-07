@@ -14,17 +14,25 @@ def test_chat_and_stream_use_mistral_and_respect_token_limit(monkeypatch):
     monkeypatch.setenv("MISTRAL_API_KEY", "test-key")
     client = MagicMock()
     client.__enter__.return_value = client
-    client.chat.complete.return_value = SimpleNamespace(choices=[
-        SimpleNamespace(message=SimpleNamespace(content="answer"))
-    ])
-    client.chat.stream.return_value = nullcontext(iter([
-        SimpleNamespace(data=SimpleNamespace(choices=[
-            SimpleNamespace(delta=SimpleNamespace(content="hello"))
-        ])),
-        SimpleNamespace(data=SimpleNamespace(choices=[
-            SimpleNamespace(delta=SimpleNamespace(content=None))
-        ])),
-    ]))
+    client.chat.complete.return_value = SimpleNamespace(
+        choices=[SimpleNamespace(message=SimpleNamespace(content="answer"))]
+    )
+    client.chat.stream.return_value = nullcontext(
+        iter(
+            [
+                SimpleNamespace(
+                    data=SimpleNamespace(
+                        choices=[SimpleNamespace(delta=SimpleNamespace(content="hello"))]
+                    )
+                ),
+                SimpleNamespace(
+                    data=SimpleNamespace(
+                        choices=[SimpleNamespace(delta=SimpleNamespace(content=None))]
+                    )
+                ),
+            ]
+        )
+    )
     constructor = MagicMock(return_value=client)
     monkeypatch.setattr(sdk, "Mistral", constructor)
     provider = AIProviderManager()

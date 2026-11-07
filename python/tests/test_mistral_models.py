@@ -13,10 +13,18 @@ def test_list_models_filters_for_chat_and_tools(monkeypatch):
     monkeypatch.setenv("MISTRAL_API_KEY", "test-key")
     client = MagicMock()
     client.models.list.return_value.data = [
-        SimpleNamespace(id=name, name=name, max_context_length=32000,
-                        capabilities=SimpleNamespace(completion_chat=chat, function_calling=tools))
-        for name, chat, tools in [("z-model", True, True), ("a-model", True, True),
-                                  ("embedding", False, False), ("no-tools", True, False)]
+        SimpleNamespace(
+            id=name,
+            name=name,
+            max_context_length=32000,
+            capabilities=SimpleNamespace(completion_chat=chat, function_calling=tools),
+        )
+        for name, chat, tools in [
+            ("z-model", True, True),
+            ("a-model", True, True),
+            ("embedding", False, False),
+            ("no-tools", True, False),
+        ]
     ]
     constructor = MagicMock()
     constructor.return_value.__enter__.return_value = client
@@ -26,9 +34,11 @@ def test_list_models_filters_for_chat_and_tools(monkeypatch):
 
 
 def test_pick_model_reprompts_and_selects(monkeypatch):
-    monkeypatch.setattr(models, "list_mistral_models", lambda: [
-        models.MistralModel("mistral-large-latest", "Large", 32000)
-    ])
+    monkeypatch.setattr(
+        models,
+        "list_mistral_models",
+        lambda: [models.MistralModel("mistral-large-latest", "Large", 32000)],
+    )
     answers = iter(["invalid", "99", "1"])
     monkeypatch.setattr("builtins.input", lambda prompt: next(answers))
     assert models.pick_mistral_model() == "mistral-large-latest"

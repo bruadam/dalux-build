@@ -11,9 +11,23 @@
 export const EMBEDDING_MODEL = 'mistral-embed';
 export const EMBEDDING_DIMENSIONS = 1024;
 
-/** Batch size and per-input truncation keeping requests inside the model's limits. */
+/**
+ * Request sizing for mistral-embed (8k-token context per input). Batches are
+ * capped by total characters as well as by count: Mistral rejects a request
+ * whose inputs add up to too many tokens, and 96 full-size chunks would.
+ * Budgets assume ~3 characters per token, a safe figure for the Danish,
+ * Norwegian and German text common in Dalux projects.
+ */
 const EMBED_BATCH = 96;
+const EMBED_BATCH_CHARS = 32_000;
 const MAX_EMBED_CHARS = 8000;
+
+/** The SDK does not retry by default; one rate-limit response would otherwise abort a whole index build. */
+const EMBED_RETRY = {
+  strategy: 'backoff',
+  backoff: { initialInterval: 1000, maxInterval: 30_000, exponent: 2, maxElapsedTime: 120_000 },
+  retryConnectionErrors: true,
+} as const;
 
 export type RankMode = 'embeddings' | 'lexical';
 
@@ -27,10 +41,9 @@ export async function embedTexts(texts: readonly string[]): Promise<number[][]> 
   if (!texts.length) return [];
 
   const { Mistral } = await import('@mistralai/mistralai');
-  const client = new Mistral({ apiKey });
+  const client = new Mistral({ apiKey, retryConfig: EMBED_RETRY });
   const vectors: number[][] = [];
-  for (let start = 0; start < texts.length; start += EMBED_BATCH) {
-    const batch = texts.slice(start, start + EMBED_BATCH).map((text) => text.slice(0, MAX_EMBED_CHARS));
+  for (const batch of embeddingBatches(texts)) {
     const response = await client.embeddings.create({
       model: EMBEDDING_MODEL,
       inputs: batch,
@@ -44,6 +57,22 @@ export async function embedTexts(texts: readonly string[]): Promise<number[][]> 
     vectors.push(...items.map((item) => item.embedding!));
   }
   return vectors;
+}
+
+function* embeddingBatches(texts: readonly string[]): Generator<string[]> {
+  let batch: string[] = [];
+  let chars = 0;
+  for (const text of texts) {
+    const input = text.slice(0, MAX_EMBED_CHARS);
+    if (batch.length && (batch.length === EMBED_BATCH || chars + input.length > EMBED_BATCH_CHARS)) {
+      yield batch;
+      batch = [];
+      chars = 0;
+    }
+    batch.push(input);
+    chars += input.length;
+  }
+  if (batch.length) yield batch;
 }
 
 export function cosineSimilarity(a: readonly number[], b: readonly number[]): number {

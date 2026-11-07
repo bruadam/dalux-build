@@ -79,9 +79,7 @@ def test_agent_pick_model_resolves_model_before_launch(monkeypatch):
         return "handle"
 
     monkeypatch.setattr(agent_engine, "launch_agent", fake_launch_agent)
-    monkeypatch.setattr(
-        agent_models, "pick_mistral_model", lambda: "picked-model-id"
-    )
+    monkeypatch.setattr(agent_models, "pick_mistral_model", lambda: "picked-model-id")
     proxy = AIEndpointProxy(endpoint=object(), resource_name="file", client=_Client())
 
     result = proxy.agent(pick_model=True)

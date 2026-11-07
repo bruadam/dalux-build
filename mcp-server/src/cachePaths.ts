@@ -72,7 +72,7 @@ export function taskIndexDir(indexId: string): string {
  * whatever project a session happens to be looking at, so the OS temp
  * directory — wiped on reboot, fine to lose — is the right home for them.
  * The docs index is the opposite: one shared corpus, expensive to rebuild
- * (an Mistral embedding call per chunk) and barely changes day to day, so
+ * (a Mistral embedding call per chunk) and barely changes day to day, so
  * losing it on every restart would mean re-embedding hundreds of documents
  * just to answer the first `search_docs` call of a new session.
  *

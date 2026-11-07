@@ -13,19 +13,22 @@ from dalux_build.ai.agent import graph_runtime as runtime
 def test_specialists_share_model_and_tools_but_receive_fresh_messages(monkeypatch):
     calls = []
     configured = []
+
     class Agent:
         async def ainvoke(self, state, config):
             calls.append((state, config))
             return {"messages": [SimpleNamespace(text="specialist report")]}
+
     def create(**kwargs):
         configured.append(kwargs)
         return Agent()
+
     monkeypatch.setattr(runtime, "create_agent", create)
     model, tools = object(), []
     delegate = runtime._build_delegation_tool(model, tools)
-    result = asyncio.run(delegate.ainvoke({
-        "subagent_type": "legal-specialist", "description": "Review this clause"
-    }))
+    result = asyncio.run(
+        delegate.ainvoke({"subagent_type": "legal-specialist", "description": "Review this clause"})
+    )
     assert result == "specialist report"
     assert len(configured) == 3
     assert all(c["model"] is model and c["tools"] is tools for c in configured)

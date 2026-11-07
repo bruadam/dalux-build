@@ -15,21 +15,21 @@ from __future__ import annotations
 
 import asyncio
 import os
+from collections.abc import Callable
 from pathlib import Path
 from typing import Protocol
-from collections.abc import Callable
 
 from langchain.agents import create_agent
-from langchain_mistralai import ChatMistralAI
-from langchain_core.language_models.chat_models import BaseChatModel
 from langchain_core.documents import Document
+from langchain_core.language_models.chat_models import BaseChatModel
 from langchain_core.tools import BaseTool, tool
+from langchain_mistralai import ChatMistralAI
 
+from ..rag.adaptive import build_adaptive_rag
 from ..rag.vectorstore import open_vectorstore
 from ..reference import BYGGERIETSREGLER_CORPUS
 from ..reference.store import open_reference_store, reference_store_exists
 from .skills_loader import find_skill, load_skills
-from ..rag.adaptive import build_adaptive_rag
 from .subagents import build_specialist_subagents
 
 # Standing reference corpora (see dalux_build.ai.reference): (corpus name,
@@ -97,18 +97,25 @@ def _build_system_prompt(skill_name: str | None) -> str:
 
 def _adaptive_answer(retriever: _Retriever) -> Callable[[str], str]:
     def retrieve(query: str) -> list[Document]:
-        return [Document(page_content=doc.page_content, metadata=doc.metadata)
-                for doc in retriever.invoke(query)]
+        return [
+            Document(page_content=doc.page_content, metadata=doc.metadata)
+            for doc in retriever.invoke(query)
+        ]
 
     def web_search(query: str) -> list[Document]:
         from ..reference.firecrawl_client import web_search as search
 
-        return [Document(page_content=result.markdown or result.description or "",
-                         metadata={"source": result.url})
-                for result in search(query, limit=5, scrape_content=True)]
+        return [
+            Document(
+                page_content=result.markdown or result.description or "",
+                metadata={"source": result.url},
+            )
+            for result in search(query, limit=5, scrape_content=True)
+        ]
 
     return build_adaptive_rag(
-        _build_chat_model(), retrieve,
+        _build_chat_model(),
+        retrieve,
         web_search if os.environ.get("FIRECRAWL_API_KEY") else None,
     )
 
@@ -292,12 +299,14 @@ def build_graph() -> object:
     """Build a Mistral LangChain agent and isolated specialist agents."""
     model = _build_chat_model()
     tools = [
-        _build_retriever_tool(), *_build_reference_tools(),
-        *_build_web_search_tools(), *_build_dalux_api_tools(), _build_skill_tool(),
+        _build_retriever_tool(),
+        *_build_reference_tools(),
+        *_build_web_search_tools(),
+        *_build_dalux_api_tools(),
+        _build_skill_tool(),
     ]
     return create_agent(
         model=model,
         tools=[*tools, _build_delegation_tool(model, tools)],
         system_prompt=_build_system_prompt(os.environ.get("DALUX_AGENT_SKILL")),
     )
-

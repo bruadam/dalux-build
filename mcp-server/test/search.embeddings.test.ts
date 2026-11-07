@@ -88,6 +88,24 @@ describe('embeddings ranking', () => {
       expect(vectors[0]).toEqual(toyEmbedding('clause 0'));
     });
 
+    it('splits batches by size so a request stays under the token limit', async () => {
+      // 1000-character chunks, the indexers' default: 96 of them would be ~30k tokens in one request.
+      const texts = Array.from({ length: 100 }, (_, i) => `${i}`.padEnd(1000, 'x'));
+
+      const vectors = await embedTexts(texts);
+
+      expect(stub.calls.map((call) => call.inputs.length)).toEqual([32, 32, 32, 4]);
+      expect(vectors[99]).toEqual(toyEmbedding(texts[99]));
+    });
+
+    it('retries rate limits and transient failures with backoff', async () => {
+      const { Mistral } = jest.requireMock('@mistralai/mistralai') as { Mistral: jest.Mock };
+
+      await embedTexts(['anything']);
+
+      expect(Mistral.mock.calls[0][0].retryConfig).toMatchObject({ strategy: 'backoff' });
+    });
+
     it('surfaces an API failure with its status instead of returning empty results', async () => {
       mockCreate.mockRejectedValue(new Error('Mistral API error: HTTP 401'));
 

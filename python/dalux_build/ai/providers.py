@@ -84,9 +84,7 @@ class AIProviderManager:
         print("\n")
         return response_text
 
-    def call_with_images(
-        self, prompt: str, image_urls: list[str], max_tokens: int = 2048
-    ) -> str:
+    def call_with_images(self, prompt: str, image_urls: list[str], max_tokens: int = 2048) -> str:
         """Analyze images using a vision-capable Mistral model."""
         from mistralai.client import Mistral
         from mistralai.client.models import ImageURLChunk, TextChunk

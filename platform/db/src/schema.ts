@@ -304,13 +304,20 @@ export const indexes = pgTable(
     kind: indexKind('kind').notNull(),
     projectId: text('project_id'),
     fileAreaId: text('file_area_id'),
+    /** The index id the MCP tools use (a hash of the scope); unique per connection and kind. */
+    externalId: text('external_id').notNull(),
     scope: jsonb('scope').notNull(),
     embeddingModel: text('embedding_model'),
     embeddingDimensions: integer('embedding_dimensions'),
+    /** Build bookkeeping (skipped and failed files). Names files, so the mcp role cannot select it. */
+    buildState: jsonb('build_state').notNull().default({}),
     createdAt: createdAt(),
     updatedAt: updatedAt(),
   },
-  (t) => [index('indexes_connection_idx').on(t.connectionId)],
+  (t) => [
+    index('indexes_connection_idx').on(t.connectionId),
+    uniqueIndex('indexes_connection_kind_external_id_key').on(t.connectionId, t.kind, t.externalId),
+  ],
 );
 
 export const documents = pgTable(

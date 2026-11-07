@@ -292,9 +292,12 @@ list_consistency_reports() / drop_consistency_report(reportId)
   conflicts are high) and at least two statements from different files, each with file, location and verbatim
   quote. Values are compared after normalisation, so \`EI 60\`/\`EI60\`, \`1.200 mm\`/\`1,2 m\` and
   \`01-03-2027\`/\`1. marts 2027\` agree.
-- **Verdicts**: with \`MISTRAL_API_KEY\` set (and \`useModel\` not false), Mistral also extracts facts the
+- **Verdicts**: with \`MISTRAL_API_KEY\` set, \`DALUX_MCP_ALLOW_EXTERNAL_MODEL_IO=true\` (the server operator's
+  opt-in to sending document text to Mistral) and \`useModel\` not false, Mistral also extracts facts the
   patterns miss and judges each finding: false alarms are dropped and the rest become \`confirmed\` with an
-  explanation and a precedence note. Without a key, findings stay \`candidate\` — check each one against its
+  explanation and a precedence note. If either variable is missing, the check runs patterns only and a warning
+  says which. A large file is read by the model in batches within \`timeBudgetSeconds\`; its progress is saved and
+  the next call continues it. Without the model, findings stay \`candidate\` — check each one against its
   quotes yourself, using the \`document-consistency-review\` and \`danish-construction-contracts\` skills, before
   presenting it as a conflict.
 - **Incremental**: facts are kept per file revision, so a later call only re-reads changed files. Reports untouched

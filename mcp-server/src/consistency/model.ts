@@ -3,7 +3,8 @@
  * (catching statements the deterministic patterns cannot, e.g. a quantity
  * written in a sentence) and a judge that confirms or dismisses each
  * candidate finding, citing document precedence. Used only when
- * MISTRAL_API_KEY is set and the caller did not pass useModel: false.
+ * MISTRAL_API_KEY is set, DALUX_MCP_ALLOW_EXTERNAL_MODEL_IO=true allows
+ * sending document text to Mistral, and the caller did not pass useModel: false.
  */
 
 import type { TextChunk } from '../extract';
@@ -23,8 +24,17 @@ export function externalModelIoAllowed(): boolean {
   return process.env.DALUX_MCP_ALLOW_EXTERNAL_MODEL_IO === 'true';
 }
 
+/** Why the model path cannot run, or null when it can. */
+export function modelUnavailableReason(): string | null {
+  if (!process.env.MISTRAL_API_KEY) return 'MISTRAL_API_KEY is not set';
+  if (!externalModelIoAllowed()) {
+    return 'DALUX_MCP_ALLOW_EXTERNAL_MODEL_IO is not "true", so document text is not sent to Mistral';
+  }
+  return null;
+}
+
 export function modelAvailable(): boolean {
-  return Boolean(process.env.MISTRAL_API_KEY);
+  return modelUnavailableReason() === null;
 }
 
 const RETRY = {
@@ -44,15 +54,10 @@ const KNOWN_ATTRIBUTES = [
 ];
 
 async function completeJson<T>(system: string, user: string, name: string, schema: Record<string, unknown>): Promise<T> {
-  const apiKey = process.env.MISTRAL_API_KEY;
-  if (!apiKey) throw new Error('MISTRAL_API_KEY is not set.');
-  if (!externalModelIoAllowed()) {
-    throw new Error(
-      'External model I/O is disabled. Set DALUX_MCP_ALLOW_EXTERNAL_MODEL_IO=true to allow sending document content to Mistral.',
-    );
-  }
+  const unavailable = modelUnavailableReason();
+  if (unavailable) throw new Error(`${unavailable}.`);
   const { Mistral } = await import('@mistralai/mistralai');
-  const client = new Mistral({ apiKey, retryConfig: RETRY });
+  const client = new Mistral({ apiKey: process.env.MISTRAL_API_KEY, retryConfig: RETRY });
   const response = await client.chat.complete({
     model: analysisModel(),
     temperature: 0,
@@ -167,9 +172,30 @@ function batches(chunks: readonly TextChunk[]): TextChunk[][] {
   return out;
 }
 
-export async function extractFactsWithModel(fileName: string, chunks: readonly TextChunk[]): Promise<Fact[]> {
+export interface ModelExtraction {
+  facts: Fact[];
+  /** Batches done so far, including those of earlier calls; equals batchCount when the file is finished. */
+  batchesDone: number;
+  batchCount: number;
+}
+
+/**
+ * Extracts facts batch by batch, starting at `startBatch`. After each batch it
+ * stops if `outOfTime()` is true, so one large file cannot run past the
+ * caller's time budget; at least one batch runs per call so a resumed file
+ * always makes progress.
+ */
+export async function extractFactsWithModel(
+  fileName: string,
+  chunks: readonly TextChunk[],
+  options: { startBatch?: number; outOfTime?: () => boolean } = {},
+): Promise<ModelExtraction> {
+  const all = batches(chunks);
   const facts: Fact[] = [];
-  for (const batch of batches(chunks)) {
+  let batchesDone = options.startBatch ?? 0;
+  while (batchesDone < all.length) {
+    if (batchesDone > (options.startBatch ?? 0) && options.outOfTime?.()) break;
+    const batch = all[batchesDone];
     const text = batch.map((chunk) => `[[${chunk.location}]]\n${chunk.text}`).join('\n\n');
     const result = await completeJson<{ facts: ModelFact[] }>(
       EXTRACTION_PROMPT,
@@ -195,8 +221,9 @@ export async function extractFactsWithModel(fileName: string, chunks: readonly T
         source: 'model',
       });
     }
+    batchesDone += 1;
   }
-  return facts;
+  return { facts, batchesDone, batchCount: all.length };
 }
 
 export interface Judgment {

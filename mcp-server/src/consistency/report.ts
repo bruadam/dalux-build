@@ -21,7 +21,7 @@ import { indexIdFor, listIndexableFiles, type IndexScope } from '../rag/scope';
 import { summarizeSkips, type FailedFile, type SkipSummary } from '../rag/store';
 import { compareFindings, findInconsistencies, type FileFacts, type Finding, type FocusArea } from './compare';
 import { extractFacts, type Fact } from './facts';
-import { analysisModel, extractFactsWithModel, judgeFinding, modelAvailable, type Judgment } from './model';
+import { analysisModel, extractFactsWithModel, judgeFinding, modelUnavailableReason, type Judgment } from './model';
 
 const MANIFEST_VERSION = 1;
 const STALE_REPORT_MS = 7 * 24 * 60 * 60 * 1000;
@@ -79,6 +79,26 @@ function factsPath(reportId: string, fileId: string): string {
   return path.join(dir, `${safe(fileId)}.json`);
 }
 
+/** Model facts of a file whose model extraction stopped at the time budget, so the next call resumes it. */
+interface PartialModelExtraction {
+  revisionKey: string;
+  batchesDone: number;
+  facts: Fact[];
+}
+
+function partialPath(reportId: string, fileId: string): string {
+  const dir = path.join(consistencyReportDir(reportId), 'partial');
+  mkdirSync(dir, { recursive: true });
+  return path.join(dir, `${safe(fileId)}.json`);
+}
+
+function readPartial(reportId: string, fileId: string, revisionKey: string): PartialModelExtraction | null {
+  const file = partialPath(reportId, fileId);
+  if (!existsSync(file)) return null;
+  const partial = JSON.parse(readFileSync(file, 'utf-8')) as PartialModelExtraction;
+  return partial.revisionKey === revisionKey ? partial : null;
+}
+
 function findingsPath(reportId: string): string {
   return path.join(consistencyReportDir(reportId), 'findings.json');
 }
@@ -118,7 +138,7 @@ export interface CheckOptions {
   maxFiles?: number;
   timeBudgetSeconds?: number;
   maxFileSizeMb?: number;
-  /** Defaults to true; the model is only used when MISTRAL_API_KEY is set. */
+  /** Defaults to true; the model is only used when modelUnavailableReason() is null. */
   useModel?: boolean;
 }
 
@@ -149,9 +169,10 @@ export async function checkConsistency(
   const outOfTime = () => Date.now() - startedAt > budgetMs;
   const warnings: string[] = [];
 
-  const useModel = options.useModel !== false && modelAvailable();
-  if (options.useModel === true && !useModel) {
-    warnings.push('useModel was requested but MISTRAL_API_KEY is not set — findings stay verdict "candidate".');
+  const unavailable = modelUnavailableReason();
+  const useModel = options.useModel !== false && !unavailable;
+  if (unavailable && (options.useModel === true || (options.useModel === undefined && process.env.MISTRAL_API_KEY))) {
+    warnings.push(`Mistral is not used (${unavailable}) — running deterministic checks only; findings stay verdict "candidate".`);
   }
 
   pruneStaleIndexes(STALE_REPORT_MS, Date.now(), consistencyRoot());
@@ -184,6 +205,7 @@ export async function checkConsistency(
   for (const fileId of Object.keys(manifest.files)) {
     if (liveIds.has(fileId)) continue;
     rmSync(factsPath(reportId, fileId), { force: true });
+    rmSync(partialPath(reportId, fileId), { force: true });
     delete manifest.files[fileId];
   }
 
@@ -201,6 +223,7 @@ export async function checkConsistency(
   mkdirSync(sourceDir, { recursive: true });
   let analyzedThisPass = 0;
   let modelFailure: string | null = null;
+  let modelInterrupted = 0;
 
   await pool(dirty.slice(0, maxFiles), 4, outOfTime, async (file) => {
     if (file.fileSize !== null && file.fileSize > maxFileSizeBytes) {
@@ -219,8 +242,20 @@ export async function checkConsistency(
       let modelExtracted = useModel && !extraction.chunks.length;
       if (useModel && extraction.chunks.length) {
         try {
-          facts = mergeFacts(facts, await extractFactsWithModel(file.fileName, extraction.chunks));
-          modelExtracted = true;
+          const partial = readPartial(reportId, file.fileId, file.revisionKey);
+          const run = await extractFactsWithModel(file.fileName, extraction.chunks, {
+            startBatch: partial?.batchesDone ?? 0,
+            outOfTime,
+          });
+          const modelFacts = [...(partial?.facts ?? []), ...run.facts];
+          facts = mergeFacts(facts, modelFacts);
+          modelExtracted = run.batchesDone >= run.batchCount;
+          if (modelExtracted) {
+            rmSync(partialPath(reportId, file.fileId), { force: true });
+          } else {
+            writeJson(partialPath(reportId, file.fileId), { revisionKey: file.revisionKey, batchesDone: run.batchesDone, facts: modelFacts });
+            modelInterrupted += 1;
+          }
         } catch (err) {
           modelFailure = err instanceof Error ? err.message : String(err);
         }
@@ -247,6 +282,9 @@ export async function checkConsistency(
   });
   if (modelFailure) {
     warnings.push(`Mistral fact extraction failed for some files (${modelFailure}); their pattern-based facts are used and they are retried on the next call.`);
+  }
+  if (modelInterrupted) {
+    warnings.push(`${modelInterrupted} file(s) were only partly read by Mistral within timeBudgetSeconds; their progress is saved and the next call continues them.`);
   }
 
   const retried = new Set(failed.map((entry) => entry.fileId));
@@ -316,7 +354,8 @@ export async function checkConsistency(
     if (sizeSkippedIds.has(file.fileId)) return false;
     if (!doneIds.has(file.fileId)) return true;
     const entry = manifest.files[file.fileId];
-    return Boolean(entry && useModel && !entry.modelExtracted && !modelFailure);
+    if (!entry || !useModel || entry.modelExtracted) return false;
+    return !modelFailure || existsSync(partialPath(reportId, file.fileId));
   }).length;
 
   const complete = filesPending === 0 && unjudged === 0;

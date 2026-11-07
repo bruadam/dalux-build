@@ -45,12 +45,18 @@ describe('document consistency with Mistral', () => {
   let fixtures: string;
   let cache: string;
   let files: { fileId: string; fileName: string; source: string }[];
-  const saved = { cache: process.env.DALUX_MCP_CACHE_DIR, key: process.env.MISTRAL_API_KEY, model: process.env.DALUX_MCP_ANALYSIS_MODEL };
+  const saved = {
+    cache: process.env.DALUX_MCP_CACHE_DIR,
+    key: process.env.MISTRAL_API_KEY,
+    model: process.env.DALUX_MCP_ANALYSIS_MODEL,
+    allow: process.env.DALUX_MCP_ALLOW_EXTERNAL_MODEL_IO,
+  };
 
   beforeAll(() => {
     fixtures = mkdtempSync(path.join(tmpdir(), 'dalux-consistency-model-'));
     process.env.MISTRAL_API_KEY = 'test-key';
     process.env.DALUX_MCP_ANALYSIS_MODEL = 'test-model';
+    process.env.DALUX_MCP_ALLOW_EXTERNAL_MODEL_IO = 'true';
     files = [
       {
         fileId: 'f1',
@@ -85,6 +91,7 @@ describe('document consistency with Mistral', () => {
       ['DALUX_MCP_CACHE_DIR', saved.cache],
       ['MISTRAL_API_KEY', saved.key],
       ['DALUX_MCP_ANALYSIS_MODEL', saved.model],
+      ['DALUX_MCP_ALLOW_EXTERNAL_MODEL_IO', saved.allow],
     ] as const) {
       if (value === undefined) delete process.env[name];
       else process.env[name] = value;
@@ -144,4 +151,64 @@ describe('document consistency with Mistral', () => {
     expect(result).toMatchObject({ complete: true, mode: 'deterministic', findingsCount: 1 });
     expect(complete).not.toHaveBeenCalled();
   });
+
+  it('falls back to deterministic checks when DALUX_MCP_ALLOW_EXTERNAL_MODEL_IO is not true', async () => {
+    delete process.env.DALUX_MCP_ALLOW_EXTERNAL_MODEL_IO;
+    try {
+      const result = await consistency.checkDocumentConsistency(fakeClient(files), { projectId: 'p1', fileAreaId: 'fa1' });
+      expect(result).toMatchObject({ complete: true, mode: 'deterministic', findingsCount: 1 });
+      expect(result.warnings.join(' ')).toContain('DALUX_MCP_ALLOW_EXTERNAL_MODEL_IO');
+      expect(complete).not.toHaveBeenCalled();
+    } finally {
+      process.env.DALUX_MCP_ALLOW_EXTERNAL_MODEL_IO = 'true';
+    }
+  });
+
+  it('stops model extraction inside a large file at the time budget and resumes it on the next call', async () => {
+    const paragraphs = Array.from({ length: 400 }, (_, i) => paragraph(`Afsnit ${i}: ${'tekst om udførelse og kvalitet '.repeat(6)}`));
+    const big = {
+      fileId: 'f3',
+      fileName: 'tilbudsliste.docx',
+      source: writeDocx(fixtures, 'tilbudsliste.docx', [paragraph('Dør D-101 skal være EI60 ifølge denne liste.'), ...paragraphs].join('')),
+    };
+    const small = { fileId: 'f2', fileName: 'beskrivelse.docx', source: files[1].source };
+    let now = Date.parse('2026-11-07T12:00:00Z');
+    const clock = jest.spyOn(Date, 'now').mockImplementation(() => now);
+    complete.mockImplementation(async (request: Request) => {
+      const user = request.messages[1].content;
+      if (request.responseFormat.jsonSchema.name !== 'document_facts') {
+        return reply({ verdict: 'confirmed', explanation: 'EI60 mod EI30.', precedenceNote: '' });
+      }
+      now += 200_000;
+      const quote = 'Dør D-101 skal være EI60 ifølge denne liste.';
+      return reply({
+        facts: user.includes(quote) ? [{ subject: 'D-101', attribute: 'fire_class', value: 'EI60', unit: '', location: 'nowhere', quote }] : [],
+      });
+    });
+
+    try {
+      const client = fakeClient([small, big]);
+      const args = { projectId: 'p1', fileAreaId: 'fa1', timeBudgetSeconds: 120 };
+      const first = await consistency.checkDocumentConsistency(client, args);
+      expect(first.complete).toBe(false);
+      expect(first.warnings.join(' ')).toContain('partly read by Mistral');
+
+      let result = first;
+      for (let pass = 0; pass < 10 && !result.complete; pass += 1) {
+        result = await consistency.checkDocumentConsistency(client, args);
+      }
+      expect(result).toMatchObject({ complete: true, findingsCount: 1 });
+      expect(result.topFindings[0]).toMatchObject({ attribute: 'fire_class', verdict: 'confirmed' });
+
+      const bigBatches = complete.mock.calls
+        .map(([request]) => request as Request)
+        .filter((request) => request.responseFormat.jsonSchema.name === 'document_facts' && request.messages[1].content.includes('tilbudsliste.docx'))
+        .map((request) => request.messages[1].content);
+      expect(bigBatches.length).toBeGreaterThan(1);
+      expect(new Set(bigBatches).size).toBe(bigBatches.length);
+    } finally {
+      clock.mockRestore();
+    }
+  });
+
 });

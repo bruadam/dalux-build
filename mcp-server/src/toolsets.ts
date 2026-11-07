@@ -112,7 +112,7 @@ export const TOOLSET_SUMMARIES: Record<Toolset, string> = {
 export const TOOLSET_NAMES = Object.keys(TOOLSETS) as Toolset[];
 
 /** What a server enables when no toolsets are configured. */
-export const DEFAULT_TOOLSETS: readonly Toolset[] = ['core', 'files', 'tasks', 'forms', 'quality', 'scheduling'];
+export const DEFAULT_TOOLSETS: readonly Toolset[] = ['core', 'files', 'tasks', 'forms', 'quality', 'scheduling', 'search'];
 
 function isToolset(name: string): name is Toolset {
   return Object.hasOwn(TOOLSETS, name);

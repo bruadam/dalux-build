@@ -27,14 +27,9 @@ const taskConditionOps = ['eq', 'ne', 'gt', 'ge', 'lt', 'le', 'contains'] as con
  */
 export const taskFilterConditionSchema = z.object({
   field: z
-    .string()
-    .describe(
-      'Dot path into the task JSON exactly as returned by get_task/list_project_tasks (the tool\'s own response ' +
-        'shape, not Dalux\'s OData path syntax) — e.g. "type.typeId", "created", "workflow.name", "status", ' +
-        '"userDefinedFields.Some Field".',
-    ),
-  op: z.enum(taskConditionOps).describe('Comparison operator. "contains" is a case-insensitive substring match (string fields only).'),
-  value: z.union([z.string(), z.number(), z.boolean()]).describe('Value to compare the field against.'),
+    .string().describe('Dot path in the returned task JSON, e.g. "status", "userDefinedFields.Some Field".'),
+  op: z.enum(taskConditionOps).describe('"contains" = case-insensitive substring.'),
+  value: z.union([z.string(), z.number(), z.boolean()]),
 });
 export type TaskFilterCondition = z.infer<typeof taskFilterConditionSchema>;
 
@@ -97,33 +92,17 @@ export const listProjectTasksInput = z.object({
   projectId: z.string(),
   typeId: z
     .string()
-    .optional()
-    .describe(
-      'Shorthand filter: only return tasks of this task type ID. Expands to an OData $filter on data/type/typeId. Ignored if filter is also set.',
-    ),
+    .optional().describe('Only tasks of this type. Ignored if filter is set.'),
   filter: z
     .string()
-    .optional()
-    .describe(
-      'Raw OData $filter expression, passed to Dalux as-is. Takes precedence over typeId. Dalux only validates ' +
-        'a single `data/type/typeId eq \'<id>\'` expression here — no `and`/`or`, no other operators (`ge`, ' +
-        '`le`, ...), and no other fields (e.g. data/created); anything beyond that exact shape fails with ' +
-        '"Parameter validation failed for OData query". For any other filtering (dates, status, custom fields, ' +
-        '...), use `conditions` instead.',
-    ),
-  select: z.string().optional().describe('OData $select expression to limit which fields are returned.'),
+    .optional().describe('OData $filter. Dalux accepts only `data/type/typeId eq \'<id>\'`; use conditions for anything else.'),
+  select: z.string().optional().describe('OData $select.'),
   orderby: z.string().optional().describe('OData $orderby expression.'),
   conditions: z
     .array(taskFilterConditionSchema)
-    .optional()
-    .describe(
-      'Field-based filters applied client-side after fetching (ANDed together, and ANDed with typeId/filter) — ' +
-        'the general-purpose replacement for hand-written OData, since Dalux\'s own $filter only supports typeId ' +
-        'eq. `field` is a dot path into the same task JSON this tool returns, e.g. ' +
-        '[{"field": "created", "op": "ge", "value": "2026-08-01T00:00:00Z"}].',
-    ),
+    .optional().describe('Client-side filters, ANDed, e.g. [{"field":"created","op":"ge","value":"2026-08-01T00:00:00Z"}].'),
   ...pageInput,
-  fields: fieldsInput(TASK_FIELDS),
+  fields: fieldsInput,
 });
 export type ListProjectTasksInput = z.infer<typeof listProjectTasksInput>;
 
@@ -171,50 +150,23 @@ const ATTACHMENT_CONCURRENCY_ADHOC = 4;
 export const searchTasksInput = z.object({
   projectId: z.string(),
   query: z
-    .string()
-    .describe(
-      'Keywords or a natural-language description of what to find. Matched against each task\'s subject, ' +
-        'description, custom fields, type, status and (optionally) change history — no OData syntax needed.',
-    ),
+    .string().describe('Keywords or natural language.'),
   typeId: z
     .string()
-    .optional()
-    .describe('Only search tasks of this task type ID. Ignored if filter is also set.'),
+    .optional().describe('Only tasks of this type. Ignored if filter is set.'),
   filter: z
     .string()
-    .optional()
-    .describe(
-      'Raw OData $filter expression narrowing which tasks are searched. Dalux only validates a single ' +
-        '`data/type/typeId eq \'<id>\'` expression here — no `and`/`or`, comparison operators, or other fields. ' +
-        'For any other filtering (dates, status, custom fields, ...), use `conditions` instead.',
-    ),
+    .optional().describe('OData $filter. Dalux accepts only `data/type/typeId eq \'<id>\'`; use conditions for anything else.'),
   conditions: z
     .array(taskFilterConditionSchema)
-    .optional()
-    .describe(
-      'Field-based filters applied client-side before ranking (ANDed together, and ANDed with typeId/filter) — ' +
-        'the general-purpose replacement for hand-written OData, since Dalux\'s own $filter only supports typeId ' +
-        'eq. `field` is a dot path into the same task JSON get_task returns, e.g. ' +
-        '[{"field": "created", "op": "ge", "value": "2026-08-01T00:00:00Z"}].',
-    ),
+    .optional().describe('Client-side filters, ANDed (see list_project_tasks).'),
   includeChanges: z
     .boolean()
-    .optional()
-    .describe(
-      'Also match against each task\'s change history text (fetches every task change on the project — an extra ' +
-        'API call). Default false. For repeated searches over the same project, build_task_index + ' +
-        'search_task_index is cheaper.',
-    ),
+    .optional().describe('Also search change history (extra API call). Default false.'),
   includeAttachments: z
     .boolean()
     .optional()
-    .describe(
-      `Also match against the text of each matching task's attachments — pdf/docx/xlsx are supported (not .doc/` +
-        `.xls, images, or drawings). Fetches every task attachment on the project, then downloads and extracts ` +
-        `up to ${MAX_ATTACHMENTS_PER_TASK_ADHOC} per task (largest cost of any option here — network + parsing, ` +
-        `not just an extra API call). Default false. For repeated searches, build_task_index + search_task_index ` +
-        'does this once and caches it instead of on every call.',
-    ),
+    .describe('Also search attachment text (pdf/docx/xlsx; slow). Default false.'),
   topK: z.number().int().min(1).max(100).optional().describe('Max matching tasks to return (default 10).'),
 });
 export type SearchTasksInput = z.infer<typeof searchTasksInput>;
@@ -358,21 +310,10 @@ export const getTaskInput = z.object({
   taskId: z.string(),
   includeChanges: z
     .boolean()
-    .optional()
-    .describe(
-      'Also fetch this task\'s change history (field edits, status transitions, and comments recorded as ' +
-        'changes) and return it as `changes`. There is no per-task filter on the Dalux side, so this fetches ' +
-        'every change on the whole project (bookmark-paginated to completion) and filters to this task ' +
-        'client-side — can be slow/expensive on projects with a long change history. Default false.',
-    ),
+    .optional().describe('Also return change history (scans the whole project). Default false.'),
   includeAttachments: z
     .boolean()
-    .optional()
-    .describe(
-      'Also fetch this task\'s attachments and return them as `attachments`. Same caveat as includeChanges: no ' +
-        'per-task filter exists server-side, so this fetches every attachment on the whole project and filters ' +
-        'client-side. Default false.',
-    ),
+    .optional().describe('Also return attachments (scans the whole project). Default false.'),
 });
 export type GetTaskInput = z.infer<typeof getTaskInput>;
 
@@ -411,15 +352,10 @@ export const listTaskChangesInput = z.object({
   projectId: z.string(),
   taskId: z
     .string()
-    .optional()
-    .describe(
-      'Only return changes for this task. No server-side filter exists for this — the full updatedAfter window ' +
-        'is still fetched from Dalux, then filtered to this task client-side before returning.',
-    ),
+    .optional().describe('Only this task (filtered client-side).'),
   updatedAfter: z
     .string()
-    .optional()
-    .describe('ISO 8601 timestamp; only return task changes recorded after this time.'),
+    .optional().describe('ISO 8601; only changes after this.'),
   ...pageInput,
 });
 export type ListTaskChangesInput = z.infer<typeof listTaskChangesInput>;
@@ -448,15 +384,10 @@ export const listTaskAttachmentsInput = z.object({
   projectId: z.string(),
   taskId: z
     .string()
-    .optional()
-    .describe(
-      'Only return attachments for this task. No server-side filter exists for this — the full updatedAfter ' +
-        'window is still fetched from Dalux, then filtered to this task client-side before returning.',
-    ),
+    .optional().describe('Only this task (filtered client-side).'),
   updatedAfter: z
     .string()
-    .optional()
-    .describe('ISO 8601 timestamp; only return task attachments updated after this time.'),
+    .optional().describe('ISO 8601; only attachments updated after this.'),
   ...pageInput,
 });
 export type ListTaskAttachmentsInput = z.infer<typeof listTaskAttachmentsInput>;
@@ -482,40 +413,22 @@ export async function listTaskAttachments(
 
 export const downloadTaskAttachmentInput = z.object({
   fileDownload: z
-    .string()
-    .describe(
-      'The attachment\'s `mediaFile.fileDownload` URL, exactly as returned by list_task_attachments or ' +
-        'get_task (includeAttachments: true).',
-    ),
+    .string().describe('mediaFile.fileDownload from list_task_attachments or get_task.'),
   fileName: z
     .string()
-    .optional()
-    .describe(
-      'The attachment\'s `mediaFile.name`, used to name the cached file (and, for search_file_content, to infer ' +
-        'its format from the extension). Defaults to the URL\'s last path segment if omitted.',
-    ),
+    .optional().describe('mediaFile.name; sets the file extension.'),
   maxInlineBytes: z
     .number()
     .int()
     .positive()
     .max(HARD_MAX_INLINE_BYTES)
-    .optional()
-    .describe(
-      'Images only: raise the inline-streaming size cap for this call (default 10 MB, hard ceiling 500 MB/' +
-        '524288000 bytes). Only set this when the user has explicitly asked for a large image to be streamed ' +
-        'back rather than left as a local path — most calls should omit it.',
-    ),
+    .optional().describe('Images: inline size cap (default 10 MB). Set only when the user asks.'),
   maxInlineChars: z
     .number()
     .int()
     .positive()
     .max(HARD_MAX_INLINE_CHARS)
-    .optional()
-    .describe(
-      'PDF/Word/Excel/Markdown/HTML only: raise the extracted-text character cap for this call (default 40,000, ' +
-        'hard ceiling 2,000,000). Only set this when the user has explicitly asked for more of a large attachment ' +
-        'streamed back — most calls should omit it.',
-    ),
+    .optional().describe('Documents: extracted-text cap (default 40,000 chars). Set only when the user asks.'),
 });
 export type DownloadTaskAttachmentInput = z.infer<typeof downloadTaskAttachmentInput>;
 

@@ -60,7 +60,7 @@ export async function listFolders(
 export const searchFoldersByNameInput = z.object({
   projectId: z.string(),
   fileAreaId: z.string(),
-  query: z.string().describe('Text to look for anywhere in the folder name (case-insensitive, no exact match required).'),
+  query: z.string().describe('Case-insensitive substring of the folder name.'),
   ...pageInput,
 });
 export type SearchFoldersByNameInput = z.infer<typeof searchFoldersByNameInput>;
@@ -95,7 +95,7 @@ export async function getFolder(client: DaluxClient, args: GetFolderInput) {
 
 export const getFolderByPathInput = z.object({
   projectId: z.string(),
-  path: z.string().describe('Full path starting with the file area name, e.g. "Files/4_Design/C07_Geometry".'),
+  path: z.string().describe('e.g. "Files/4_Design/C07_Geometry".'),
 });
 export type GetFolderByPathInput = z.infer<typeof getFolderByPathInput>;
 
@@ -110,17 +110,14 @@ const DEFAULT_TREE_DEPTH = 3;
 export const getFolderTreeInput = z.object({
   projectId: z.string(),
   fileAreaId: z.string(),
-  folderId: z.string().optional().describe('Start the tree at this folder instead of the file area root.'),
+  folderId: z.string().optional().describe('Start folder (default: file area root).'),
   maxDepth: z
     .number()
     .int()
     .min(1)
     .max(50)
     .optional()
-    .describe(
-      `Folder levels below the start folder to include (default ${DEFAULT_TREE_DEPTH}). A folder cut off by the ` +
-        'limit reports childCount instead of children; call again with its id as folderId to go deeper.',
-    ),
+    .describe(`Levels below the start folder (default ${DEFAULT_TREE_DEPTH}). Cut-off folders report childCount.`),
 });
 export type GetFolderTreeInput = z.infer<typeof getFolderTreeInput>;
 
@@ -176,7 +173,7 @@ export const listFilesInFolderInput = z.object({
   fileAreaId: z.string(),
   folderId: z.string(),
   ...pageInput,
-  fields: fieldsInput(FILE_FIELDS),
+  fields: fieldsInput,
 });
 export type ListFilesInFolderInput = z.infer<typeof listFilesInFolderInput>;
 
@@ -198,7 +195,7 @@ export const listFilesInput = z.object({
   projectId: z.string(),
   fileAreaId: z.string(),
   ...pageInput,
-  fields: fieldsInput(FILE_FIELDS),
+  fields: fieldsInput,
 });
 export type ListFilesInput = z.infer<typeof listFilesInput>;
 
@@ -215,9 +212,9 @@ export async function listFiles(
 export const searchFilesByNameInput = z.object({
   projectId: z.string(),
   fileAreaId: z.string(),
-  query: z.string().describe('Text to look for anywhere in the file name (case-insensitive, no exact match required).'),
+  query: z.string().describe('Case-insensitive substring of the file name.'),
   ...pageInput,
-  fields: fieldsInput(FILE_FIELDS),
+  fields: fieldsInput,
 });
 export type SearchFilesByNameInput = z.infer<typeof searchFilesByNameInput>;
 

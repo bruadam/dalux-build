@@ -21,14 +21,10 @@ const scopeShape = {
   projectId: z.string(),
   typeId: z
     .string()
-    .optional()
-    .describe('Restrict the index to tasks of this task type ID. Ignored if filter is also set.'),
+    .optional().describe('Only tasks of this type. Ignored if filter is set.'),
   filter: z
     .string()
-    .optional()
-    .describe(
-      'Raw OData $filter expression narrowing which tasks are indexed (same syntax as list_project_tasks). Takes precedence over typeId.',
-    ),
+    .optional().describe('OData $filter (see list_project_tasks). Overrides typeId.'),
 };
 
 function scopeFrom(args: { projectId: string; typeId?: string; filter?: string }): TaskIndexScope {
@@ -39,7 +35,7 @@ function scopeFrom(args: { projectId: string; typeId?: string; filter?: string }
 
 export const buildTaskIndexInput = z.object({
   ...scopeShape,
-  refresh: z.boolean().optional().describe('Re-render and re-embed every task, ignoring cached revisions.'),
+  refresh: z.boolean().optional().describe('Rebuild everything.'),
 });
 export type BuildTaskIndexInput = z.infer<typeof buildTaskIndexInput>;
 
@@ -52,15 +48,13 @@ export async function buildTaskIndex(client: DaluxClient, args: BuildTaskIndexIn
 
 export const searchTaskIndexInput = z.object({
   query: z
-    .string()
-    .describe('What to look for, in natural language — matched against task fields and change history together.'),
+    .string().describe('Natural-language query.'),
   indexId: z
     .string()
-    .optional()
-    .describe('Index to search, as returned by build_task_index. Omit to address it by scope instead.'),
-  projectId: z.string().optional().describe('With no indexId: address the index by scope instead.'),
-  typeId: z.string().optional().describe('Must match the value the index was built with.'),
-  filter: z.string().optional().describe('Must match the value the index was built with.'),
+    .optional().describe('From build_task_index; or give the scope instead.'),
+  projectId: z.string().optional().describe('Or address the index by scope.'),
+  typeId: z.string().optional().describe('As at build time.'),
+  filter: z.string().optional().describe('As at build time.'),
   topK: z.number().int().min(1).max(50).optional().describe('Max passages to return (default 10).'),
   perTaskLimit: z
     .number()
@@ -103,7 +97,7 @@ export async function listTaskIndexes() {
 // ---------- drop_task_index ----------
 
 export const dropTaskIndexInput = z.object({
-  indexId: z.string().describe('The index to delete, as reported by list_task_indexes.'),
+  indexId: z.string(),
 });
 export type DropTaskIndexInput = z.infer<typeof dropTaskIndexInput>;
 

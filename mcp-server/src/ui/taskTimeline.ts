@@ -47,26 +47,25 @@ export const viewTasksTimelineInput = z.object({
   projectId: z.string(),
   taskIds: z
     .array(z.string())
-    .min(1)
-    .describe('IDs of the selected tasks to render on the timeline (e.g. picked from list_project_tasks).'),
+    .min(1).describe('Task IDs to show.'),
 });
 export type ViewTasksTimelineInput = z.infer<typeof viewTasksTimelineInput>;
 
 const timelineTaskSchema = z.object({
   taskId: z.string(),
-  label: z.string().describe('Human-friendly row label: the task number, falling back to its ID.'),
+  label: z.string(),
   title: z.string().optional(),
   status: z.string().optional(),
-  created: z.string().optional().describe('ISO 8601 timestamp the task was created.'),
-  deadline: z.string().optional().describe('ISO 8601 timestamp the task is due.'),
+  created: z.string().optional(),
+  deadline: z.string().optional(),
 });
 export type TimelineTask = z.infer<typeof timelineTaskSchema>;
 
 const viewTasksTimelineOutput = z.object({
-  available: z.boolean().describe('Whether at least one selected task loaded.'),
+  available: z.boolean(),
   tasks: z.array(timelineTaskSchema).optional(),
-  skipped: z.array(z.string()).optional().describe('Task IDs that could not be loaded.'),
-  message: z.string().optional().describe('Human-readable explanation when available is false, or a note about skipped tasks.'),
+  skipped: z.array(z.string()).optional(),
+  message: z.string().optional(),
 });
 
 function normalizeTask(taskId: string, raw: unknown): TimelineTask {
@@ -105,9 +104,7 @@ export function registerTaskTimeline(server: McpServer, client: DaluxClient): vo
     'view_tasks_timeline',
     {
       title: 'View Tasks Timeline',
-      description:
-        'Render an interactive lifecycle timeline (a Gantt-style chart of created date to deadline, colored by status) ' +
-        'for a specific set of tasks from a Dalux project. Pick task IDs from list_project_tasks or get_task first.',
+      description: 'Show a timeline (created to deadline, by status) of selected tasks in the chat.',
       inputSchema: viewTasksTimelineInput,
       outputSchema: viewTasksTimelineOutput,
       _meta: { ui: { resourceUri: RESOURCE_URI }, [LEGACY_RESOURCE_URI_META_KEY]: RESOURCE_URI },

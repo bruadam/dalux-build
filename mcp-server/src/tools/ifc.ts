@@ -52,7 +52,7 @@ import { describeSelection, queryExpressIds, saveSelection } from '../ifc/viewer
 const ifcRef = {
   projectId: z.string(),
   fileAreaId: z.string(),
-  fileId: z.string().describe('The file ID of an .ifc file.'),
+  fileId: z.string(),
 };
 
 const NEVER_ABORT = new AbortController().signal;
@@ -142,7 +142,7 @@ export async function ifcDiscoverProperties(client: DaluxClient, args: IfcDiscov
 export const ifcPropertyValuesInput = z.object({
   ...ifcRef,
   type: z.string().describe('IFC type, e.g. "IfcColumn".'),
-  property: z.string().describe('Full "Pset.Property" path, e.g. "Tekla Quantity.Weight".'),
+  property: z.string().describe('e.g. "Tekla Quantity.Weight".'),
 });
 export type IfcPropertyValuesInput = z.infer<typeof ifcPropertyValuesInput>;
 
@@ -170,12 +170,11 @@ export const ifcQueryElementsInput = z.object({
   type: z.string().optional().describe('IFC type, e.g. "IfcColumn". Includes subtypes.'),
   property: z
     .object({
-      path: z.string().describe('Full "Pset.Property" path, e.g. "Tekla Quantity.Weight".'),
+      path: z.string().describe('e.g. "Tekla Quantity.Weight".'),
       op: z.enum(['=', '!=', '>', '<', '>=', '<=', 'contains', 'exists', 'matches']),
       value: z.union([z.string(), z.number(), z.boolean()]).optional().describe('Omit only for "exists".'),
     })
-    .optional()
-    .describe('Property filter. Handles pset/property names containing spaces.'),
+    .optional(),
   limit: z.number().int().min(1).max(500).optional().describe('Max elements to return (default 50).'),
 });
 export type IfcQueryElementsInput = z.infer<typeof ifcQueryElementsInput>;
@@ -222,8 +221,7 @@ export const ifcScheduleInput = z.object({
   type: z.string().describe('IFC type to tabulate, e.g. "IfcColumn".'),
   columns: z
     .array(z.string())
-    .min(1)
-    .describe('Columns: plain attributes (GlobalId, Name, Type) or "Pset.Property" paths from ifc_discover_properties.'),
+    .min(1).describe('Attributes (GlobalId, Name, Type) or "Pset.Property" paths.'),
   previewRows: z.number().int().min(1).max(50).optional().describe('Rows to inline in the response (default 10).'),
 });
 export type IfcScheduleInput = z.infer<typeof ifcScheduleInput>;
@@ -280,7 +278,7 @@ export async function ifcClashRulesList(_client: DaluxClient, _args: IfcClashRul
 }
 
 export const ifcClashRulesSaveInput = z.object({
-  id: z.string().optional().describe('Rule id to update. Omit to create a new rule (id is derived from name). May match a built-in id to override it.'),
+  id: z.string().optional().describe('Omit to create (id derived from name).'),
   name: z.string().describe('Rule name, e.g. "MEP vs Structure" or "VENTxSTR".'),
   description: z.string().optional(),
   a: z.string().describe('Type selector for set A, e.g. "IfcDuct*|IfcPipe*".'),
@@ -289,7 +287,7 @@ export const ifcClashRulesSaveInput = z.object({
   tolerance: z.number().optional().describe('Penetration tolerance in metres (hard mode).'),
   clearance: z.number().optional().describe('Required gap in metres (clearance mode).'),
   severity: z.enum(['critical', 'major', 'minor', 'info']).optional(),
-  reportTouch: z.boolean().optional().describe('Report touch-classified results instead of suppressing them.'),
+  reportTouch: z.boolean().optional().describe('Report touching elements too.'),
 });
 export type IfcClashRulesSaveInput = z.infer<typeof ifcClashRulesSaveInput>;
 
@@ -299,7 +297,7 @@ export async function ifcClashRulesSave(_client: DaluxClient, args: IfcClashRule
 }
 
 export const ifcClashRulesDeleteInput = z.object({
-  id: z.string().describe('Id of the custom rule to delete (see ifc_clash_rules_list). Built-in rules cannot be deleted.'),
+  id: z.string().describe('Custom rule id.'),
 });
 export type IfcClashRulesDeleteInput = z.infer<typeof ifcClashRulesDeleteInput>;
 
@@ -312,7 +310,7 @@ export async function ifcClashRulesDelete(_client: DaluxClient, args: IfcClashRu
 // ---------- ifc_clash_start / ifc_clash_result ----------
 
 const propertyFilter = z.object({
-  path: z.string().describe('Full "Pset.Property" path, e.g. "Tekla Quantity.Weight".'),
+  path: z.string().describe('e.g. "Tekla Quantity.Weight".'),
   op: z.enum(['=', '!=', '>', '<', '>=', '<=', 'contains', 'exists', 'matches']),
   value: z.union([z.string(), z.number(), z.boolean()]).optional().describe('Omit only for "exists".'),
 });
@@ -320,21 +318,16 @@ const propertyFilter = z.object({
 export const ifcClashStartInput = z.object({
   projectId: z.string(),
   models: z
-    .array(z.object({ fileAreaId: z.string(), fileId: z.string().describe('The file ID of an .ifc file.') }))
-    .min(1)
-    .describe(
-      'IFC files to clash, all from projectId. One entry self-clashes/pairwise-clashes within that model. ' +
-        'Two or more clash ACROSS models too (e.g. a structure IFC vs a separately-exported MEP IFC) — assumes ' +
-        'they already share one coordinate system.',
-    ),
-  ruleIds: z.array(z.string()).optional().describe('Catalog rule ids to run (see ifc_clash_rules_list, e.g. the built-in "MEPxSTR"). Combine with `rule` for an ad-hoc rule in the same run.'),
+    .array(z.object({ fileAreaId: z.string(), fileId: z.string() }))
+    .min(1).describe('IFC files from projectId. Two or more also clash across models (shared coordinates assumed).'),
+  ruleIds: z.array(z.string()).optional().describe('Catalog rule ids, e.g. "MEPxSTR".'),
   rule: z
     .object({
       name: z.string().optional(),
-      a: z.string().optional().describe('Type selector for set A, e.g. "IfcDuct*|IfcPipe*". Defaults to all elements.'),
-      aFilter: propertyFilter.optional().describe('Restrict side A further by a property value. Requires `a` to be one exact IFC type (no "*"/"|"), since the filter is resolved per-type against each model\'s own property sets.'),
+      a: z.string().optional().describe('Types for side A, e.g. "IfcDuct*|IfcPipe*". Default all.'),
+      aFilter: propertyFilter.optional().describe('Property filter on side A; needs one exact type in a.'),
       b: z.string().optional().describe('Type selector for set B. Omit to self-clash within A.'),
-      bFilter: propertyFilter.optional().describe('Restrict side B further by a property value. Requires `b` to be one exact IFC type.'),
+      bFilter: propertyFilter.optional().describe('Property filter on side B; needs one exact type in b.'),
       mode: z.enum(['hard', 'clearance']).optional().describe('hard = interpenetration (default); clearance = minimum gap.'),
       tolerance: z.number().optional().describe('Penetration tolerance in metres (hard mode).'),
       clearance: z.number().optional().describe('Required gap in metres (clearance mode).'),
@@ -446,7 +439,7 @@ export async function ifcClashStart(client: DaluxClient, args: IfcClashStartInpu
 }
 
 export const ifcClashResultInput = z.object({
-  jobId: z.string().describe('The jobId returned by ifc_clash_start.'),
+  jobId: z.string(),
   topN: z.number().int().min(1).max(100).optional().describe('Clashes to inline, deepest first (default 20).'),
 });
 export type IfcClashResultInput = z.infer<typeof ifcClashResultInput>;
@@ -497,7 +490,7 @@ export async function ifcVolumesStart(client: DaluxClient, args: IfcVolumesStart
 }
 
 export const ifcVolumesResultInput = z.object({
-  jobId: z.string().describe('The jobId returned by ifc_volumes_start.'),
+  jobId: z.string(),
 });
 export type IfcVolumesResultInput = z.infer<typeof ifcVolumesResultInput>;
 
@@ -512,32 +505,25 @@ export async function ifcVolumesResult(_client: DaluxClient, args: IfcVolumesRes
 
 const diffSide = z.object({
   fileAreaId: z.string(),
-  fileId: z.string().describe('The file ID of an .ifc file.'),
+  fileId: z.string(),
 });
 
 export const ifcDiffInput = z.object({
-  projectId: z.string().describe('The Dalux project ID both files belong to.'),
+  projectId: z.string(),
   base: diffSide.describe('The older/reference revision.'),
   head: diffSide
-    .optional()
-    .describe('The newer revision. Omit and pass editId instead to compare an open edit session against `base`.'),
+    .optional().describe('Newer revision. Or pass editId.'),
   editId: z
     .string()
-    .optional()
-    .describe('Compare an open ifc_edit_start session (with its queued edits) against `base`, instead of a second Dalux file.'),
+    .optional().describe('Compare an open edit session against base.'),
   byContent: z
     .boolean()
-    .optional()
-    .describe(
-      'Also match entities by content, for revisions re-exported from scratch with new GlobalIds — without it a ' +
-        're-GUID reads as the whole model deleted and re-added. Costs a full fingerprint pass. Default false.',
-    ),
+    .optional().describe('Match re-exported elements with new GlobalIds by content. Default false.'),
   propertyChanges: z
     .boolean()
-    .optional()
-    .describe('Also list which properties changed per element (same-GlobalId pairs only). Extracts property sets for every common entity, so it is the expensive option. Default false.'),
+    .optional().describe('List changed properties per element (slow). Default false.'),
   type: z.string().optional().describe('Restrict propertyChanges to one IFC type, e.g. "IfcWall".'),
-  maxElements: z.number().int().min(1).max(500).optional().describe('Cap on elements listed in propertyChanges (default 50). Totals are always reported whole.'),
+  maxElements: z.number().int().min(1).max(500).optional().describe('Max elements in propertyChanges (default 50).'),
 });
 export type IfcDiffInput = z.infer<typeof ifcDiffInput>;
 
@@ -642,36 +628,35 @@ export async function ifcEditStart(client: DaluxClient, args: IfcEditStartInput)
 
 const editSelector = z
   .object({
-    globalIds: z.array(z.string()).optional().describe('Explicit element GlobalIds. Use this or type/where, not both.'),
-    type: z.string().optional().describe('IFC type, e.g. "IfcWall". Includes subtypes.'),
+    globalIds: z.array(z.string()).optional().describe('Use this or type/where, not both.'),
+    type: z.string().optional().describe('e.g. "IfcWall"; includes subtypes.'),
     where: z
       .object({
-        pset: z.string().describe('Property set name (exact, as reported by ifc_discover_properties).'),
+        pset: z.string().describe('Exact name from ifc_discover_properties.'),
         property: z.string(),
         op: z.enum(['=', '!=', '>', '<', '>=', '<=', 'contains', 'exists', 'matches']),
         value: z.union([z.string(), z.number(), z.boolean()]).optional().describe('Omit only for "exists".'),
       })
-      .optional()
-      .describe('Narrow a type selection by a property value.'),
+      .optional(),
   })
-  .describe('Which elements this operation targets.');
+  // An id makes zod emit the selector once under $defs and $ref it from each operation.
+  .meta({ id: 'IfcEditSelector', description: 'Which elements this operation targets.' });
 
 const editOperation = z.discriminatedUnion('kind', [
   z.object({
     kind: z.literal('set_property'),
     select: editSelector,
-    pset: z.string().describe('Property set name. If the element does not already carry it, the set is created as "AI_<pset>".'),
+    pset: z.string().describe('Created as "AI_<pset>" if missing.'),
     property: z.string(),
     value: z.union([z.string(), z.number(), z.boolean(), z.null()]),
     markValue: z
       .boolean()
-      .optional()
-      .describe('Also prefix the value itself with "AI: ". String values only — refused (and reported) on a number or boolean, where it would change the IFC value type and break quantity totals.'),
+      .optional().describe('Prefix string values with "AI: ".'),
   }),
   z.object({
     kind: z.literal('delete_property'),
     select: editSelector,
-    pset: z.string().describe('Exact existing pset name (not AI_-prefixed unless the set really is).'),
+    pset: z.string().describe('Exact existing pset name.'),
     property: z.string(),
   }),
   z.object({
@@ -687,20 +672,20 @@ const editOperation = z.discriminatedUnion('kind', [
   }),
   z.object({
     kind: z.literal('undo'),
-    count: z.number().int().min(1).optional().describe('How many previous operations to revert (default 1). Counted in operations, not in underlying mutations.'),
+    count: z.number().int().min(1).optional().describe('Operations to revert (default 1).'),
   }),
 ]);
 
 export const ifcEditApplyInput = z.object({
-  editId: z.string().describe('The editId from ifc_edit_start.'),
-  operations: z.array(editOperation).min(1).describe('Operations, applied in order. Not atomic: a failure is reported in results[] and does not roll back the ones before it.'),
+  editId: z.string(),
+  operations: z.array(editOperation).min(1).describe('Applied in order; not atomic.'),
   maxElements: z
     .number()
     .int()
     .min(1)
     .max(5000)
     .optional()
-    .describe(`Cap on elements one operation may touch (default ${DEFAULT_MAX_ELEMENTS}). A selector matching more is refused with its count rather than applied.`),
+    .describe(`Max elements per operation (default ${DEFAULT_MAX_ELEMENTS}).`),
 });
 export type IfcEditApplyInput = z.infer<typeof ifcEditApplyInput>;
 
@@ -742,8 +727,8 @@ export async function ifcEditApply(client: DaluxClient, args: IfcEditApplyInput)
 }
 
 export const ifcEditReviewInput = z.object({
-  editId: z.string().describe('The editId from ifc_edit_start.'),
-  maxMutations: z.number().int().min(1).max(500).optional().describe('Cap on raw mutation entries listed (default 50). Counts are always whole.'),
+  editId: z.string(),
+  maxMutations: z.number().int().min(1).max(500).optional().describe('Max mutation entries listed (default 50).'),
 });
 export type IfcEditReviewInput = z.infer<typeof ifcEditReviewInput>;
 
@@ -768,16 +753,12 @@ export async function ifcEditReview(client: DaluxClient, args: IfcEditReviewInpu
 }
 
 export const ifcEditSaveInput = z.object({
-  editId: z.string().describe('The editId from ifc_edit_start.'),
-  fileName: z.string().optional().describe('Base name for the written file. Defaults to the source name; "-AI-edited-<timestamp>.ifc" is always appended.'),
+  editId: z.string(),
+  fileName: z.string().optional().describe('Base file name (default: source name).'),
   confirmed: z
     .boolean()
-    .optional()
-    .describe(
-      'Leave unset to preview exactly what would be written without writing it. Only set true after showing the ' +
-        'user the operation list from the preview and getting their explicit agreement to write that set of changes.',
-    ),
-  discard: z.boolean().optional().describe('Drop the session and everything queued on it instead of saving. Requires confirmed: true.'),
+    .optional().describe('Omit to preview. Set true only after the user approved the preview.'),
+  discard: z.boolean().optional().describe('Discard the session instead (needs confirmed: true).'),
 });
 export type IfcEditSaveInput = z.infer<typeof ifcEditSaveInput>;
 

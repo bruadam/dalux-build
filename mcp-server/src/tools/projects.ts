@@ -8,8 +8,7 @@ import { pageInput, paginateForLlm, type PaginatedForLlm } from '../serialize';
 export const listProjectsInput = z.object({
   updatedAfter: z
     .string()
-    .optional()
-    .describe('ISO 8601 timestamp; only return projects updated after this time.'),
+    .optional().describe('ISO 8601; only projects updated after this.'),
   ...pageInput,
 });
 export type ListProjectsInput = z.infer<typeof listProjectsInput>;
@@ -39,7 +38,7 @@ export async function getProject(client: DaluxClient, args: GetProjectInput) {
 // ---------- find_project_by_name ----------
 
 export const findProjectByNameInput = z.object({
-  projectName: z.string().describe('The exact project name to search for.'),
+  projectName: z.string(),
 });
 export type FindProjectByNameInput = z.infer<typeof findProjectByNameInput>;
 
@@ -54,7 +53,7 @@ export async function findProjectByName(client: DaluxClient, args: FindProjectBy
 // ---------- search_projects_by_name ----------
 
 export const searchProjectsByNameInput = z.object({
-  query: z.string().describe('Text to look for anywhere in the project name (case-insensitive, no exact match required).'),
+  query: z.string().describe('Case-insensitive substring of the project name.'),
   ...pageInput,
 });
 export type SearchProjectsByNameInput = z.infer<typeof searchProjectsByNameInput>;

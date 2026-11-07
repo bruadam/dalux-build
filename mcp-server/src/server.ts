@@ -37,7 +37,8 @@ export const TOOLS = [
   // Files & folders
   tool({
     name: 'list_file_areas',
-    description: 'List the file areas (e.g. Files, Shared files, Published files) available on a Dalux project.',
+    description:
+      'List the file areas of a project.',
     inputSchema: files.listFileAreasInput,
     handler: files.listFileAreas,
   }),
@@ -56,7 +57,7 @@ export const TOOLS = [
   tool({
     name: 'search_folders_by_name',
     description:
-      'Find folders in a file area whose name contains a substring, case-insensitively — for when only part of the folder name is known. Use get_folder_by_path when the full path is already known.',
+      'Find folders whose name contains a substring (case-insensitive).',
     inputSchema: files.searchFoldersByNameInput,
     handler: files.searchFoldersByName,
   }),
@@ -68,13 +69,15 @@ export const TOOLS = [
   }),
   tool({
     name: 'get_folder_by_path',
-    description: 'Resolve a folder from a full path starting with the file area name, e.g. "Files/4_Design/C07_Geometry".',
+    description:
+      'Resolve a folder from its full path, e.g. "Files/4_Design/C07_Geometry".',
     inputSchema: files.getFolderByPathInput,
     handler: files.getFolderByPath,
   }),
   tool({
     name: 'get_folder_tree',
-    description: 'Get the folder tree (ids and names only, no files, depth-limited) for a file area or below one folder — useful for navigation before drilling into a specific folder.',
+    description:
+      'Folder tree (ids and names, depth-limited) of a file area or below one folder.',
     inputSchema: files.getFolderTreeInput,
     handler: files.getFolderTree,
   }),
@@ -93,33 +96,28 @@ export const TOOLS = [
   tool({
     name: 'search_files_by_name',
     description:
-      'Find files in a file area whose name contains a substring, case-insensitively — for when only part of the file name is known.',
+      'Find files whose name contains a substring (case-insensitive).',
     inputSchema: files.searchFilesByNameInput,
     handler: files.searchFilesByName,
   }),
   tool({
     name: 'get_file',
-    description: 'Get file metadata by ID (does not download file content).',
+    description:
+      'Get file metadata (no content).',
     inputSchema: files.getFileInput,
     handler: files.getFile,
   }),
   tool({
     name: 'download_file',
     description:
-      'Download a file and get its content to the chat, not just a local path. Always returns downloadUrl, a ' +
-      'single-use link (valid ~15 min, only reachable from the same machine this server runs on) the user can ' +
-      'click to fetch the actual file. An image also comes back as an actual image (up to maxInlineBytes, ' +
-      'default 10 MB, hard ceiling 500 MB). A PDF/Word/Excel/Markdown/HTML file also comes back as its extracted ' +
-      'text (up to maxInlineChars, default 40,000 characters, hard ceiling 2,000,000) — raw document bytes ' +
-      'cannot usefully reach the model, so text is what streams instead. Other formats (zip, dwg, ifc, ...) get ' +
-      'the link and the local cache path only.',
+      'Get a file into the chat: extracted text for documents, an image for images, plus a short-lived local downloadUrl. Text is capped at 40,000 characters by default.',
     inputSchema: documents.downloadFileInput,
     handler: documents.downloadFileToChat,
   }),
   tool({
     name: 'search_file_content',
     description:
-      'Search inside one document for a natural-language query. Reads PDFs (including drawings, whose text layer holds title blocks, room names and annotations), Word (.docx/.docm) and Excel (.xlsx/.xlsm) files, and returns the best-matching passages with a citable location — page number, heading, or sheet and row range.',
+      'Search one document (PDF incl. drawings, Word, Excel, CSV, Markdown, HTML) and return the best passages with page, heading or sheet location.',
     inputSchema: documents.searchFileContentInput,
     handler: documents.searchFileContent,
   }),
@@ -128,14 +126,14 @@ export const TOOLS = [
     // working; it is the same handler, which now reads more than PDFs.
     name: 'search_pdf_content',
     description:
-      'Deprecated alias for search_file_content, which also reads Word and Excel files. Searches one document and returns the best-matching passages.',
+      'Deprecated alias for search_file_content.',
     inputSchema: documents.searchFileContentInput,
     handler: documents.searchFileContent,
   }),
   tool({
     name: 'render_pdf_page',
     description:
-      'Rasterize one page of a PDF (drawing exports included) to an image, for when the chat needs to see the sheet — symbols, dimension lines, hatching and other linework a text search cannot find because none of it is real text. Prefer search_file_content when the text layer already has the answer; this costs image tokens that a text search does not.',
+      'Render one PDF page as an image, to see linework a text search cannot find. Try search_file_content first; images cost more tokens.',
     inputSchema: drawings.renderPdfPageInput,
     handler: drawings.renderPdfPage,
   }),
@@ -144,26 +142,28 @@ export const TOOLS = [
   tool({
     name: 'build_file_area_index',
     description:
-      'Build (or incrementally refresh) a temporary local search index over the documents in a Dalux file area or folder, so they can be searched together. Downloads and extracts PDFs, Word and Excel files into a disposable index in the OS temp directory — nothing in Dalux is modified. Large scopes are indexed over several calls: if the result says complete=false, call it again with the same arguments.',
+      'Build or refresh a local search index over the documents of a file area or folder. If complete=false, call again with the same arguments.',
     inputSchema: fileAreaIndex.buildFileAreaIndexInput,
     handler: fileAreaIndex.buildFileAreaIndex,
   }),
   tool({
     name: 'search_file_area',
     description:
-      'Search across every document in an index built by build_file_area_index, returning the best-matching passages from all of them with the file and location to cite. Use this for questions that span documents ("which specifications mention fire rating EI60?"); use search_file_content when the document is already known.',
+      'Search all documents in a build_file_area_index index and return passages with file and location.',
     inputSchema: fileAreaIndex.searchFileAreaInput,
     handler: fileAreaIndex.searchFileArea,
   }),
   tool({
     name: 'list_file_area_indexes',
-    description: 'List the temporary document indexes currently on this server, with their scope, size and freshness.',
+    description:
+      'List the local document indexes on this server.',
     inputSchema: fileAreaIndex.listFileAreaIndexesInput,
     handler: fileAreaIndex.listFileAreaIndexes,
   }),
   tool({
     name: 'drop_file_area_index',
-    description: 'Delete a temporary document index from this server\'s local cache. Does not touch anything in Dalux.',
+    description:
+      'Delete a local document index. Dalux is not touched.',
     inputSchema: fileAreaIndex.dropFileAreaIndexInput,
     handler: fileAreaIndex.dropFileAreaIndex,
   }),
@@ -172,33 +172,35 @@ export const TOOLS = [
   tool({
     name: 'check_document_consistency',
     description:
-      'Find statements in different documents of a Dalux file area or folder that contradict each other: fire class, BoQ quantity, handover date, standard edition, drawing revision. Reads PDF, Word, Excel and CSV; read-only. If complete=false, call again with the same arguments. Verdict "candidate" means unreviewed: judge it with the document-consistency-review skill (get_skill).',
+      'Find statements that contradict each other across the documents of a file area or folder (fire class, quantities, dates, standard editions, revisions). If complete=false, call again with the same arguments. Review "candidate" findings with get_skill document-consistency-review.',
     inputSchema: consistency.checkDocumentConsistencyInput,
     handler: consistency.checkDocumentConsistency,
   }),
   tool({
     name: 'list_inconsistencies',
     description:
-      'Page through the findings of a check_document_consistency report, filtered by severity, type or file. Each statement has file, location and verbatim quote.',
+      'Page through the findings of a consistency report, filtered by severity, type or file.',
     inputSchema: consistency.listInconsistenciesInput,
     handler: consistency.listInconsistencies,
   }),
   tool({
     name: 'export_inconsistency_report',
     description:
-      'Export a consistency report as xlsx (one row per statement), docx (summary and table) or md, and return a download link. The file is written locally and never uploaded to Dalux.',
+      'Export a consistency report (xlsx, docx, md or annotated-pdf) and return a download link.',
     inputSchema: consistency.exportInconsistencyReportInput,
     handler: consistency.exportInconsistencyReport,
   }),
   tool({
     name: 'list_consistency_reports',
-    description: 'List the document consistency reports currently on this server, with their scope, progress and number of findings.',
+    description:
+      'List the consistency reports on this server.',
     inputSchema: consistency.listConsistencyReportsInput,
     handler: consistency.listConsistencyReports,
   }),
   tool({
     name: 'drop_consistency_report',
-    description: 'Delete a document consistency report from this server\'s local cache. Does not touch anything in Dalux.',
+    description:
+      'Delete a consistency report from the local cache. Dalux is not touched.',
     inputSchema: consistency.dropConsistencyReportInput,
     handler: consistency.dropConsistencyReport,
   }),
@@ -207,26 +209,28 @@ export const TOOLS = [
   tool({
     name: 'build_task_index',
     description:
-      'Build (or incrementally refresh) a temporary local search index over a project\'s tasks, combining each task\'s own fields, change history, and attachment text (pdf/docx/xlsx — downloaded and extracted, not just an extra API call) into one searchable document per task. Nothing in Dalux is modified. A task whose content, change history, and attachment list are all unchanged since the last build is skipped (and its attachments are not re-downloaded), so re-running after a few edits is cheap — the first build of a project with many/large attachments is the expensive one.',
+      'Build or refresh a local search index over a project\'s tasks, their change history and attachment text.',
     inputSchema: taskIndex.buildTaskIndexInput,
     handler: taskIndex.buildTaskIndex,
   }),
   tool({
     name: 'search_task_index',
     description:
-      'Search across every task in an index built by build_task_index, returning the best-matching passages (from a task\'s fields, its change history, or an attachment\'s text) with the task to cite. Use this for questions that span many tasks ("which tasks mention a crack in a beam?", "what changed on tasks assigned to X last month?"); use search_tasks for a one-off question that does not warrant building an index first.',
+      'Search all tasks in a build_task_index index and return passages with the task to cite.',
     inputSchema: taskIndex.searchTaskIndexInput,
     handler: taskIndex.searchTaskIndex,
   }),
   tool({
     name: 'list_task_indexes',
-    description: 'List the temporary task indexes currently on this server, with their scope, size and freshness.',
+    description:
+      'List the local task indexes on this server.',
     inputSchema: taskIndex.listTaskIndexesInput,
     handler: taskIndex.listTaskIndexes,
   }),
   tool({
     name: 'drop_task_index',
-    description: 'Delete a temporary task index from this server\'s local cache. Does not touch anything in Dalux.',
+    description:
+      'Delete a local task index. Dalux is not touched.',
     inputSchema: taskIndex.dropTaskIndexInput,
     handler: taskIndex.dropTaskIndex,
   }),
@@ -239,14 +243,14 @@ export const TOOLS = [
   tool({
     name: 'search_docs',
     description:
-      'Search the reference-docs corpus (laws, guidelines, standards, procedures) for a natural-language query, returning the best-matching passages with the document path and location to cite. Use this for "what do our standards/guidelines/laws say about X" questions. If it errors saying the corpus isn\'t indexed yet, that\'s a server setup step (`npm run docs:build`), not something to retry.',
+      'Search the reference-docs corpus (laws, standards, guidelines, procedures) and return passages with path and location.',
     inputSchema: docsIndex.searchDocsInput,
     handler: docsIndex.searchDocs,
   }),
   tool({
     name: 'list_docs_indexes',
     description:
-      'Show the reference-docs index currently on this server — document/chunk counts and when it was last built. Read-only; does not trigger a rebuild (that\'s the server-side `npm run docs:build` step).',
+      'Show the reference-docs index: counts and build time. Read-only.',
     inputSchema: docsIndex.listDocsIndexesInput,
     handler: docsIndex.listDocsIndexes,
   }),
@@ -255,56 +259,42 @@ export const TOOLS = [
   tool({
     name: 'list_project_tasks',
     description:
-      'List tasks on a project, optionally filtered by type/OData filter and/or field conditions. Dalux\'s ' +
-        '$filter only supports a single `data/type/typeId eq \'<id>\'` expression (no `and`/`or`, no comparisons, ' +
-        'no other fields) — use `conditions` for anything else (dates, status, custom fields, ...), applied ' +
-        'client-side against each task\'s own JSON fields.',
+      'List a project\'s tasks, one page at a time. Dalux\'s OData filter accepts only `data/type/typeId eq \'<id>\'`; use conditions for any other filter.',
     inputSchema: tasks.listProjectTasksInput,
     handler: tasks.listProjectTasks,
   }),
   tool({
     name: 'search_tasks',
     description:
-      'Ranked keyword/natural-language search across a project\'s tasks — no OData syntax needed. Matches against subject, description, custom fields, type, status and (optionally) change history and attachment text (pdf/docx/xlsx), returning the best-matching tasks with a relevance score. Supports `conditions` for field-based filtering (dates, status, custom fields, ...) applied client-side, since Dalux\'s own $filter only supports typeId eq. For repeated searches over the same project, build_task_index + search_task_index is cheaper — it downloads and extracts each attachment once instead of on every call.',
+      'Ranked keyword search over a project\'s tasks (subject, description, fields; optionally change history and attachments).',
     inputSchema: tasks.searchTasksInput,
     handler: tasks.searchTasks,
   }),
   tool({
     name: 'get_task',
     description:
-      'Get a single task by ID. Returns only the task\'s own structured fields by default (subject, type, custom ' +
-        'fields) — set includeChanges and/or includeAttachments to also pull that task\'s change history and ' +
-        'attachments (filtered client-side, since Dalux has no per-task filter for those).',
+      'Get one task; optionally with its change history and attachments.',
     inputSchema: tasks.getTaskInput,
     handler: tasks.getTask,
   }),
   tool({
     name: 'list_task_changes',
     description:
-      'List change history entries for tasks on a project, paginated (default 50, max 200 per call — a ' +
-        'project-wide change log can otherwise be huge). Pass taskId to scope to one task (filtered client-side ' +
-        'after fetching the full updatedAfter window — Dalux has no server-side per-task filter).',
+      'List task change history on a project, one page at a time; optionally for one task.',
     inputSchema: tasks.listTaskChangesInput,
     handler: tasks.listTaskChanges,
   }),
   tool({
     name: 'list_task_attachments',
     description:
-      'List task attachments on a project, paginated (default 50, max 200 per call — a project-wide attachment ' +
-        'list can otherwise be huge). Pass taskId to scope to one task (filtered client-side after fetching the ' +
-        'full updatedAfter window — Dalux has no server-side per-task filter). Each item\'s mediaFile.fileDownload ' +
-        'is a direct, signed URL — pass it to download_task_attachment to fetch the actual file content.',
+      'List task attachments on a project, one page at a time; optionally for one task. Pass mediaFile.fileDownload to download_task_attachment.',
     inputSchema: tasks.listTaskAttachmentsInput,
     handler: tasks.listTaskAttachments,
   }),
   tool({
     name: 'download_task_attachment',
     description:
-      'Download a task attachment and get its content to the chat — the same downloadUrl/image/extracted-text ' +
-        'behaviour as download_file (see its description for the size caps). Pass the mediaFile.fileDownload ' +
-        'URL from list_task_attachments or get_task (includeAttachments: true) — unlike ordinary project files, ' +
-        'task attachments have no fileId/fileArea to look up through get_file/download_file; this signs the ' +
-        'request with the same Dalux API key instead.',
+      'Get a task attachment into the chat, like download_file. Takes the mediaFile.fileDownload URL.',
     inputSchema: tasks.downloadTaskAttachmentInput,
     handler: tasks.downloadTaskAttachmentToChat,
   }),
@@ -312,7 +302,8 @@ export const TOOLS = [
   // Projects
   tool({
     name: 'list_projects',
-    description: 'List projects accessible to the configured API key.',
+    description:
+      'List the projects the API key can access.',
     inputSchema: projects.listProjectsInput,
     handler: projects.listProjects,
   }),
@@ -324,14 +315,15 @@ export const TOOLS = [
   }),
   tool({
     name: 'find_project_by_name',
-    description: 'Find a project ID by its exact display name.',
+    description:
+      'Find a project by its exact name.',
     inputSchema: projects.findProjectByNameInput,
     handler: projects.findProjectByName,
   }),
   tool({
     name: 'search_projects_by_name',
     description:
-      'Find projects whose name contains a substring, case-insensitively — for when only part of the project name is known, or its exact casing isn\'t. Can return several matches, not just one.',
+      'Find projects whose name contains a substring (case-insensitive).',
     inputSchema: projects.searchProjectsByNameInput,
     handler: projects.searchProjectsByName,
   }),
@@ -379,7 +371,8 @@ export const TOOLS = [
   }),
   tool({
     name: 'list_test_plan_registrations',
-    description: 'List test plan registrations (completed/pending checks) on a project.',
+    description:
+      'List test plan registrations on a project.',
     inputSchema: quality.listTestPlanRegistrationsInput,
     handler: quality.listTestPlanRegistrations,
   }),
@@ -408,88 +401,91 @@ export const TOOLS = [
   tool({
     name: 'ifc_model_info',
     description:
-      'Summarise an IFC file from Dalux: entity counts by type, units, materials, and how many products carry property sets.',
+      'Summarise an IFC file: entity counts, units, materials, property set coverage.',
     inputSchema: ifc.ifcModelInfoInput,
     handler: ifc.ifcModelInfo,
   }),
   tool({
     name: 'ifc_discover_properties',
     description:
-      'List the property sets and properties each IFC type actually carries, with coverage counts. Call this before ifc_schedule or ifc_property_values — pset names are exporter-specific and guessing one yields blank columns rather than an error.',
+      'List the property sets and properties each IFC type carries. Call before ifc_schedule, ifc_property_values or ifc_query_elements: pset names differ per exporter.',
     inputSchema: ifc.ifcDiscoverPropertiesInput,
     handler: ifc.ifcDiscoverProperties,
   }),
   tool({
     name: 'ifc_property_values',
-    description: 'Value histogram for one "Pset.Property" across an IFC type — useful for picking a filter value.',
+    description:
+      'Value histogram of one "Pset.Property" across an IFC type.',
     inputSchema: ifc.ifcPropertyValuesInput,
     handler: ifc.ifcPropertyValues,
   }),
   tool({
     name: 'ifc_query_elements',
-    description: 'Filter IFC elements by type and/or a property comparison (= != > < >= <= contains exists matches). Returns a selectionId for view_model_3d.',
+    description:
+      'Filter IFC elements by type and property. Returns a selectionId for view_model_3d.',
     inputSchema: ifc.ifcQueryElementsInput,
     handler: ifc.ifcQueryElements,
   }),
   tool({
     name: 'ifc_schedule',
     description:
-      'Build a schedule / quantity-takeoff table for an IFC type from explicit "Pset.Property" columns, written to CSV. Values are in the file\'s own units (usually millimetres).',
+      'Quantity take-off table for an IFC type from "Pset.Property" columns, written to CSV. Values are in model units.',
     inputSchema: ifc.ifcScheduleInput,
     handler: ifc.ifcSchedule,
   }),
   tool({
     name: 'ifc_clash_rules_list',
-    description: 'List the clash rule catalog: ifc-lite\'s built-in discipline matrix (MEPxSTR, HVACxARCH, ...) plus any custom rules saved with ifc_clash_rules_save. Call before ifc_clash_start to pick ruleIds.',
+    description:
+      'List the clash rule catalog (built-in and saved rules).',
     inputSchema: ifc.ifcClashRulesListInput,
     handler: ifc.ifcClashRulesList,
   }),
   tool({
     name: 'ifc_clash_rules_save',
-    description: 'Create or update a named rule in the persistent clash rule catalog, so it can be reused across projects via ifc_clash_start\'s ruleIds.',
+    description:
+      'Create or update a rule in the clash rule catalog.',
     inputSchema: ifc.ifcClashRulesSaveInput,
     handler: ifc.ifcClashRulesSave,
   }),
   tool({
     name: 'ifc_clash_rules_delete',
-    description: 'Delete a custom rule from the clash rule catalog by id. Built-in rules cannot be deleted.',
+    description:
+      'Delete a saved clash rule.',
     inputSchema: ifc.ifcClashRulesDeleteInput,
     handler: ifc.ifcClashRulesDelete,
   }),
   tool({
     name: 'ifc_clash_start',
     description:
-      'Start a clash detection run on one or more IFCs from Dalux — pass 2+ models to clash across disciplines exported as separate files. Pick rules from the catalog (ruleIds, see ifc_clash_rules_list) and/or supply one ad-hoc rule, optionally narrowed by a property filter. Returns a jobId immediately — clash meshes every model first and can take minutes. Poll with ifc_clash_result.',
+      'Start clash detection on one or more IFC files. Returns a jobId; poll ifc_clash_result.',
     inputSchema: ifc.ifcClashStartInput,
     handler: ifc.ifcClashStart,
   }),
   tool({
     name: 'ifc_clash_result',
-    description: 'Poll a clash job started by ifc_clash_start; returns a summary plus the deepest clashes once finished.',
+    description:
+      'Poll a clash job; returns a summary and the deepest clashes when done.',
     inputSchema: ifc.ifcClashResultInput,
     handler: ifc.ifcClashResult,
   }),
   tool({
     name: 'ifc_volumes_start',
     description:
-      'Start geometric volume extraction on an IFC file, optionally restricted to one type. Unlike ifc_schedule this reads no property set — it meshes the model and reads back the enclosed volume proved from the tessellated solid, in real cubic metres. Only entities the kernel can prove are a single closed solid get a volume (~71% coverage on a measured corpus); the rest report as absent, not zero. Returns a jobId immediately — meshing can take minutes on a cold model (shares a cache with ifc_clash_start). Poll ifc_volumes_result.',
+      'Start geometric volume extraction (m³ from meshes) on an IFC file. Returns a jobId; poll ifc_volumes_result.',
     inputSchema: ifc.ifcVolumesStartInput,
     handler: ifc.ifcVolumesStart,
   }),
   tool({
     name: 'ifc_volumes_result',
-    description: 'Poll a volume extraction job started by ifc_volumes_start; returns per-type totals (proved volumes only) plus a csvPath with the full per-element table once finished.',
+    description:
+      'Poll a volume job; returns totals per type and a CSV path when done.',
     inputSchema: ifc.ifcVolumesResultInput,
     handler: ifc.ifcVolumesResult,
   }),
   tool({
     name: 'ifc_diff',
     description:
-      'Compare two IFC revisions from Dalux — or an open ifc_edit_start session against the file it came from. ' +
-      'Reports per-type count deltas, added/removed GlobalIds, and optionally (propertyChanges) which properties ' +
-      'changed on each common element. Set byContent when the revisions may have been re-exported from scratch ' +
-      'with new GlobalIds, or a re-GUID reads as the whole model deleted and re-added. Data scope only: ' +
-      'attributes, property sets, quantity sets and type — an element that only moved reads as unchanged.',
+      'Compare two IFC revisions, or an edit session with its source: count deltas, added and removed GlobalIds, optionally changed properties.',
     inputSchema: ifc.ifcDiffInput,
     handler: ifc.ifcDiff,
   }),
@@ -500,42 +496,28 @@ export const TOOLS = [
   tool({
     name: 'ifc_edit_start',
     description:
-      'Open an in-memory edit session on an IFC from Dalux, so its property sets and properties can be changed, ' +
-      'added or deleted. Nothing in Dalux is modified — ever: edits queue in this server\'s memory and ' +
-      'ifc_edit_save writes a new local file the user uploads themselves if they want to. Every property set this ' +
-      'creates is named "AI_<name>" and every change is also recorded on the element in an "AI_Provenance" pset ' +
-      'with the old value, the new value and a timestamp; that marking is mandatory and cannot be disabled. ' +
-      'Returns an editId for ifc_edit_apply / ifc_edit_review / ifc_edit_save.',
+      'Open an in-memory edit session on an IFC file. Dalux is never modified; changes are marked as AI-made. Returns an editId.',
     inputSchema: ifc.ifcEditStartInput,
     handler: ifc.ifcEditStart,
   }),
   tool({
     name: 'ifc_edit_apply',
     description:
-      'Queue edits onto an open session: set_property (creates the pset as "AI_<name>" if the element lacks it, ' +
-      'edits in place if it has it), delete_property, delete_pset, set_attribute, and undo. Target elements by ' +
-      'explicit globalIds or by type narrowed with a property filter — run ifc_discover_properties first, since ' +
-      'pset names are exporter-specific. Operations run in order and are NOT atomic: a failure is reported per ' +
-      'operation and does not roll back earlier ones. Nothing is written to disk or to Dalux until ifc_edit_save.',
+      'Queue property and attribute edits (or undo) on an edit session. Not atomic.',
     inputSchema: ifc.ifcEditApplyInput,
     handler: ifc.ifcEditApply,
   }),
   tool({
     name: 'ifc_edit_review',
     description:
-      'List what is queued on an edit session — the caller-level operation journal plus the underlying ifc-lite ' +
-      'mutations. Use before ifc_edit_save to show the user exactly what they are about to get.',
+      'List the edits queued on a session.',
     inputSchema: ifc.ifcEditReviewInput,
     handler: ifc.ifcEditReview,
   }),
   tool({
     name: 'ifc_edit_save',
     description:
-      'Write an edit session to a NEW local .ifc (with a single-use download link), or discard the session. ' +
-      'Two-step, like report_feedback: call without confirmed first — nothing is written, you get back the exact ' +
-      'list of operations that would be baked in. Show that to the user, get their explicit agreement, then call ' +
-      'again with confirmed: true. The file is never uploaded to Dalux; the source model there is untouched ' +
-      'either way. Set discard: true (also confirmed) to drop the session and its queued edits instead.',
+      'Write the session to a new local .ifc, or discard it. Call without confirmed first, show the preview to the user, and set confirmed: true only after they agree.',
     inputSchema: ifc.ifcEditSaveInput,
     handler: ifc.ifcEditSave,
   }),
@@ -546,14 +528,7 @@ export const TOOLS = [
   tool({
     name: 'report_feedback',
     description:
-      'File a bug report or feature request about this MCP server/tool set as a GitHub issue. Two-step: call ' +
-        'without confirmed (or confirmed: false) first — nothing is posted, you just get back the exact title ' +
-        'and body that would be filed. Show that to the user verbatim and get their explicit approval, then call ' +
-        'again with confirmed: true to actually file it; never set confirmed: true without having done that. ' +
-        'Never include Dalux project data (project/file/task names or IDs, document content, company or user ' +
-        'names) or personal data in the report — describe only the tool/server behavior. The call is refused ' +
-        '(even if confirmed) if the content looks like it contains an email, an API key, an IP address, or a ' +
-        'Dalux identifier.',
+      'File a bug or feature request about this MCP server as a GitHub issue. Call without confirmed first, show the user the exact title and body, and set confirmed: true only after their explicit yes. Never include project data or personal data.',
     inputSchema: feedback.reportFeedbackInput,
     handler: feedback.reportFeedback,
   }),

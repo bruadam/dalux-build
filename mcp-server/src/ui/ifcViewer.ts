@@ -52,7 +52,7 @@ const IFC_VIEWER_HTML = `<!doctype html>
 const ifcRef = {
   projectId: z.string(),
   fileAreaId: z.string(),
-  fileId: z.string().describe('The file ID (must be an .ifc file).'),
+  fileId: z.string(),
 };
 /** `ifcRef` without descriptions, for schemas only the app or the host reads. */
 const bareRef = { projectId: z.string(), fileAreaId: z.string(), fileId: z.string() };
@@ -80,8 +80,7 @@ export const viewModel3dInput = z.object({
   globalIds: z.array(z.string()).max(200).optional().describe('Elements by GlobalId.'),
   mode: z
     .enum(['isolate', 'xray', 'highlight'])
-    .optional()
-    .describe('isolate hides the rest, xray (default) ghosts it, highlight colours the selection.'),
+    .optional().describe('isolate hides the rest, xray (default) ghosts it, highlight colours it.'),
 });
 export type ViewModel3dInput = z.infer<typeof viewModel3dInput>;
 
@@ -124,10 +123,7 @@ export function registerIfcViewer(server: McpServer, client: DaluxClient): void 
     'view_model_3d',
     {
       title: 'View 3D Model',
-      description:
-        'Show an IFC model in an interactive 3D viewer inline in the chat. ' +
-        'To show query results, pass a selectionId from ifc_query_elements (or filter/globalIds) and a mode. ' +
-        'Elements the user clicks are shared back as context.',
+      description: 'Show an IFC model in an interactive 3D viewer in the chat, optionally highlighting a selectionId from ifc_query_elements.',
       inputSchema: viewModel3dInput,
       outputSchema: viewModel3dOutput,
       _meta: { ui: { resourceUri: RESOURCE_URI }, [LEGACY_RESOURCE_URI_META_KEY]: RESOURCE_URI },

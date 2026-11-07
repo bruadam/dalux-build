@@ -55,12 +55,7 @@ export function paginateForLlm<T>(items: readonly T[], params: PaginationParams 
  * The optional `fields` argument of list tools that return a lean item by
  * default: names extra top-level item fields to return, or ["*"] for all.
  */
-export function fieldsInput(defaults: readonly string[]) {
-  return z
-    .array(z.string())
-    .optional()
-    .describe(`Extra item fields beyond ${defaults.join(', ')}; ["*"] for all.`);
-}
+export const fieldsInput = z.array(z.string()).optional().describe('Extra fields to return; ["*"] for all.');
 
 /** Reduces each item of a page to the default fields plus any requested extras. */
 export function pickFields<T>(

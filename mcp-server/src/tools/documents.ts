@@ -19,23 +19,13 @@ export const downloadFileInput = z.object({
     .int()
     .positive()
     .max(HARD_MAX_INLINE_BYTES)
-    .optional()
-    .describe(
-      'Images only: raise the inline-streaming size cap for this call (default 10 MB, hard ceiling 500 MB/' +
-        '524288000 bytes). Only set this when the user has explicitly asked for a large image to be streamed ' +
-        'back rather than left as a local path — most calls should omit it.',
-    ),
+    .optional().describe('Images: inline size cap (default 10 MB). Set only when the user asks.'),
   maxInlineChars: z
     .number()
     .int()
     .positive()
     .max(HARD_MAX_INLINE_CHARS)
-    .optional()
-    .describe(
-      'PDF/Word/Excel/Markdown/HTML only: raise the extracted-text character cap for this call (default 40,000, ' +
-        'hard ceiling 2,000,000). Only set this when the user has explicitly asked for more of a large document ' +
-        'streamed back — most calls should omit it.',
-    ),
+    .optional().describe('Documents: extracted-text cap (default 40,000 chars). Set only when the user asks.'),
 });
 export type DownloadFileInput = z.infer<typeof downloadFileInput>;
 
@@ -122,8 +112,8 @@ export const searchFileContentInput = z.object({
   fileAreaId: z.string(),
   fileId: z
     .string()
-    .describe(`The file ID. Supported formats: ${SUPPORTED_EXTENSIONS.join(', ')} (PDFs include drawings).`),
-  query: z.string().describe('The text to search for in the document, in natural language.'),
+    .describe('PDF, Word, Excel, CSV, Markdown or HTML file.'),
+  query: z.string().describe('Natural-language query.'),
   topK: z.number().int().min(1).max(20).optional().describe('Max matching passages to return (default 5).'),
 });
 export type SearchFileContentInput = z.infer<typeof searchFileContentInput>;

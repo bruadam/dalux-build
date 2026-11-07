@@ -16,7 +16,7 @@ import * as taskIndex from './tools/taskIndex';
 import * as docsIndex from './tools/docsIndex';
 import * as feedback from './tools/feedback';
 import * as ifc from './tools/ifc';
-import { registerIfcViewer, type IfcHostingOptions } from './ui/ifcViewer';
+import { registerIfcViewer } from './ui/ifcViewer';
 import { registerTaskTimeline } from './ui/taskTimeline';
 import { registerSkills } from './tools/skills';
 
@@ -555,8 +555,6 @@ export function toolResultContent(result: unknown): [TextContent] | [ImageConten
 export interface BuildServerOptions {
   name?: string;
   version?: string;
-  /** Enables the view_model_3d tool's 3D viewer — see ui/ifcViewer.ts. Only set on the HTTP deployment (--public-url); leave unset for stdio. */
-  hosting?: IfcHostingOptions;
 }
 
 /**
@@ -595,7 +593,7 @@ export function buildServer(client: DaluxClient, options: BuildServerOptions = {
     );
   }
 
-  registerIfcViewer(server, client, options.hosting);
+  registerIfcViewer(server, client);
   registerTaskTimeline(server, client);
   registerSkills(server);
 

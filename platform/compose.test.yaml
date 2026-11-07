@@ -1,0 +1,18 @@
+name: dalux-platform-test
+
+services:
+  postgres:
+    image: pgvector/pgvector:pg17
+    environment:
+      POSTGRES_USER: migrator
+      POSTGRES_PASSWORD: migrator
+      POSTGRES_DB: platform_test
+    ports:
+      - "127.0.0.1:54329:5432"
+    tmpfs:
+      - /var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U migrator -d platform_test"]
+      interval: 2s
+      timeout: 5s
+      retries: 20

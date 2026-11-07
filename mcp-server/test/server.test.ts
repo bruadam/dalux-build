@@ -27,7 +27,8 @@ describe('tools/list schemas', () => {
     const { tools } = await client.listTools();
 
     // ~4.3 chars per o200k token for this payload; tighten as tools/list shrinks.
-    expect(JSON.stringify(tools).length).toBeLessThanOrEqual(64_000);
+    // 64k before the five document consistency tools (about 3.4k) were added.
+    expect(JSON.stringify(tools).length).toBeLessThanOrEqual(67_000);
   });
 
   it('still validates arguments against the original schema', async () => {

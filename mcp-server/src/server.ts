@@ -171,14 +171,14 @@ export const TOOLS = [
   tool({
     name: 'check_document_consistency',
     description:
-      'Find statements in different documents of a Dalux file area or folder that contradict each other — a door\'s fire class (EI60 vs EI30), a bill-of-quantities quantity, a handover date, a cited standard\'s edition, a drawing revision. Reads PDF, Word, Excel and CSV files, extracts facts with deterministic patterns (plus Mistral when MISTRAL_API_KEY is set) and compares them across files. Nothing in Dalux is modified. Large scopes take several calls: if complete=false, call again with the same arguments. Findings with verdict "candidate" are unreviewed — judge them with the document-consistency-review skill (get_skill).',
+      'Find statements in different documents of a Dalux file area or folder that contradict each other: fire class, BoQ quantity, handover date, standard edition, drawing revision. Reads PDF, Word, Excel and CSV; read-only. If complete=false, call again with the same arguments. Verdict "candidate" means unreviewed: judge it with the document-consistency-review skill (get_skill).',
     inputSchema: consistency.checkDocumentConsistencyInput,
     handler: consistency.checkDocumentConsistency,
   }),
   tool({
     name: 'list_inconsistencies',
     description:
-      'Page through the findings of a check_document_consistency report, optionally filtered by severity, type or file. Each finding has at least two statements from different files, each with file, location and verbatim quote.',
+      'Page through the findings of a check_document_consistency report, filtered by severity, type or file. Each statement has file, location and verbatim quote.',
     inputSchema: consistency.listInconsistenciesInput,
     handler: consistency.listInconsistencies,
   }),

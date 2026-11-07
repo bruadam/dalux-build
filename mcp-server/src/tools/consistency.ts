@@ -29,8 +29,8 @@ export const checkDocumentConsistencyInput = z.object({
   folderPath: z
     .string()
     .optional()
-    .describe('Restrict to one folder (and its subfolders) by its full path: the file area name, then the root folder name, then the subfolders, e.g. "Files/Files/2_Udbud". Omit for the whole file area.'),
-  fileIds: z.array(z.string()).optional().describe('Only compare these files (within the file area/folder).'),
+    .describe('Folder (with subfolders) by full path: file area name, root folder, subfolders, e.g. "Files/Files/2_Udbud". Default: whole file area.'),
+  fileIds: z.array(z.string()).optional().describe('Only compare these files.'),
   extensions: z
     .array(z.string())
     .optional()
@@ -46,11 +46,11 @@ export const checkDocumentConsistencyInput = z.object({
     .min(10)
     .max(900)
     .optional()
-    .describe('Stop this pass after roughly this long (default 120); call again with the same arguments to continue.'),
+    .describe('Stop this pass after about this long (default 120).'),
   useModel: z
     .boolean()
     .optional()
-    .describe('Use Mistral for extra fact extraction and to judge findings (default true when MISTRAL_API_KEY is set).'),
+    .describe('Use Mistral to extract facts and judge findings (default: on when the server allows it).'),
 });
 export type CheckDocumentConsistencyInput = z.infer<typeof checkDocumentConsistencyInput>;
 

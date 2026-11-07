@@ -26,9 +26,8 @@ export function cacheDirFor(fileId: string): string {
  * schedule CSVs, clash results.
  *
  * Deliberately not a sub-directory of `cacheDirFor`: that holds the downloaded
- * file itself, and `modelLinks.resolveModelFile` takes its only non-dot entry
- * to be that file, so dropping anything else in there hands the 3D viewer a
- * CSV instead of the IFC.
+ * file itself, and readers take its only non-dot entry to be that file, so
+ * dropping anything else in there could hand them a CSV instead of the IFC.
  */
 export function derivedDirFor(fileId: string): string {
   const dir = path.join(mcpCacheRoot(), 'derived', fileId);

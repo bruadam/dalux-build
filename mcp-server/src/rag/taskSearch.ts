@@ -7,7 +7,7 @@
  * of chunks) a linear scan costs a few milliseconds.
  */
 
-import { EMBEDDING_MODEL, bm25Scores, cosineSimilarity, embedTexts, embeddingsAvailable, type RankMode } from '../search/rank';
+import { EMBEDDING_MODEL, bm25Scores, cosineSimilarity, embedTexts, embeddingsAvailable, rankingModeWarning, type RankMode } from '../search/rank';
 import { indexStores } from '../store';
 import type { TaskIndexManifest, TaskManifestEntry } from '../store/types';
 
@@ -49,9 +49,8 @@ function rankingWarnings(embedding: TaskIndexManifest['embedding'], missingVecto
   if (embedding && embedding.model !== EMBEDDING_MODEL) {
     warnings.push('Embedding model changed — ranking lexically until the index is rebuilt.');
   }
-  if (embedding && !embeddingsAvailable()) {
-    warnings.push('MISTRAL_API_KEY is not set — ranking lexically (BM25) instead of semantically.');
-  }
+  const rankingWarning = rankingModeWarning(Boolean(embedding));
+  if (rankingWarning) warnings.push(rankingWarning);
   if (missingVectors) {
     warnings.push(
       'Some tasks have no embeddings (indexed before the key was set) — ranking lexically so scores stay comparable. Re-run build_task_index with refresh=true to embed them.',

@@ -25,12 +25,11 @@ import { resolveScope } from '../rag/scope';
 // ---------- check_document_consistency ----------
 
 export const checkDocumentConsistencyInput = z.object({
-  projectId: z.string().describe('The Dalux project ID.'),
-  fileAreaId: z.string().describe('The file area ID.'),
+  projectId: z.string(),
+  fileAreaId: z.string(),
   folderPath: z
     .string()
-    .optional()
-    .describe('Folder (with subfolders) by full path: file area name, root folder, subfolders, e.g. "Files/Files/2_Udbud". Default: whole file area.'),
+    .optional().describe('Folder path incl. subfolders, e.g. "Files/Files/2_Udbud". Default: whole file area.'),
   fileIds: z.array(z.string()).optional().describe('Only compare these files.'),
   extensions: z
     .array(z.string())
@@ -50,8 +49,7 @@ export const checkDocumentConsistencyInput = z.object({
     .describe('Stop this pass after about this long (default 120).'),
   useModel: z
     .boolean()
-    .optional()
-    .describe('Use Mistral to extract facts and judge findings (default: on when the server allows it).'),
+    .optional().describe('Use Mistral for extraction and judging (default: on if configured).'),
 });
 export type CheckDocumentConsistencyInput = z.infer<typeof checkDocumentConsistencyInput>;
 
@@ -82,7 +80,7 @@ export async function checkDocumentConsistency(client: DaluxClient, args: CheckD
 // ---------- list_inconsistencies ----------
 
 export const listInconsistenciesInput = z.object({
-  reportId: z.string().describe('As returned by check_document_consistency.'),
+  reportId: z.string(),
   severity: z.enum(['high', 'medium', 'low']).optional(),
   type: z
     .enum(['value_conflict', 'quantity_conflict', 'date_conflict', 'reference_conflict', 'revision_conflict', 'other'])
@@ -107,13 +105,9 @@ export async function listInconsistencies(_client: DaluxClient, args: ListIncons
 // ---------- export_inconsistency_report ----------
 
 export const exportInconsistencyReportInput = z.object({
-  reportId: z.string().describe('As returned by check_document_consistency.'),
+  reportId: z.string(),
   format: z
-    .enum(['xlsx', 'docx', 'md', 'annotated-pdf'])
-    .describe(
-      'xlsx: one row per statement; docx: summary and table; md: markdown; annotated-pdf: zip with a copy of each affected PDF ' +
-        '(quotes highlighted, comment naming the conflicting value) plus the xlsx register.',
-    ),
+    .enum(['xlsx', 'docx', 'md', 'annotated-pdf']).describe('annotated-pdf: zip of highlighted PDFs plus the xlsx register.'),
 });
 export type ExportInconsistencyReportInput = z.infer<typeof exportInconsistencyReportInput>;
 
@@ -155,7 +149,7 @@ export async function listConsistencyReports() {
 }
 
 export const dropConsistencyReportInput = z.object({
-  reportId: z.string().describe('The report to delete, as reported by list_consistency_reports.'),
+  reportId: z.string(),
 });
 export type DropConsistencyReportInput = z.infer<typeof dropConsistencyReportInput>;
 

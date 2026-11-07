@@ -18,7 +18,7 @@ import type { DaluxClient } from 'dalux-build-api';
 import { taskIndexRoot, pruneStaleIndexes } from '../cachePaths';
 import { collectAllDaluxItems } from '../daluxPagination';
 import { CHUNK_OVERLAP, CHUNK_SIZE, packLines } from '../extract/chunk';
-import { EMBEDDING_DIMENSIONS, EMBEDDING_MODEL, embedTexts, embeddingsAvailable } from '../search/rank';
+import { EMBEDDING_DIMENSIONS, EMBEDDING_MODEL, embedTexts, embeddingsAvailable, rankingModeWarning } from '../search/rank';
 import { extractAttachmentTextsByTaskId, groupAttachmentsByTaskId } from './taskAttachments';
 import { groupChangesByTaskId, renderTaskLines, str, taskRevisionKey, unwrapTask, type AttachmentText } from './taskText';
 import { buildIndexStores } from '../store';
@@ -116,11 +116,10 @@ export async function buildTaskIndex(
   }
   if (existing && useEmbeddings && !existing.embedding) {
     refresh = true;
-    warnings.push('MISTRAL_API_KEY is now set — re-embedding the index so semantic search can use it.');
+    warnings.push('Semantic ranking is now on — re-embedding the index so semantic search can use it.');
   }
-  if (existing && !useEmbeddings && existing.embedding) {
-    warnings.push('MISTRAL_API_KEY is not set — searches will fall back to BM25 despite the stored embeddings.');
-  }
+  const rankingWarning = rankingModeWarning(Boolean(existing?.embedding));
+  if (rankingWarning) warnings.push(rankingWarning);
   if (useEmbeddings) manifest.embedding = { model: EMBEDDING_MODEL, dimensions: EMBEDDING_DIMENSIONS };
 
   const params: Record<string, unknown> = {};

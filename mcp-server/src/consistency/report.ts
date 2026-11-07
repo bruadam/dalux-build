@@ -21,7 +21,8 @@ import { indexIdFor, listIndexableFiles, type IndexScope } from '../rag/scope';
 import { summarizeSkips, type FailedFile, type SkipSummary } from '../store/types';
 import { compareFindings, findInconsistencies, type FileFacts, type Finding, type FocusArea } from './compare';
 import { extractFacts, type Fact } from './facts';
-import { analysisModel, extractFactsWithModel, judgeFinding, modelUnavailableReason, type Judgment } from './model';
+import { analysisModel, emptyModelUsage, extractFactsWithModel, judgeFinding, type Judgment, type ModelUsage } from './model';
+import { mistralUnavailableReason } from '../mistral';
 
 const MANIFEST_VERSION = 1;
 const STALE_REPORT_MS = 7 * 24 * 60 * 60 * 1000;
@@ -138,7 +139,7 @@ export interface CheckOptions {
   maxFiles?: number;
   timeBudgetSeconds?: number;
   maxFileSizeMb?: number;
-  /** Defaults to true; the model is only used when modelUnavailableReason() is null. */
+  /** Defaults to true; the model is only used when mistralUnavailableReason() is null. */
   useModel?: boolean;
 }
 
@@ -154,6 +155,8 @@ export interface CheckResult {
   bySeverity: { high: number; medium: number; low: number };
   topFindings: Finding[];
   dismissedByModel: number;
+  /** Mistral calls and tokens spent by this call; present when the model was used. */
+  modelUsage?: ModelUsage;
   warnings: string[];
 }
 
@@ -169,8 +172,9 @@ export async function checkConsistency(
   const outOfTime = () => Date.now() - startedAt > budgetMs;
   const warnings: string[] = [];
 
-  const unavailable = modelUnavailableReason();
+  const unavailable = mistralUnavailableReason();
   const useModel = options.useModel !== false && !unavailable;
+  const modelUsage = emptyModelUsage();
   if (unavailable && (options.useModel === true || (options.useModel === undefined && process.env.MISTRAL_API_KEY))) {
     warnings.push(`Mistral is not used (${unavailable}) — running deterministic checks only; findings stay verdict "candidate".`);
   }
@@ -246,6 +250,7 @@ export async function checkConsistency(
           const run = await extractFactsWithModel(file.fileName, extraction.chunks, {
             startBatch: partial?.batchesDone ?? 0,
             outOfTime,
+            usage: modelUsage,
           });
           const modelFacts = [...(partial?.facts ?? []), ...run.facts];
           facts = mergeFacts(facts, modelFacts);
@@ -313,7 +318,7 @@ export async function checkConsistency(
     let judgeFailure: string | null = null;
     await pool(pending, 4, outOfTime, async (finding) => {
       try {
-        manifest.judgments[finding.id] = { ...(await judgeFinding(finding)), model };
+        manifest.judgments[finding.id] = { ...(await judgeFinding(finding, modelUsage)), model };
       } catch (err) {
         judgeFailure = err instanceof Error ? err.message : String(err);
       }
@@ -389,6 +394,7 @@ export async function checkConsistency(
     bySeverity,
     topFindings: findings.slice(0, 10),
     dismissedByModel: dismissed,
+    ...(useModel && { modelUsage }),
     warnings,
   };
 }

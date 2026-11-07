@@ -2,14 +2,22 @@ import { z } from 'zod';
 import { Client, InMemoryTransport } from '@modelcontextprotocol/client';
 import type { DaluxClient } from 'dalux-build-api';
 import { buildServer, TOOLS, toolResultContent } from '../src/server';
+import { DEFAULT_TOOLSETS, TOOLSET_NAMES, type Toolset } from '../src/toolsets';
 
-async function connectedClient(dalux: Partial<Record<string, unknown>>): Promise<Client> {
-  const server = buildServer(dalux as unknown as DaluxClient);
+async function connectedClient(
+  dalux: Partial<Record<string, unknown>>,
+  toolsets: readonly Toolset[] = TOOLSET_NAMES,
+): Promise<Client> {
+  const server = buildServer(dalux as unknown as DaluxClient, { toolsets });
   const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
   const client = new Client({ name: 'test-client', version: '1.0.0' });
   await Promise.all([client.connect(clientTransport), server.connect(serverTransport)]);
   return client;
 }
+
+// Measured: default 21,419, all toolsets 39,796 (68k for all tools before toolsets and compaction).
+const DEFAULT_BUDGET = 22_500;
+const ALL_BUDGET = 41_800;
 
 describe('tools/list schemas', () => {
   it('carry no $schema dialect key or safe-integer bounds, on any tool', async () => {
@@ -22,19 +30,21 @@ describe('tools/list schemas', () => {
     expect(listed).not.toContain(String(Number.MAX_SAFE_INTEGER));
   });
 
-  it('stay within the tools/list size budget', async () => {
-    const client = await connectedClient({});
-    const { tools } = await client.listTools();
-    // MCP Apps hosts "MUST NOT include tools in the agent's tool list when their visibility does not include
-    // \"model\"" (ext-apps specification/2026-01-26/apps.mdx, Visibility), so app-only tools cost no model context.
+  // MCP Apps hosts "MUST NOT include tools in the agent's tool list when their visibility does not include
+  // \"model\"" (ext-apps specification/2026-01-26/apps.mdx, Visibility), so app-only tools cost no model context.
+  async function modelToolsChars(toolsets: readonly Toolset[]): Promise<number> {
+    const { tools } = await (await connectedClient({}, toolsets)).listTools();
     const modelTools = tools.filter((tool) => {
       const visibility = (tool._meta?.ui as { visibility?: string[] } | undefined)?.visibility;
       return !(visibility?.length === 1 && visibility[0] === 'app');
     });
+    return JSON.stringify(modelTools).length;
+  }
 
-    // ~4.3 chars per o200k token for this payload; tighten as tools/list shrinks.
-    // 64k before the five document consistency tools (about 3.8k) were added.
-    expect(JSON.stringify(modelTools).length).toBeLessThanOrEqual(68_000);
+  // Measured size plus about 5%; ~4.3 chars per o200k token for this payload.
+  it('stay within the tools/list size budget', async () => {
+    expect(await modelToolsChars(DEFAULT_TOOLSETS)).toBeLessThanOrEqual(DEFAULT_BUDGET);
+    expect(await modelToolsChars(TOOLSET_NAMES)).toBeLessThanOrEqual(ALL_BUDGET);
   });
 
   it('still validates arguments against the original schema', async () => {

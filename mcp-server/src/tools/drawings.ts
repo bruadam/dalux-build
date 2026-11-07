@@ -5,19 +5,15 @@ import { downloadFile } from './documents';
 import { rasterizePdfPage } from '../extract/rasterize';
 
 export const renderPdfPageInput = z.object({
-  projectId: z.string().describe('The Dalux project ID.'),
-  fileAreaId: z.string().describe('The file area ID.'),
-  fileId: z.string().describe('The file ID of a PDF (drawing exports included).'),
+  projectId: z.string(),
+  fileAreaId: z.string(),
+  fileId: z.string(),
   page: z.number().int().min(1).optional().describe('1-based page to render (default 1).'),
   scale: z
     .number()
     .min(0.5)
     .max(4)
-    .optional()
-    .describe(
-      'Zoom relative to the PDF\'s own points, where 1 = 72 dpi (default 2). Capped, and reduced further for very ' +
-        'large sheets, to keep the rendered image a reasonable size.',
-    ),
+    .optional().describe('Zoom, 1 = 72 dpi (default 2).'),
 });
 export type RenderPdfPageInput = z.infer<typeof renderPdfPageInput>;
 

@@ -11,6 +11,7 @@ import { toNodeHandler, localhostHostValidation, localhostOriginValidation } fro
 import { createClient } from 'dalux-build-api';
 import { buildServer } from './server';
 import { UNRESTRICTED_CONTEXT, type RequestContext } from './access/context';
+import { DEFAULT_TOOLSETS, requestToolsets, type Toolset } from './toolsets';
 import { createOAuthServer, type OAuthServer } from './oauth';
 import { createPlatformOAuthServer } from './oauthPlatform';
 import { validateDaluxBaseUrl } from './daluxUrl';
@@ -52,6 +53,8 @@ export interface BuildHttpAppOptions {
    * when an admin has turned header mode on. See platform/http.ts.
    */
   platform?: Platform;
+  /** Toolsets for requests without a `?toolsets=` query parameter (see toolsets.ts); defaults to DEFAULT_TOOLSETS. */
+  toolsets?: readonly Toolset[];
 }
 
 export interface HttpApp {
@@ -160,6 +163,13 @@ function logDiscovery(peek: JsonRpcPeek, request: Request, response: Response): 
     });
 }
 
+function invalidToolsets(message: string): Response {
+  return new Response(JSON.stringify({ error: 'invalid_toolsets', message }), {
+    status: 400,
+    headers: { 'Content-Type': 'application/json' },
+  });
+}
+
 function constantTimeEqual(a: string, b: string): boolean {
   const bufA = Buffer.from(a);
   const bufB = Buffer.from(b);
@@ -260,15 +270,19 @@ export function buildHttpApp(options: BuildHttpAppOptions = {}): HttpApp {
       daluxCredentials = credentials;
     }
 
-    const key = `${daluxCredentials.baseUrl} ${daluxCredentials.apiKey}`;
+    const toolsets = requestToolsets(request, options.toolsets ?? DEFAULT_TOOLSETS);
+    if ('error' in toolsets) return invalidToolsets(toolsets.error);
+
+    const credentialKey = `${daluxCredentials.baseUrl} ${daluxCredentials.apiKey}`;
+    const key = `${credentialKey} ${toolsets.toolsets.join(',')}`;
     let mcpHandler = handlersByCredentials.get(key);
     if (!mcpHandler) {
       const client = createClient({ baseUrl: daluxCredentials.baseUrl, apiKey: daluxCredentials.apiKey });
       // In platform mode, header callers' temporary indexes are kept apart per credentials (PRD 6.5).
       const context: RequestContext = options.platform
-        ? { access: 'unrestricted', fileNamespace: createHash('sha256').update(key).digest('hex').slice(0, 32) }
+        ? { access: 'unrestricted', fileNamespace: createHash('sha256').update(credentialKey).digest('hex').slice(0, 32) }
         : UNRESTRICTED_CONTEXT;
-      mcpHandler = createMcpHandler(() => buildServer(client, { context }));
+      mcpHandler = createMcpHandler(() => buildServer(client, { context, toolsets: toolsets.toolsets }));
       handlersByCredentials.set(key, mcpHandler);
     }
     return mcpHandler.fetch(request);
@@ -276,7 +290,7 @@ export function buildHttpApp(options: BuildHttpAppOptions = {}): HttpApp {
 
   const platform = options.platform;
   const serve = platform
-    ? createPlatformHandler({ platform, serveWithHeaders, publicUrl: options.publicUrl })
+    ? createPlatformHandler({ platform, serveWithHeaders, publicUrl: options.publicUrl, toolsets: options.toolsets })
     : serveWithHeaders;
 
   const guardedHandler = {

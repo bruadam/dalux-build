@@ -12,7 +12,10 @@ jest.mock('@mistralai/mistralai', () => ({
 }));
 
 type Request = { model: string; messages: { role: string; content: string }[]; responseFormat: { jsonSchema: { name: string } } };
-const reply = (value: unknown) => ({ choices: [{ message: { content: JSON.stringify(value) } }] });
+const reply = (value: unknown) => ({
+  choices: [{ message: { content: JSON.stringify(value) } }],
+  usage: { promptTokens: 100, completionTokens: 10, totalTokens: 110 },
+});
 
 function fakeClient(files: { fileId: string; fileName: string; source: string }[]) {
   return {
@@ -131,6 +134,11 @@ describe('document consistency with Mistral', () => {
     const judgeRequests = requests.filter((request) => request.responseFormat.jsonSchema.name === 'consistency_judgment');
     expect(judgeRequests).toHaveLength(2);
     expect(judgeRequests[0].messages[0].content).toContain('Danish construction contracts');
+    expect(result.modelUsage).toEqual({
+      calls: requests.length,
+      promptTokens: 100 * requests.length,
+      completionTokens: 10 * requests.length,
+    });
 
     complete.mockClear();
     const again = await consistency.checkDocumentConsistency(client, { projectId: 'p1', fileAreaId: 'fa1' });

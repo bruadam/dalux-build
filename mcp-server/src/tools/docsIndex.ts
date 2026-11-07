@@ -74,8 +74,7 @@ export const buildDocsIndexInput = z.object({
     .int()
     .min(10)
     .max(900)
-    .optional()
-    .describe('Stop this pass after roughly this long and report what is left (default 120).'),
+    .optional().describe('Time budget per call (default 120).'),
   refresh: z.boolean().optional().describe('Re-extract and re-embed every document, ignoring cached revisions.'),
 });
 export type BuildDocsIndexInput = z.infer<typeof buildDocsIndexInput>;
@@ -100,7 +99,7 @@ export async function buildDocsIndex(_client: DaluxClient, args: BuildDocsIndexI
 // ---------- search_docs_index ----------
 
 export const searchDocsIndexInput = z.object({
-  query: z.string().describe('What to look for, in natural language.'),
+  query: z.string().describe('Natural-language query.'),
   indexId: z.string().optional().describe('Index to search, as returned by build_docs_index. Omit to address it by scope instead.'),
   ...scopeShape,
   topK: z.number().int().min(1).max(50).optional().describe('Max passages to return (default 8).'),
@@ -175,7 +174,7 @@ export async function dropDocsIndex(_client: DaluxClient, args: DropDocsIndexInp
 // server at a repo nobody meant it to read.
 
 export const searchDocsInput = z.object({
-  query: z.string().describe('What to look for, in natural language.'),
+  query: z.string().describe('Natural-language query.'),
   topK: z.number().int().min(1).max(50).optional().describe('Max passages to return (default 8).'),
   perDocLimit: z
     .number()
@@ -185,7 +184,7 @@ export const searchDocsInput = z.object({
     .nullable()
     .optional()
     .describe('Max passages from any one document (default 3; null for no cap).'),
-  pathContains: z.string().optional().describe('Only search documents whose repo path contains this text, e.g. "molio/".'),
+  pathContains: z.string().optional().describe('Repo path substring, e.g. "molio/".'),
 });
 export type SearchDocsInput = z.infer<typeof searchDocsInput>;
 

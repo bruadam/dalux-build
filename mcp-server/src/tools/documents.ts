@@ -11,31 +11,21 @@ import { searchChunks } from '../search/documentSearch';
 // ---------- download_file ----------
 
 export const downloadFileInput = z.object({
-  projectId: z.string().describe('The Dalux project ID.'),
-  fileAreaId: z.string().describe('The file area ID.'),
-  fileId: z.string().describe('The file ID.'),
+  projectId: z.string(),
+  fileAreaId: z.string(),
+  fileId: z.string(),
   maxInlineBytes: z
     .number()
     .int()
     .positive()
     .max(HARD_MAX_INLINE_BYTES)
-    .optional()
-    .describe(
-      'Images only: raise the inline-streaming size cap for this call (default 10 MB, hard ceiling 500 MB/' +
-        '524288000 bytes). Only set this when the user has explicitly asked for a large image to be streamed ' +
-        'back rather than left as a local path — most calls should omit it.',
-    ),
+    .optional().describe('Images: inline size cap (default 10 MB). Set only when the user asks.'),
   maxInlineChars: z
     .number()
     .int()
     .positive()
     .max(HARD_MAX_INLINE_CHARS)
-    .optional()
-    .describe(
-      'PDF/Word/Excel/Markdown/HTML only: raise the extracted-text character cap for this call (default 40,000, ' +
-        'hard ceiling 2,000,000). Only set this when the user has explicitly asked for more of a large document ' +
-        'streamed back — most calls should omit it.',
-    ),
+    .optional().describe('Documents: extracted-text cap (default 40,000 chars). Set only when the user asks.'),
 });
 export type DownloadFileInput = z.infer<typeof downloadFileInput>;
 
@@ -118,12 +108,12 @@ export async function downloadFileToChat(client: DaluxClient, args: DownloadFile
 // ---------- search_file_content ----------
 
 export const searchFileContentInput = z.object({
-  projectId: z.string().describe('The Dalux project ID.'),
-  fileAreaId: z.string().describe('The file area ID.'),
+  projectId: z.string(),
+  fileAreaId: z.string(),
   fileId: z
     .string()
-    .describe(`The file ID. Supported formats: ${SUPPORTED_EXTENSIONS.join(', ')} (PDFs include drawings).`),
-  query: z.string().describe('The text to search for in the document, in natural language.'),
+    .describe('PDF, Word, Excel, CSV, Markdown or HTML file.'),
+  query: z.string().describe('Natural-language query.'),
   topK: z.number().int().min(1).max(20).optional().describe('Max matching passages to return (default 5).'),
 });
 export type SearchFileContentInput = z.infer<typeof searchFileContentInput>;
@@ -134,7 +124,7 @@ export type SearchFileContentInput = z.infer<typeof searchFileContentInput>;
  * Handles PDFs (documents and drawings), Word and Excel files; each match
  * carries a citable location — a page for PDFs, a heading for Word, a
  * sheet/row range for Excel. Uses Mistral embeddings for semantic ranking when
- * MISTRAL_API_KEY is set, otherwise BM25 — a lightweight, single-file
+ * Mistral may be used (see mistral.ts), otherwise BM25 — a lightweight, single-file
  * complement to the file-area index in tools/fileAreaIndex.ts, not a
  * replacement for it.
  */
@@ -161,7 +151,7 @@ export async function searchFileContent(client: DaluxClient, args: SearchFileCon
     throw err;
   }
 
-  const { mode, matches } = await searchChunks(extraction.chunks, args.query, args.topK ?? 5);
+  const { mode, matches, warning } = await searchChunks(extraction.chunks, args.query, args.topK ?? 5);
 
   return {
     found: true,
@@ -170,6 +160,7 @@ export async function searchFileContent(client: DaluxClient, args: SearchFileCon
     fileName: download.fileName,
     format: extraction.format,
     ranking: mode,
+    warning,
     pageCount: extraction.pageCount,
     pagesWithoutText: extraction.pagesWithoutText?.length ? extraction.pagesWithoutText : undefined,
     note: extraction.note,

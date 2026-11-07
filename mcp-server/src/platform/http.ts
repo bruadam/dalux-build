@@ -7,7 +7,9 @@ import { runWithContext } from '../access/requestScope';
 import { restrictClient } from '../access/restrictedClient';
 import { OAUTH_ACCESS_TOKEN_PREFIX } from '@dalux-platform/db';
 import { resourceMetadataUrl } from '../oauthPlatform';
+import { withEmbeddingKey } from '../search/rank';
 import { buildServer } from '../server';
+import { DEFAULT_TOOLSETS, requestToolsets, type Toolset } from '../toolsets';
 import type { Caller, Connection, Platform } from './platform';
 
 const TOKEN_PREFIXES = ['dxm_', OAUTH_ACCESS_TOKEN_PREFIX];
@@ -23,6 +25,8 @@ export interface PlatformHandlerOptions {
   serveWithHeaders: (request: Request) => Promise<Response>;
   /** When set, 401s point OAuth clients at the protected-resource metadata of the requested path (RFC 9728). */
   publicUrl?: string;
+  /** Toolsets for requests without `?toolsets=`; defaults to DEFAULT_TOOLSETS, as outside platform mode. */
+  toolsets?: readonly Toolset[];
 }
 
 /**
@@ -99,6 +103,8 @@ export function createPlatformHandler(options: PlatformHandlerOptions): (request
 
     const connection = await resolveConnection(platform, caller, route[1]);
     if (connection instanceof Response) return connection;
+    const toolsets = requestToolsets(request, options.toolsets ?? DEFAULT_TOOLSETS);
+    if ('error' in toolsets) return jsonError(400, 'invalid_toolsets', toolsets.error);
 
     const context: RequestContext = {
       account: caller.account,
@@ -111,9 +117,14 @@ export function createPlatformHandler(options: PlatformHandlerOptions): (request
         context,
         folders: connection.folders,
         audit: (record) => platform.audit(caller, context, record),
+        toolsets: toolsets.toolsets,
       }),
       { onerror: (error) => console.error(`[platform] MCP request on "${connection.slug}" failed:`, error) },
     );
-    return runWithContext(context, () => handler.fetch(request));
+    // The admin's embedding key is the consent to send text to the provider (PRD), so
+    // search-time embeddings use it, not MISTRAL_API_KEY / DALUX_MCP_ALLOW_EXTERNAL_MODEL_IO.
+    const embeddingKey = await platform.embeddingKey();
+    const { result } = await withEmbeddingKey(embeddingKey, () => runWithContext(context, () => handler.fetch(request)));
+    return result;
   };
 }

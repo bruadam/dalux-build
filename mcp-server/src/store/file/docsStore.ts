@@ -1,6 +1,6 @@
 /**
  * On-disk layout of a temporary docs-repo index — the GitHub-sourced sibling of
- * rag/store.ts (file-area indexes) and rag/taskStore.ts (task indexes).
+ * fileAreaStore.ts (file-area indexes) and taskStore.ts (task indexes).
  *
  *   <tmp>/dalux-mcp/docs-index/<indexId>/manifest.json    scope, per-document revisions
  *   <tmp>/dalux-mcp/docs-index/<indexId>/docs/<id>.json   one document's chunks
@@ -14,9 +14,8 @@
 import { createHash } from 'node:crypto';
 import { existsSync, mkdirSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
-import { docsIndexDir, docsIndexRoot } from '../cachePaths';
-import type { TextChunk } from '../extract';
-import type { DocsRepoScope } from './docsSource';
+import { docsIndexDir, docsIndexRoot } from '../../cachePaths';
+import type { DocsIndexManifest, DocsIndexSummary, IndexStore, IndexedDoc } from '../types';
 
 /**
  * Longest sanitized filename this produces, well under the 255-byte limit
@@ -42,40 +41,8 @@ export function safeDocId(docPath: string): string {
 
 export const MANIFEST_VERSION = 1;
 
-export interface DocsManifestEntry {
-  /** Path within the repo, e.g. "docs/laws/example-law.md". */
-  path: string;
-  /** Git blob SHA at the time this document was indexed. */
-  revisionKey: string;
-  format: string;
-  chunkCount: number;
-  note?: string;
-  indexedAt: string;
-}
-
-export interface FailedDoc {
-  path: string;
-  /** Revision that failed, so a later edit to the same file is retried. */
-  revisionKey: string;
-  error: string;
-}
-
-export interface DocsIndexManifest {
+export interface StoredDocsIndexManifest extends DocsIndexManifest {
   version: number;
-  indexId: string;
-  scope: DocsRepoScope;
-  createdAt: string;
-  updatedAt: string;
-  /** Null when the index was built without an embeddings key (lexical search only). */
-  embedding: { model: string; dimensions: number } | null;
-  /** Keyed by repo path. */
-  docs: Record<string, DocsManifestEntry>;
-  failed: FailedDoc[];
-}
-
-export interface IndexedDoc {
-  path: string;
-  chunks: TextChunk[];
 }
 
 function docsDir(indexId: string): string {
@@ -88,11 +55,11 @@ function manifestPath(indexId: string): string {
   return path.join(docsIndexDir(indexId), 'manifest.json');
 }
 
-export function readManifest(indexId: string): DocsIndexManifest | null {
+export function readManifest(indexId: string): StoredDocsIndexManifest | null {
   const file = manifestPath(indexId);
   if (!existsSync(file)) return null;
   try {
-    const manifest = JSON.parse(readFileSync(file, 'utf-8')) as DocsIndexManifest;
+    const manifest = JSON.parse(readFileSync(file, 'utf-8')) as StoredDocsIndexManifest;
     return manifest.version === MANIFEST_VERSION ? manifest : null;
   } catch {
     return null;
@@ -100,7 +67,8 @@ export function readManifest(indexId: string): DocsIndexManifest | null {
 }
 
 export function writeManifest(manifest: DocsIndexManifest): void {
-  writeFileSync(manifestPath(manifest.indexId), JSON.stringify(manifest, null, 2), 'utf-8');
+  const stored: StoredDocsIndexManifest = { ...manifest, version: MANIFEST_VERSION };
+  writeFileSync(manifestPath(manifest.indexId), JSON.stringify(stored, null, 2), 'utf-8');
 }
 
 export function writeDocument(indexId: string, doc: IndexedDoc, vectors: number[][] | null): void {
@@ -154,16 +122,6 @@ export function dropIndex(indexId: string): boolean {
   return true;
 }
 
-export interface DocsIndexSummary {
-  indexId: string;
-  scope: DocsRepoScope;
-  docCount: number;
-  chunkCount: number;
-  updatedAt: string;
-  mode: 'embeddings' | 'lexical';
-  sizeBytes: number;
-}
-
 function directorySize(dir: string): number {
   let total = 0;
   for (const entry of readdirSync(dir, { withFileTypes: true })) {
@@ -199,7 +157,18 @@ export function listIndexes(): DocsIndexSummary[] {
   }
   return entries
     .map((indexId) => readManifest(indexId))
-    .filter((manifest): manifest is DocsIndexManifest => manifest !== null)
+    .filter((manifest): manifest is StoredDocsIndexManifest => manifest !== null)
     .map(summarize)
     .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
 }
+
+export const docsFileStore: IndexStore<DocsIndexManifest, IndexedDoc, DocsIndexSummary> = {
+  readManifest: async (indexId) => readManifest(indexId),
+  writeManifest: async (manifest) => writeManifest(manifest),
+  readDocument: async (indexId, docPath) => readDocument(indexId, docPath),
+  writeDocument: async (indexId, document, vectors) => writeDocument(indexId, document, vectors),
+  readVectors: async (indexId, docPath, dimensions) => readVectors(indexId, docPath, dimensions),
+  deleteDocument: async (indexId, docPath) => deleteDocument(indexId, docPath),
+  dropIndex: async (indexId) => dropIndex(indexId),
+  listIndexes: async () => listIndexes(),
+};

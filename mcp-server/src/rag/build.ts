@@ -16,17 +16,8 @@ import { pool } from '../concurrency';
 import { extractDocument } from '../extract';
 import { EMBEDDING_DIMENSIONS, EMBEDDING_MODEL, embedTexts, embeddingsAvailable } from '../search/rank';
 import { indexIdFor, listIndexableFiles, type IndexScope, type IndexableFile } from './scope';
-import {
-  MANIFEST_VERSION,
-  deleteDocument,
-  readManifest,
-  summarizeSkips,
-  writeDocument,
-  writeManifest,
-  type FailedFile,
-  type IndexManifest,
-  type SkipSummary,
-} from './store';
+import { indexStores } from '../store';
+import { summarizeSkips, type FailedFile, type IndexManifest, type SkipSummary } from '../store/types';
 
 /** Indexes nobody has touched for a week are deleted on the next build. */
 const STALE_INDEX_MS = 7 * 24 * 60 * 60 * 1000;
@@ -120,9 +111,9 @@ export async function buildIndex(
   const warnings: string[] = [];
   const useEmbeddings = embeddingsAvailable();
 
-  const existing = readManifest(indexId);
+  const store = indexStores().fileAreas;
+  const existing = await store.readManifest(indexId);
   const manifest: IndexManifest = existing ?? {
-    version: MANIFEST_VERSION,
     indexId,
     scope,
     createdAt: new Date().toISOString(),
@@ -138,7 +129,7 @@ export async function buildIndex(
   let refresh = options.refresh ?? false;
   if (existing?.embedding && useEmbeddings && existing.embedding.model !== EMBEDDING_MODEL) {
     for (const id of Object.keys(manifest.files)) {
-      deleteDocument(indexId, id);
+      await store.deleteDocument(indexId, id);
     }
     manifest.files = {};
     refresh = true;
@@ -163,7 +154,7 @@ export async function buildIndex(
   let filesRemoved = 0;
   for (const fileId of Object.keys(manifest.files)) {
     if (liveIds.has(fileId)) continue;
-    deleteDocument(indexId, fileId);
+    await store.deleteDocument(indexId, fileId);
     delete manifest.files[fileId];
     filesRemoved += 1;
   }
@@ -229,9 +220,21 @@ export async function buildIndex(
       const vectors = useEmbeddings && chunks.length ? await embedTexts(chunks.map((c) => c.text)) : null;
       if (vectors?.length) observedDimensions = vectors[0].length;
 
-      writeDocument(
+      await store.writeDocument(
         indexId,
-        { fileId: file.fileId, fileName: file.fileName, format: extraction.format, note, chunks },
+        {
+          fileId: file.fileId,
+          fileName: file.fileName,
+          format: extraction.format,
+          note,
+          chunks,
+          access: {
+            projectId: scope.projectId,
+            fileAreaId: scope.fileAreaId,
+            folderId: file.folderId ?? undefined,
+            folderAncestorIds: file.folderAncestorIds,
+          },
+        },
         vectors,
       );
       writtenThisPass.add(file.fileId);
@@ -246,7 +249,7 @@ export async function buildIndex(
       indexedThisPass += 1;
       if (indexedThisPass % MANIFEST_FLUSH_EVERY === 0) {
         manifest.updatedAt = new Date().toISOString();
-        writeManifest(manifest);
+        await store.writeManifest(manifest);
       }
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
@@ -270,7 +273,7 @@ export async function buildIndex(
       // the next call rather than being scored against mismatched vectors.
       for (const fileId of Object.keys(manifest.files)) {
         if (writtenThisPass.has(fileId)) continue;
-        deleteDocument(indexId, fileId);
+        await store.deleteDocument(indexId, fileId);
         delete manifest.files[fileId];
       }
       warnings.push(
@@ -296,7 +299,7 @@ export async function buildIndex(
   ).length;
 
   manifest.updatedAt = new Date().toISOString();
-  writeManifest(manifest);
+  await store.writeManifest(manifest);
 
   const totalChunks = Object.values(manifest.files).reduce((total, entry) => total + entry.chunkCount, 0);
   const complete = filesPending === 0;

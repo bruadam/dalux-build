@@ -14,7 +14,7 @@ import { SUPPORTED_EXTENSIONS } from '../extract';
 import { buildIndex } from '../rag/build';
 import { indexIdFor, resolveScope } from '../rag/scope';
 import { searchIndex } from '../rag/search';
-import { dropIndex, listIndexes, readManifest } from '../rag/store';
+import { indexStores } from '../store';
 
 const scopeShape = {
   projectId: z.string().describe('The Dalux project ID.'),
@@ -135,7 +135,7 @@ export async function searchFileArea(client: DaluxClient, args: SearchFileAreaIn
     fileIds: args.fileIds,
   });
 
-  const manifest = readManifest(indexId);
+  const manifest = await indexStores().fileAreas.readManifest(indexId);
   return {
     ...result,
     matches: result.matches.map((match) => ({
@@ -157,7 +157,7 @@ export const listFileAreaIndexesInput = z.object({});
 export type ListFileAreaIndexesInput = z.infer<typeof listFileAreaIndexesInput>;
 
 export async function listFileAreaIndexes() {
-  return { indexes: listIndexes() };
+  return { indexes: await indexStores().fileAreas.listIndexes() };
 }
 
 // ---------- drop_file_area_index ----------
@@ -168,7 +168,7 @@ export const dropFileAreaIndexInput = z.object({
 export type DropFileAreaIndexInput = z.infer<typeof dropFileAreaIndexInput>;
 
 export async function dropFileAreaIndex(_client: DaluxClient, args: DropFileAreaIndexInput) {
-  const dropped = dropIndex(args.indexId);
+  const dropped = await indexStores().fileAreas.dropIndex(args.indexId);
   return {
     dropped,
     message: dropped

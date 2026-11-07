@@ -9,7 +9,8 @@
 
 import { EMBEDDING_MODEL, bm25Scores, cosineSimilarity, embedTexts, embeddingsAvailable, type RankMode } from '../search/rank';
 import type { TextChunk } from '../extract';
-import { readDocument, readManifest, readVectors, type IndexManifest } from './store';
+import { indexStores } from '../store';
+import type { IndexManifest } from '../store/types';
 
 export interface SearchMatch extends TextChunk {
   fileId: string;
@@ -43,10 +44,11 @@ interface Candidate {
   vector: Float32Array | null;
 }
 
-function collectCandidates(
+async function collectCandidates(
   manifest: IndexManifest,
   options: IndexSearchOptions,
-): { candidates: Candidate[]; filesSearched: number; missingVectors: boolean } {
+): Promise<{ candidates: Candidate[]; filesSearched: number; missingVectors: boolean }> {
+  const store = indexStores().fileAreas;
   const wanted = options.fileIds?.length ? new Set(options.fileIds) : null;
   const needle = options.fileNameContains?.toLowerCase();
   const dimensions = manifest.embedding?.dimensions ?? 0;
@@ -60,9 +62,9 @@ function collectCandidates(
     const entry = manifest.files[fileId];
     if (needle && !entry.fileName.toLowerCase().includes(needle)) continue;
 
-    const document = readDocument(manifest.indexId, fileId);
+    const document = await store.readDocument(manifest.indexId, fileId);
     if (!document) continue;
-    const vectors = dimensions ? readVectors(manifest.indexId, fileId, dimensions) : null;
+    const vectors = dimensions ? await store.readVectors(manifest.indexId, fileId, dimensions) : null;
     if (dimensions && (!vectors || vectors.length !== document.chunks.length)) missingVectors = true;
 
     filesSearched += 1;
@@ -98,7 +100,7 @@ export async function searchIndex(
   query: string,
   options: IndexSearchOptions = {},
 ): Promise<IndexSearchResult> {
-  const manifest = readManifest(indexId);
+  const manifest = await indexStores().fileAreas.readManifest(indexId);
   if (!manifest) {
     throw new Error(
       `No index "${indexId}" on this server. Build one with build_file_area_index first ` +
@@ -110,7 +112,7 @@ export async function searchIndex(
   const perFileLimit = options.perFileLimit === undefined ? 3 : options.perFileLimit;
   const warnings: string[] = [];
 
-  const { candidates, filesSearched, missingVectors } = collectCandidates(manifest, options);
+  const { candidates, filesSearched, missingVectors } = await collectCandidates(manifest, options);
   if (!candidates.length) {
     return { indexId, mode: 'lexical', query, filesSearched, chunksSearched: 0, matches: [], warnings };
   }

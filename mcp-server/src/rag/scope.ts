@@ -27,6 +27,11 @@ export interface IndexableFile {
   fileId: string;
   fileName: string;
   folderId: string | null;
+  /**
+   * Folders above `folderId`, root first. Only known when the build listed the
+   * file area's folders (a recursive folder scope); undefined otherwise.
+   */
+  folderAncestorIds?: string[];
   fileType: string | null;
   downloadLink: string | null;
   fileSize: number | null;
@@ -106,22 +111,30 @@ export async function resolveScope(client: DaluxClient, args: ScopeArgs): Promis
   };
 }
 
-/** The folder plus, when recursive, every folder beneath it. */
-async function folderSubtree(client: DaluxClient, scope: IndexScope): Promise<Set<string> | null> {
-  if (!scope.folderId) return null;
-  if (!scope.recursive) return new Set([scope.folderId]);
+interface FolderTree {
+  /** The scope folder plus, when recursive, every folder beneath it; null when the scope has no folder. */
+  subtree: Set<string> | null;
+  /** Parent of each folder in the file area; null when the folder list was not fetched. */
+  parentOf: Map<string, string> | null;
+}
+
+async function folderTree(client: DaluxClient, scope: IndexScope): Promise<FolderTree> {
+  if (!scope.folderId) return { subtree: null, parentOf: null };
+  if (!scope.recursive) return { subtree: new Set([scope.folderId]), parentOf: null };
 
   const folders = await collectAllDaluxItems((params) =>
     client.folders.listFolders(scope.projectId, scope.fileAreaId, params),
   );
 
   const childrenByParent = new Map<string, string[]>();
+  const parentOf = new Map<string, string>();
   for (const folder of folders) {
     const data = unwrap(folder);
     const id = data.folderId as string | undefined;
     const parent = (data.parentFolderId as string | undefined) ?? '';
     if (!id) continue;
     childrenByParent.set(parent, [...(childrenByParent.get(parent) ?? []), id]);
+    if (parent) parentOf.set(id, parent);
   }
 
   const subtree = new Set<string>([scope.folderId]);
@@ -133,7 +146,18 @@ async function folderSubtree(client: DaluxClient, scope: IndexScope): Promise<Se
       queue.push(child);
     }
   }
-  return subtree;
+  return { subtree, parentOf };
+}
+
+/** Folders above `folderId`, root first. */
+function ancestorsOf(folderId: string, parentOf: Map<string, string>): string[] {
+  const ancestors: string[] = [];
+  let current = parentOf.get(folderId);
+  while (current && !ancestors.includes(current) && current !== folderId) {
+    ancestors.unshift(current);
+    current = parentOf.get(current);
+  }
+  return ancestors;
 }
 
 /**
@@ -146,7 +170,7 @@ export async function listIndexableFiles(
   client: DaluxClient,
   scope: IndexScope,
 ): Promise<{ files: IndexableFile[]; skipped: SkippedFile[] }> {
-  const subtree = await folderSubtree(client, scope);
+  const { subtree, parentOf } = await folderTree(client, scope);
   const items = await collectAllDaluxItems((params) =>
     client.files.listFiles(scope.projectId, scope.fileAreaId, params),
   );
@@ -181,6 +205,7 @@ export async function listIndexableFiles(
       fileId,
       fileName,
       folderId,
+      folderAncestorIds: parentOf && folderId ? ancestorsOf(folderId, parentOf) : undefined,
       fileType,
       downloadLink,
       fileSize: (data.fileSize as number | undefined) ?? null,

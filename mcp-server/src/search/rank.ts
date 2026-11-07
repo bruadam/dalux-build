@@ -1,12 +1,14 @@
 /**
  * Ranking for document search.
  *
- * With `MISTRAL_API_KEY` set, chunks are ranked by cosine similarity of
+ * When Mistral may be used (see mistral.ts), chunks are ranked by cosine similarity of
  * embeddings (real semantic search). Without it, ranking falls back to BM25 —
  * still useful for the code-like identifiers that dominate construction
  * documents (drawing numbers, "C30/37", "EN 1992-1-1"), where lexical matching
  * often beats embeddings anyway, and it needs no API key at all.
  */
+
+import { mistralAllowed, mistralUnavailableReason } from '../mistral';
 
 export const EMBEDDING_MODEL = 'mistral-embed';
 export const EMBEDDING_DIMENSIONS = 1024;
@@ -32,12 +34,13 @@ const EMBED_RETRY = {
 export type RankMode = 'embeddings' | 'lexical';
 
 export function embeddingsAvailable(): boolean {
-  return Boolean(process.env.MISTRAL_API_KEY);
+  return mistralAllowed();
 }
 
 export async function embedTexts(texts: readonly string[]): Promise<number[][]> {
+  const unavailable = mistralUnavailableReason();
+  if (unavailable) throw new Error(`${unavailable}.`);
   const apiKey = process.env.MISTRAL_API_KEY;
-  if (!apiKey) throw new Error('MISTRAL_API_KEY is not set.');
   if (!texts.length) return [];
 
   const { Mistral } = await import('@mistralai/mistralai');

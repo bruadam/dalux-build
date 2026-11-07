@@ -124,7 +124,7 @@ export type SearchFileContentInput = z.infer<typeof searchFileContentInput>;
  * Handles PDFs (documents and drawings), Word and Excel files; each match
  * carries a citable location — a page for PDFs, a heading for Word, a
  * sheet/row range for Excel. Uses Mistral embeddings for semantic ranking when
- * MISTRAL_API_KEY is set, otherwise BM25 — a lightweight, single-file
+ * Mistral may be used (see mistral.ts), otherwise BM25 — a lightweight, single-file
  * complement to the file-area index in tools/fileAreaIndex.ts, not a
  * replacement for it.
  */
@@ -151,7 +151,7 @@ export async function searchFileContent(client: DaluxClient, args: SearchFileCon
     throw err;
   }
 
-  const { mode, matches } = await searchChunks(extraction.chunks, args.query, args.topK ?? 5);
+  const { mode, matches, warning } = await searchChunks(extraction.chunks, args.query, args.topK ?? 5);
 
   return {
     found: true,
@@ -160,6 +160,7 @@ export async function searchFileContent(client: DaluxClient, args: SearchFileCon
     fileName: download.fileName,
     format: extraction.format,
     ranking: mode,
+    warning,
     pageCount: extraction.pageCount,
     pagesWithoutText: extraction.pagesWithoutText?.length ? extraction.pagesWithoutText : undefined,
     note: extraction.note,

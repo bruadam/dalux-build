@@ -174,7 +174,7 @@ export type SearchTasksInput = z.infer<typeof searchTasksInput>;
 /**
  * Ranked keyword/semantic search across a project's tasks — the "find tasks
  * about X" complement to list_project_tasks' exact OData filtering. Ranks by
- * BM25, or by Mistral embeddings when MISTRAL_API_KEY is set (see search/rank.ts).
+ * BM25, or by Mistral embeddings when Mistral may be used (see mistral.ts).
  *
  * Re-fetches and re-renders every task on each call, same trade-off as
  * search_file_content vs. build_file_area_index: cheap for one-off questions,
@@ -233,10 +233,11 @@ export async function searchTasks(client: DaluxClient, args: SearchTasksInput) {
     });
   }
 
-  const { mode, matches } = await searchChunks(chunks, query, topK ?? 10);
+  const { mode, matches, warning } = await searchChunks(chunks, query, topK ?? 10);
 
   return {
     mode,
+    warning,
     query,
     totalTasks: byTaskId.size,
     returnedCount: matches.length,

@@ -54,14 +54,16 @@ const ifcRef = {
   fileAreaId: z.string().describe('The file area ID.'),
   fileId: z.string().describe('The file ID (must be an .ifc file).'),
 };
+/** `ifcRef` without descriptions, for schemas only the app or the host reads. */
+const bareRef = { projectId: z.string(), fileAreaId: z.string(), fileId: z.string() };
 
 const elementFilter = z.object({
-  type: z.string().optional().describe('IFC type, e.g. "IfcColumn". Includes subtypes.'),
+  type: z.string().optional(),
   property: z
     .object({
-      path: z.string().describe('Full "Pset.Property" path, e.g. "Tekla Quantity.Weight".'),
+      path: z.string(),
       op: z.enum(['=', '!=', '>', '<', '>=', '<=', 'contains', 'exists', 'matches']),
-      value: z.union([z.string(), z.number(), z.boolean()]).optional().describe('Omit only for "exists".'),
+      value: z.union([z.string(), z.number(), z.boolean()]).optional(),
     })
     .optional(),
 });
@@ -71,22 +73,22 @@ export const viewModel3dInput = z.object({
   selectionId: z
     .string()
     .optional()
-    .describe('Show the elements of a selection returned by ifc_query_elements (its `selectionId`). Preferred over listing ids.'),
+    .describe('selectionId from ifc_query_elements. Preferred over filter/globalIds.'),
   filter: elementFilter
     .optional()
-    .describe('Show only elements matching this filter (same shape as ifc_query_elements). Discover pset names first with ifc_discover_properties.'),
-  globalIds: z.array(z.string()).max(200).optional().describe('Show these elements by GlobalId (at most 200; use selectionId for more).'),
+    .describe('Same type/property filter as ifc_query_elements.'),
+  globalIds: z.array(z.string()).max(200).optional().describe('Elements by GlobalId.'),
   mode: z
     .enum(['isolate', 'xray', 'highlight'])
     .optional()
-    .describe('How to show a selection: isolate hides the rest, xray (default) ghosts the rest, highlight colours the selection.'),
+    .describe('isolate hides the rest, xray (default) ghosts it, highlight colours the selection.'),
 });
 export type ViewModel3dInput = z.infer<typeof viewModel3dInput>;
 
 const viewModel3dOutput = z.object({
   available: z.boolean(),
   fileName: z.string().optional(),
-  model: z.object(ifcRef).optional(),
+  model: z.object(bareRef).optional(),
   selection: z
     .object({ selectionId: z.string(), label: z.string(), count: z.number(), mode: z.enum(['isolate', 'xray', 'highlight']) })
     .optional(),
@@ -123,11 +125,9 @@ export function registerIfcViewer(server: McpServer, client: DaluxClient): void 
     {
       title: 'View 3D Model',
       description:
-        'Render an interactive 3D view of an IFC model file from a Dalux project, inline in the chat. ' +
-        'The user can orbit, click elements to see their properties, filter by IFC class, x-ray and section. ' +
-        'To show the result of a question ("which columns weigh over 500 kg?"), pass the selectionId returned by ' +
-        'ifc_query_elements, or a filter / globalIds, plus a mode (isolate | xray | highlight). ' +
-        'Elements the user clicks are shared back with you as context.',
+        'Show an IFC model in an interactive 3D viewer inline in the chat. ' +
+        'To show query results, pass a selectionId from ifc_query_elements (or filter/globalIds) and a mode. ' +
+        'Elements the user clicks are shared back as context.',
       inputSchema: viewModel3dInput,
       outputSchema: viewModel3dOutput,
       _meta: { ui: { resourceUri: RESOURCE_URI }, [LEGACY_RESOURCE_URI_META_KEY]: RESOURCE_URI },
@@ -176,9 +176,8 @@ export function registerIfcViewer(server: McpServer, client: DaluxClient): void 
   server.registerTool(
     'ifc_viewer_geometry',
     {
-      title: '3D viewer: geometry chunk',
-      description: 'Used by the 3D viewer app: one chunk of the tessellated model (base64 gzip, see src/ifc/meshPack.ts).',
-      inputSchema: z.object({ ...ifcRef, chunk: z.number().int().min(0) }),
+      description: '3D viewer app only.',
+      inputSchema: z.object({ ...bareRef, chunk: z.number().int().min(0) }),
       _meta: APP_ONLY_META,
     },
     async (args) => {
@@ -203,9 +202,8 @@ export function registerIfcViewer(server: McpServer, client: DaluxClient): void 
   server.registerTool(
     'ifc_viewer_element',
     {
-      title: '3D viewer: element properties',
-      description: 'Used by the 3D viewer app: class, name, GlobalId, material, property and quantity sets of one element.',
-      inputSchema: z.object({ ...ifcRef, expressId: z.number().int().min(1) }),
+      description: '3D viewer app only.',
+      inputSchema: z.object({ ...bareRef, expressId: z.number().int().min(1) }),
       _meta: APP_ONLY_META,
     },
     async (args) => {
@@ -221,9 +219,8 @@ export function registerIfcViewer(server: McpServer, client: DaluxClient): void 
   server.registerTool(
     'ifc_viewer_selection',
     {
-      title: '3D viewer: selection members',
-      description: 'Used by the 3D viewer app: the express ids behind a selectionId.',
-      inputSchema: z.object({ ...ifcRef, selectionId: z.string() }),
+      description: '3D viewer app only.',
+      inputSchema: z.object({ ...bareRef, selectionId: z.string() }),
       _meta: APP_ONLY_META,
     },
     async (args) => {

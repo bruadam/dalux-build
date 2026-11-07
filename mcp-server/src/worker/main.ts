@@ -69,8 +69,9 @@ export async function startWorker(env: NodeJS.ProcessEnv = process.env): Promise
   await boss.start();
   await boss.createQueue(QUEUES.tick, { policy: 'stately', retryLimit: 0 });
   // stately + singletonKey: at most one queued and one running job per scope or connection.
-  await boss.createQueue(QUEUES.index, { policy: 'stately', retryLimit: 0, expireInSeconds: 4 * 3600 });
-  await boss.createQueue(QUEUES.users, { policy: 'stately', retryLimit: 1, expireInSeconds: 3600 });
+  // The heartbeat fails the running job of a stopped worker within a minute, so it does not block its key.
+  await boss.createQueue(QUEUES.index, { policy: 'stately', retryLimit: 0, expireInSeconds: 4 * 3600, heartbeatSeconds: 60 });
+  await boss.createQueue(QUEUES.users, { policy: 'stately', retryLimit: 1, expireInSeconds: 3600, heartbeatSeconds: 60 });
 
   await boss.work<Record<string, never>>(QUEUES.tick, async () => tick(boss, db));
   await boss.work<{ id: string; trigger: RunTrigger }>(QUEUES.index, { localConcurrency: 1 }, async ([job]) => {

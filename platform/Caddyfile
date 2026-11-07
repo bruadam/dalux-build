@@ -1,0 +1,11 @@
+# One origin: the MCP server under /mcp, its OAuth and model-viewer routes,
+# and the web interface for everything else.
+{$PLATFORM_SITE_ADDRESS:localhost} {
+	@mcp path /mcp /mcp/* /.well-known/* /authorize /token /register /models/*
+	handle @mcp {
+		reverse_proxy mcp:8080
+	}
+	handle {
+		reverse_proxy web:3000
+	}
+}

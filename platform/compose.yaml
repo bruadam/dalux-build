@@ -18,5 +18,66 @@ services:
       timeout: 5s
       retries: 10
 
+  # Applies migrations and sets the role passwords, then exits.
+  migrate:
+    build:
+      context: ..
+      dockerfile: platform/web/Dockerfile
+      target: builder
+    command: ["node", "platform/db/dist/migrate-cli.js"]
+    environment:
+      DATABASE_URL: postgres://migrator:${PLATFORM_DB_MIGRATOR_PASSWORD}@postgres:5432/platform
+      PLATFORM_DB_WEB_PASSWORD: ${PLATFORM_DB_WEB_PASSWORD:?set PLATFORM_DB_WEB_PASSWORD}
+      PLATFORM_DB_MCP_PASSWORD: ${PLATFORM_DB_MCP_PASSWORD:?set PLATFORM_DB_MCP_PASSWORD}
+      PLATFORM_DB_WORKER_PASSWORD: ${PLATFORM_DB_WORKER_PASSWORD:?set PLATFORM_DB_WORKER_PASSWORD}
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  web:
+    build:
+      context: ..
+      dockerfile: platform/web/Dockerfile
+    restart: unless-stopped
+    environment:
+      DATABASE_URL: postgres://web:${PLATFORM_DB_WEB_PASSWORD}@postgres:5432/platform
+      PLATFORM_ENCRYPTION_KEY: ${PLATFORM_ENCRYPTION_KEY:?set PLATFORM_ENCRYPTION_KEY}
+      BETTER_AUTH_SECRET: ${BETTER_AUTH_SECRET:?set BETTER_AUTH_SECRET}
+      PUBLIC_URL: ${PUBLIC_URL:?set PUBLIC_URL}
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+
+  mcp:
+    build:
+      context: ..
+      dockerfile: mcp-server/Dockerfile
+    restart: unless-stopped
+    environment:
+      DATABASE_URL: postgres://mcp:${PLATFORM_DB_MCP_PASSWORD}@postgres:5432/platform
+      PLATFORM_ENCRYPTION_KEY: ${PLATFORM_ENCRYPTION_KEY}
+      PUBLIC_URL: ${PUBLIC_URL}
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+
+  caddy:
+    image: caddy:2
+    restart: unless-stopped
+    environment:
+      PLATFORM_SITE_ADDRESS: ${PLATFORM_SITE_ADDRESS:-localhost}
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data
+      - caddy-config:/config
+    depends_on:
+      - web
+      - mcp
+
 volumes:
   postgres-data:
+  caddy-data:
+  caddy-config:

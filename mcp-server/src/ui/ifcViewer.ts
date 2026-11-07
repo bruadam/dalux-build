@@ -50,8 +50,8 @@ const IFC_VIEWER_HTML = `<!doctype html>
 </html>`;
 
 const ifcRef = {
-  projectId: z.string().describe('The Dalux project ID.'),
-  fileAreaId: z.string().describe('The file area ID.'),
+  projectId: z.string(),
+  fileAreaId: z.string(),
   fileId: z.string().describe('The file ID (must be an .ifc file).'),
 };
 /** `ifcRef` without descriptions, for schemas only the app or the host reads. */

@@ -10,6 +10,7 @@ import {
 import { toNodeHandler, localhostHostValidation, localhostOriginValidation } from '@modelcontextprotocol/node';
 import { createClient } from 'dalux-build-api';
 import { buildServer } from './server';
+import { parseToolsets, type Toolset } from './toolsets';
 import { createOAuthServer, type OAuthServer } from './oauth';
 import { validateDaluxBaseUrl } from './daluxUrl';
 
@@ -42,6 +43,8 @@ export interface BuildHttpAppOptions {
    * static-header-only.
    */
   publicUrl?: string;
+  /** Toolsets for requests without a `?toolsets=` query parameter (see toolsets.ts); defaults to DEFAULT_TOOLSETS. */
+  toolsets?: readonly Toolset[];
 }
 
 export interface HttpApp {
@@ -250,11 +253,24 @@ export function buildHttpApp(options: BuildHttpAppOptions = {}): HttpApp {
         daluxCredentials = credentials;
       }
 
-      const key = `${daluxCredentials.baseUrl} ${daluxCredentials.apiKey}`;
+      const toolsetsParam = new URL(request.url).searchParams.get('toolsets');
+      let toolsets = options.toolsets;
+      if (toolsetsParam !== null) {
+        try {
+          toolsets = parseToolsets(toolsetsParam);
+        } catch (err) {
+          return new Response(JSON.stringify({ error: 'invalid_toolsets', message: (err as Error).message }), {
+            status: 400,
+            headers: { 'Content-Type': 'application/json' },
+          });
+        }
+      }
+
+      const key = `${daluxCredentials.baseUrl} ${daluxCredentials.apiKey} ${toolsets?.join(',') ?? ''}`;
       let mcpHandler = handlersByCredentials.get(key);
       if (!mcpHandler) {
         const client = createClient({ baseUrl: daluxCredentials.baseUrl, apiKey: daluxCredentials.apiKey });
-        mcpHandler = createMcpHandler(() => buildServer(client));
+        mcpHandler = createMcpHandler(() => buildServer(client, { toolsets }));
         handlersByCredentials.set(key, mcpHandler);
       }
       // Peek before the handler consumes the body, log after it answers.

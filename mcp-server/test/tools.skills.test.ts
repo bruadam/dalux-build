@@ -1,5 +1,6 @@
 import { McpServer } from '@modelcontextprotocol/server';
 import { Client, InMemoryTransport } from '@modelcontextprotocol/client';
+import { TOOLSET_NAMES } from '../src/toolsets';
 import { registerSkills, getSkill, parseSkillMarkdown, ALL_TOPICS, MARKDOWN_SKILLS, SKILL_TOPICS } from '../src/tools/skills';
 
 /** Connects an in-process MCP client to `server` over a linked in-memory transport pair. */
@@ -15,7 +16,6 @@ describe('tools/skills', () => {
     const result = getSkill({});
     expect(result.topic).toBe('overview');
     expect(result.title).toContain('overview');
-    expect(result.availableTopics).toEqual([...ALL_TOPICS]);
     for (const topic of ALL_TOPICS) {
       if (topic === 'overview') continue;
       expect(result.content).toContain(topic);
@@ -30,6 +30,19 @@ describe('tools/skills', () => {
   });
 });
 
+describe('get_skill overview toolsets', () => {
+  it('lists the enabled toolsets and how to enable the others', () => {
+    const { content } = getSkill({}, ['core', 'files']);
+    expect(content).toContain('Enabled: `core`, `files`.');
+    expect(content).toMatch(/\| `ifc` \|/);
+    expect(content).toContain('?toolsets=');
+  });
+
+  it('has nothing left to enable when every toolset is on', () => {
+    expect(getSkill({}, TOOLSET_NAMES).content).not.toContain('?toolsets=');
+  });
+});
+
 describe('registerSkills', () => {
   it('registers the get_skill tool and one resource per topic', async () => {
     const server = new McpServer({ name: 'test', version: '0.0.0' });
@@ -39,7 +52,8 @@ describe('registerSkills', () => {
     const { tools } = await client.listTools();
     const tool = tools.find((t) => t.name === 'get_skill');
     expect(tool).toBeDefined();
-    expect(tool?.description).toContain('call it first');
+    expect(tool?.description).toContain('Call it first');
+    expect(tool?.outputSchema).toBeUndefined();
 
     const { resources } = await client.listResources();
     expect(resources).toHaveLength(ALL_TOPICS.length);
@@ -58,9 +72,8 @@ describe('registerSkills', () => {
     const result = await client.callTool({ name: 'get_skill', arguments: {} });
 
     expect(result.isError).toBeFalsy();
-    const structured = result.structuredContent as { topic: string; availableTopics: string[] };
-    expect(structured.topic).toBe('overview');
-    expect(structured.availableTopics).toEqual([...ALL_TOPICS]);
+    expect(result.structuredContent).toBeUndefined();
+    expect(result.content).toHaveLength(1);
     const [content] = result.content as Array<{ type: string; text: string }>;
     expect(content.type).toBe('text');
     expect(content.text).toContain('# dalux-build MCP — overview');
@@ -73,10 +86,9 @@ describe('registerSkills', () => {
 
     const result = await client.callTool({ name: 'get_skill', arguments: { topic: 'tasks' } });
 
-    const structured = result.structuredContent as { topic: string; content: string };
-    expect(structured.topic).toBe('tasks');
-    expect(structured.content).toContain('data/type/typeId eq');
-    expect(structured.content).toContain('$filter');
+    const [{ text }] = result.content as Array<{ text: string }>;
+    expect(text).toContain('data/type/typeId eq');
+    expect(text).toContain('$filter');
   });
 
   it('reads a skill resource back as markdown', async () => {
@@ -100,9 +112,9 @@ describe('registerSkills', () => {
     registerSkills(server);
     const client = await connectedClient(server);
     const result = await client.callTool({ name: 'get_skill', arguments: { topic: 'document-consistency-review' } });
-    const structured = result.structuredContent as { topic: string; content: string };
-    expect(structured.topic).toBe('document-consistency-review');
-    expect(structured.content).not.toMatch(/^---/);
+    const [{ text }] = result.content as Array<{ text: string }>;
+    expect(text).toBe(getSkill({ topic: 'document-consistency-review' }).content);
+    expect(text).not.toMatch(/^---/);
 
     const resource = await client.readResource({ uri: 'dalux-build://skill/danish-construction-contracts' });
     expect((resource.contents[0] as { text: string }).text).toBe(getSkill({ topic: 'danish-construction-contracts' }).content);

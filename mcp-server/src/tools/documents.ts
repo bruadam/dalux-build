@@ -11,9 +11,9 @@ import { searchChunks } from '../search/documentSearch';
 // ---------- download_file ----------
 
 export const downloadFileInput = z.object({
-  projectId: z.string().describe('The Dalux project ID.'),
-  fileAreaId: z.string().describe('The file area ID.'),
-  fileId: z.string().describe('The file ID.'),
+  projectId: z.string(),
+  fileAreaId: z.string(),
+  fileId: z.string(),
   maxInlineBytes: z
     .number()
     .int()
@@ -118,8 +118,8 @@ export async function downloadFileToChat(client: DaluxClient, args: DownloadFile
 // ---------- search_file_content ----------
 
 export const searchFileContentInput = z.object({
-  projectId: z.string().describe('The Dalux project ID.'),
-  fileAreaId: z.string().describe('The file area ID.'),
+  projectId: z.string(),
+  fileAreaId: z.string(),
   fileId: z
     .string()
     .describe(`The file ID. Supported formats: ${SUPPORTED_EXTENSIONS.join(', ')} (PDFs include drawings).`),

@@ -27,7 +27,7 @@ export async function listProjects(
 // ---------- get_project ----------
 
 export const getProjectInput = z.object({
-  projectId: z.string().describe('The Dalux project ID.'),
+  projectId: z.string(),
 });
 export type GetProjectInput = z.infer<typeof getProjectInput>;
 

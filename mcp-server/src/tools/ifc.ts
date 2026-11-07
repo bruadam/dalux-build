@@ -50,8 +50,8 @@ import { describeVolumeJob, getVolumeJob, startVolumeJob } from '../ifc/volumeJo
 import { describeSelection, queryExpressIds, saveSelection } from '../ifc/viewerData';
 
 const ifcRef = {
-  projectId: z.string().describe('The Dalux project ID.'),
-  fileAreaId: z.string().describe('The file area ID.'),
+  projectId: z.string(),
+  fileAreaId: z.string(),
   fileId: z.string().describe('The file ID of an .ifc file.'),
 };
 
@@ -318,7 +318,7 @@ const propertyFilter = z.object({
 });
 
 export const ifcClashStartInput = z.object({
-  projectId: z.string().describe('The Dalux project ID.'),
+  projectId: z.string(),
   models: z
     .array(z.object({ fileAreaId: z.string(), fileId: z.string().describe('The file ID of an .ifc file.') }))
     .min(1)
@@ -511,7 +511,7 @@ export async function ifcVolumesResult(_client: DaluxClient, args: IfcVolumesRes
 // ---------- ifc_diff ----------
 
 const diffSide = z.object({
-  fileAreaId: z.string().describe('The file area ID.'),
+  fileAreaId: z.string(),
   fileId: z.string().describe('The file ID of an .ifc file.'),
 });
 

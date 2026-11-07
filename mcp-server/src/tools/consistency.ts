@@ -25,8 +25,8 @@ import { resolveScope } from '../rag/scope';
 // ---------- check_document_consistency ----------
 
 export const checkDocumentConsistencyInput = z.object({
-  projectId: z.string().describe('The Dalux project ID.'),
-  fileAreaId: z.string().describe('The file area ID.'),
+  projectId: z.string(),
+  fileAreaId: z.string(),
   folderPath: z
     .string()
     .optional()

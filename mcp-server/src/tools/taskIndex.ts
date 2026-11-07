@@ -18,7 +18,7 @@ import { searchTaskIndex as runSearchTaskIndex } from '../rag/taskSearch';
 import { dropIndex, listIndexes, readManifest, type TaskIndexScope } from '../rag/taskStore';
 
 const scopeShape = {
-  projectId: z.string().describe('The Dalux project ID.'),
+  projectId: z.string(),
   typeId: z
     .string()
     .optional()

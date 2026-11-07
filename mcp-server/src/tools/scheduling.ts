@@ -6,7 +6,7 @@ import { pageInput, paginateForLlm, type PaginatedForLlm } from '../serialize';
 // ---------- list_work_packages ----------
 
 export const listWorkPackagesInput = z.object({
-  projectId: z.string().describe('The Dalux project ID.'),
+  projectId: z.string(),
   ...pageInput,
 });
 export type ListWorkPackagesInput = z.infer<typeof listWorkPackagesInput>;
@@ -22,7 +22,7 @@ export async function listWorkPackages(
 // ---------- list_version_sets ----------
 
 export const listVersionSetsInput = z.object({
-  projectId: z.string().describe('The Dalux project ID.'),
+  projectId: z.string(),
   ...pageInput,
 });
 export type ListVersionSetsInput = z.infer<typeof listVersionSetsInput>;

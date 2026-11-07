@@ -44,7 +44,7 @@ html,body{margin:0;padding:0;height:100%}
 </html>`;
 
 export const viewTasksTimelineInput = z.object({
-  projectId: z.string().describe('The Dalux project ID.'),
+  projectId: z.string(),
   taskIds: z
     .array(z.string())
     .min(1)

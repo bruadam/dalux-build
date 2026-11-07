@@ -17,7 +17,7 @@ import { searchIndex } from '../rag/search';
 import { dropIndex, listIndexes, readManifest } from '../rag/store';
 
 const scopeShape = {
-  projectId: z.string().describe('The Dalux project ID.'),
+  projectId: z.string(),
   fileAreaId: z.string().describe('The file area ID to index.'),
   folderId: z.string().optional().describe('Restrict to one folder (omit to index the whole file area).'),
   folderPath: z

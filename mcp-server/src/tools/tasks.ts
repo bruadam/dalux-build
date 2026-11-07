@@ -94,7 +94,7 @@ function applyConditions<T>(items: readonly T[], conditions: TaskFilterCondition
 // ---------- list_project_tasks ----------
 
 export const listProjectTasksInput = z.object({
-  projectId: z.string().describe('The Dalux project ID.'),
+  projectId: z.string(),
   typeId: z
     .string()
     .optional()
@@ -169,7 +169,7 @@ const MAX_ATTACHMENTS_PER_TASK_ADHOC = 5;
 const ATTACHMENT_CONCURRENCY_ADHOC = 4;
 
 export const searchTasksInput = z.object({
-  projectId: z.string().describe('The Dalux project ID.'),
+  projectId: z.string(),
   query: z
     .string()
     .describe(
@@ -354,8 +354,8 @@ function filterByTaskId<T>(items: readonly T[], taskId: string | undefined): T[]
 // ---------- get_task ----------
 
 export const getTaskInput = z.object({
-  projectId: z.string().describe('The Dalux project ID.'),
-  taskId: z.string().describe('The task ID.'),
+  projectId: z.string(),
+  taskId: z.string(),
   includeChanges: z
     .boolean()
     .optional()
@@ -408,7 +408,7 @@ export async function getTask(client: DaluxClient, args: GetTaskInput) {
 // ---------- list_task_changes ----------
 
 export const listTaskChangesInput = z.object({
-  projectId: z.string().describe('The Dalux project ID.'),
+  projectId: z.string(),
   taskId: z
     .string()
     .optional()
@@ -445,7 +445,7 @@ export async function listTaskChanges(
 // ---------- list_task_attachments ----------
 
 export const listTaskAttachmentsInput = z.object({
-  projectId: z.string().describe('The Dalux project ID.'),
+  projectId: z.string(),
   taskId: z
     .string()
     .optional()

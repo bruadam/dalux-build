@@ -15,7 +15,7 @@ function matchesNameQuery(item: unknown, field: string, needle: string): boolean
 // ---------- list_file_areas ----------
 
 export const listFileAreasInput = z.object({
-  projectId: z.string().describe('The Dalux project ID.'),
+  projectId: z.string(),
 });
 export type ListFileAreasInput = z.infer<typeof listFileAreasInput>;
 
@@ -27,8 +27,8 @@ export async function listFileAreas(client: DaluxClient, args: ListFileAreasInpu
 // ---------- get_file_area ----------
 
 export const getFileAreaInput = z.object({
-  projectId: z.string().describe('The Dalux project ID.'),
-  fileAreaId: z.string().describe('The file area ID.'),
+  projectId: z.string(),
+  fileAreaId: z.string(),
 });
 export type GetFileAreaInput = z.infer<typeof getFileAreaInput>;
 
@@ -39,8 +39,8 @@ export async function getFileArea(client: DaluxClient, args: GetFileAreaInput) {
 // ---------- list_folders ----------
 
 export const listFoldersInput = z.object({
-  projectId: z.string().describe('The Dalux project ID.'),
-  fileAreaId: z.string().describe('The file area ID.'),
+  projectId: z.string(),
+  fileAreaId: z.string(),
   ...pageInput,
 });
 export type ListFoldersInput = z.infer<typeof listFoldersInput>;
@@ -58,8 +58,8 @@ export async function listFolders(
 // ---------- search_folders_by_name ----------
 
 export const searchFoldersByNameInput = z.object({
-  projectId: z.string().describe('The Dalux project ID.'),
-  fileAreaId: z.string().describe('The file area ID.'),
+  projectId: z.string(),
+  fileAreaId: z.string(),
   query: z.string().describe('Text to look for anywhere in the folder name (case-insensitive, no exact match required).'),
   ...pageInput,
 });
@@ -81,9 +81,9 @@ export async function searchFoldersByName(
 // ---------- get_folder ----------
 
 export const getFolderInput = z.object({
-  projectId: z.string().describe('The Dalux project ID.'),
-  fileAreaId: z.string().describe('The file area ID.'),
-  folderId: z.string().describe('The folder ID.'),
+  projectId: z.string(),
+  fileAreaId: z.string(),
+  folderId: z.string(),
 });
 export type GetFolderInput = z.infer<typeof getFolderInput>;
 
@@ -94,7 +94,7 @@ export async function getFolder(client: DaluxClient, args: GetFolderInput) {
 // ---------- get_folder_by_path ----------
 
 export const getFolderByPathInput = z.object({
-  projectId: z.string().describe('The Dalux project ID.'),
+  projectId: z.string(),
   path: z.string().describe('Full path starting with the file area name, e.g. "Files/4_Design/C07_Geometry".'),
 });
 export type GetFolderByPathInput = z.infer<typeof getFolderByPathInput>;
@@ -108,8 +108,8 @@ export async function getFolderByPath(client: DaluxClient, args: GetFolderByPath
 const DEFAULT_TREE_DEPTH = 3;
 
 export const getFolderTreeInput = z.object({
-  projectId: z.string().describe('The Dalux project ID.'),
-  fileAreaId: z.string().describe('The file area ID.'),
+  projectId: z.string(),
+  fileAreaId: z.string(),
   folderId: z.string().optional().describe('Start the tree at this folder instead of the file area root.'),
   maxDepth: z
     .number()
@@ -172,9 +172,9 @@ export async function getFolderTree(client: DaluxClient, args: GetFolderTreeInpu
 // ---------- list_files_in_folder ----------
 
 export const listFilesInFolderInput = z.object({
-  projectId: z.string().describe('The Dalux project ID.'),
-  fileAreaId: z.string().describe('The file area ID.'),
-  folderId: z.string().describe('The folder ID.'),
+  projectId: z.string(),
+  fileAreaId: z.string(),
+  folderId: z.string(),
   ...pageInput,
   fields: fieldsInput(FILE_FIELDS),
 });
@@ -195,8 +195,8 @@ export async function listFilesInFolder(
 // ---------- list_files ----------
 
 export const listFilesInput = z.object({
-  projectId: z.string().describe('The Dalux project ID.'),
-  fileAreaId: z.string().describe('The file area ID.'),
+  projectId: z.string(),
+  fileAreaId: z.string(),
   ...pageInput,
   fields: fieldsInput(FILE_FIELDS),
 });
@@ -213,8 +213,8 @@ export async function listFiles(
 // ---------- search_files_by_name ----------
 
 export const searchFilesByNameInput = z.object({
-  projectId: z.string().describe('The Dalux project ID.'),
-  fileAreaId: z.string().describe('The file area ID.'),
+  projectId: z.string(),
+  fileAreaId: z.string(),
   query: z.string().describe('Text to look for anywhere in the file name (case-insensitive, no exact match required).'),
   ...pageInput,
   fields: fieldsInput(FILE_FIELDS),
@@ -235,9 +235,9 @@ export async function searchFilesByName(
 // ---------- get_file ----------
 
 export const getFileInput = z.object({
-  projectId: z.string().describe('The Dalux project ID.'),
-  fileAreaId: z.string().describe('The file area ID.'),
-  fileId: z.string().describe('The file ID.'),
+  projectId: z.string(),
+  fileAreaId: z.string(),
+  fileId: z.string(),
 });
 export type GetFileInput = z.infer<typeof getFileInput>;
 

@@ -1,6 +1,7 @@
 import { z } from 'zod';
 import type { McpServer } from '@modelcontextprotocol/server';
 import { BUNDLED_SKILLS } from './skillsBundle.generated';
+import { DEFAULT_TOOLSETS, TOOLSET_NAMES, TOOLSET_SUMMARIES, type Toolset } from '../toolsets';
 
 /**
  * Self-hosted usage documentation ("skills"), served over MCP itself so any
@@ -566,44 +567,57 @@ export const getSkillInput = z.object({
   topic: z
     .enum(ALL_TOPICS)
     .optional()
-    .describe(
-      'Which usage doc to fetch. Omit on the first call of a conversation to get the overview, which lists every other topic.',
-    ),
+    .describe('Omit for the overview.'),
 });
 export type GetSkillInput = z.infer<typeof getSkillInput>;
 
-const getSkillOutput = z.object({
-  topic: z.enum(ALL_TOPICS),
-  title: z.string(),
-  content: z.string().describe('Full usage doc for this topic, as markdown.'),
-  availableTopics: z.array(z.enum(ALL_TOPICS)).describe('Every topic get_skill accepts.'),
-});
-export type GetSkillOutput = z.infer<typeof getSkillOutput>;
+export interface GetSkillOutput {
+  topic: string;
+  title: string;
+  content: string;
+}
 
-function overviewWithSkills(): string {
-  if (!MARKDOWN_SKILLS.length) return OVERVIEW.content;
-  const rows = MARKDOWN_SKILLS.map(
-    (skill) => `| \`${skill.name}\` | ${skill.description.replace(/\\/g, '\\\\').replace(/\|/g, '\\|')} |`,
-  );
-  return `${OVERVIEW.content}
+function rows(entries: [string, string][]): string {
+  return entries.map(([name, text]) => `| \`${name}\` | ${text.replace(/\\/g, '\\\\').replace(/\|/g, '\\|')} |`).join('\n');
+}
+
+function overviewContent(toolsets: readonly Toolset[]): string {
+  const disabled = TOOLSET_NAMES.filter((toolset) => !toolsets.includes(toolset));
+  const skills = MARKDOWN_SKILLS.length
+    ? `
 ## Domain skills
-
-Also fetchable with \`get_skill\` (or as \`dalux-build://skill/<name>\` resources):
 
 | topic | covers |
 | --- | --- |
-${rows.join('\n')}
-`;
+${rows(MARKDOWN_SKILLS.map((skill) => [skill.name, skill.description]))}
+`
+    : '';
+  const more = disabled.length
+    ? `
+Not enabled on this connection (the user can add them, see below):
+
+| toolset | tools |
+| --- | --- |
+${rows(disabled.map((toolset) => [toolset, TOOLSET_SUMMARIES[toolset]]))}
+
+To enable, the user sets \`DALUX_MCP_TOOLSETS=default,ifc\` (or \`--toolsets default,ifc\`) for a local server, or adds
+\`?toolsets=default,ifc\` to the HTTP connector URL. \`all\` enables everything.
+`
+    : '';
+  return `${OVERVIEW.content}${skills}
+## Toolsets
+
+Enabled: ${toolsets.map((toolset) => `\`${toolset}\``).join(', ')}.
+${more}`;
 }
 
-export function getSkill(args: GetSkillInput): GetSkillOutput {
+export function getSkill(args: GetSkillInput, toolsets: readonly Toolset[] = DEFAULT_TOOLSETS): GetSkillOutput {
   const topic = args.topic ?? 'overview';
   const doc = DOCS[topic];
   return {
     topic,
     title: doc.title,
-    content: topic === 'overview' ? overviewWithSkills() : doc.content,
-    availableTopics: [...ALL_TOPICS],
+    content: topic === 'overview' ? overviewContent(toolsets) : doc.content,
   };
 }
 
@@ -619,7 +633,7 @@ function resourceUri(topic: string): string {
  * ui/taskTimeline.ts and ui/ifcViewer.ts, which also register straight onto
  * `server`).
  */
-export function registerSkills(server: McpServer): void {
+export function registerSkills(server: McpServer, toolsets: readonly Toolset[] = DEFAULT_TOOLSETS): void {
   for (const topic of ALL_TOPICS) {
     const skill = markdownSkill(topic);
     server.registerResource(
@@ -631,28 +645,21 @@ export function registerSkills(server: McpServer): void {
         mimeType: 'text/markdown',
       },
       async (uri) => ({
-        contents: [{ uri: uri.href, mimeType: 'text/markdown', text: getSkill({ topic }).content }],
+        contents: [{ uri: uri.href, mimeType: 'text/markdown', text: getSkill({ topic }, toolsets).content }],
       }),
     );
   }
 
+  // Text content only: every host shows it to the model, and no outputSchema
+  // means no structuredContent copy of the same doc.
   server.registerTool(
     'get_skill',
     {
       title: 'Get usage guide',
       description:
-        "Read this server's own usage documentation — call it first, with no arguments, before exploring an " +
-        'unfamiliar project or writing an OData filter for list_project_tasks. Returns the overview topic by ' +
-        `default, which lists every other topic (${ALL_TOPICS.filter((t) => t !== 'overview').join(', ')}) to fetch next.`,
+        "This server's usage guide. Call it first with no arguments; the overview lists the other topics and toolsets.",
       inputSchema: getSkillInput,
-      outputSchema: getSkillOutput,
     },
-    async (args) => {
-      const result = getSkill(args);
-      return {
-        content: [{ type: 'text' as const, text: result.content }],
-        structuredContent: result,
-      };
-    },
+    async (args) => ({ content: [{ type: 'text' as const, text: getSkill(args, toolsets).content }] }),
   );
 }

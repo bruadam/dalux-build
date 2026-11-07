@@ -19,9 +19,8 @@ export const pageInput = {
     .int()
     .min(1)
     .max(MAX_LIMIT)
-    .optional()
-    .describe(`Page size (default ${DEFAULT_LIMIT}).`),
-  offset: z.number().int().min(0).optional().describe('Start index; pass the previous nextOffset.'),
+    .optional(),
+  offset: z.number().int().min(0).optional(),
 };
 
 export interface PaginationParams {

@@ -6,7 +6,7 @@ import { pageInput, paginateForLlm, type PaginatedForLlm } from '../serialize';
 // ---------- list_test_plans ----------
 
 export const listTestPlansInput = z.object({
-  projectId: z.string().describe('The Dalux project ID.'),
+  projectId: z.string(),
   ...pageInput,
 });
 export type ListTestPlansInput = z.infer<typeof listTestPlansInput>;
@@ -25,7 +25,7 @@ export async function listTestPlans(
 // ---------- list_test_plan_registrations ----------
 
 export const listTestPlanRegistrationsInput = z.object({
-  projectId: z.string().describe('The Dalux project ID.'),
+  projectId: z.string(),
   ...pageInput,
 });
 export type ListTestPlanRegistrationsInput = z.infer<typeof listTestPlanRegistrationsInput>;
@@ -44,7 +44,7 @@ export async function listTestPlanRegistrations(
 // ---------- list_inspection_plans ----------
 
 export const listInspectionPlansInput = z.object({
-  projectId: z.string().describe('The Dalux project ID.'),
+  projectId: z.string(),
   ...pageInput,
 });
 export type ListInspectionPlansInput = z.infer<typeof listInspectionPlansInput>;

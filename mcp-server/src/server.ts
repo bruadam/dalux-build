@@ -1,4 +1,4 @@
-import { McpServer, type StandardSchemaWithJSON } from '@modelcontextprotocol/server';
+import { McpServer, type RegisteredTool, type StandardSchemaWithJSON } from '@modelcontextprotocol/server';
 import type { DaluxClient } from 'dalux-build-api';
 import type { z } from 'zod';
 
@@ -20,6 +20,7 @@ import * as ifc from './tools/ifc';
 import { registerIfcViewer } from './ui/ifcViewer';
 import { registerTaskTimeline } from './ui/taskTimeline';
 import { registerSkills } from './tools/skills';
+import { DEFAULT_TOOLSETS, toolsInToolsets, type Toolset } from './toolsets';
 
 interface ToolSpec<Schema extends z.ZodTypeAny> {
   name: string;
@@ -617,24 +618,30 @@ function withLeanJsonSchema<S extends StandardSchemaWithJSON>(schema: S): S {
 }
 
 /**
- * Lists every tool's input/output schema through stripSchemaNoise — including
- * tools registered outside this file (get_skill, the UI tools) — so tools/list
- * stays lean in one place. Validation still runs on the original schema.
+ * Wraps `server.registerTool` once, for every tool including those registered
+ * outside this file (get_skill, the UI tools): schemas are listed through
+ * stripSchemaNoise (validation still runs on the original schema), and a tool
+ * outside the enabled toolsets is removed again right after registration.
  */
-function leanToolSchemas(server: McpServer): void {
+function configureToolRegistration(server: McpServer, enabledTools: ReadonlySet<string>): void {
   type ToolConfig = { inputSchema?: StandardSchemaWithJSON; outputSchema?: StandardSchemaWithJSON } & Record<string, unknown>;
-  const register = server.registerTool.bind(server) as (name: string, config: ToolConfig, cb: unknown) => unknown;
-  server.registerTool = ((name: string, config: ToolConfig, cb: unknown) =>
-    register(name, {
+  const register = server.registerTool.bind(server) as (name: string, config: ToolConfig, cb: unknown) => RegisteredTool;
+  server.registerTool = ((name: string, config: ToolConfig, cb: unknown) => {
+    const registered = register(name, {
       ...config,
       inputSchema: config.inputSchema && withLeanJsonSchema(config.inputSchema),
       outputSchema: config.outputSchema && withLeanJsonSchema(config.outputSchema),
-    }, cb)) as typeof server.registerTool;
+    }, cb);
+    if (!enabledTools.has(name)) registered.remove();
+    return registered;
+  }) as typeof server.registerTool;
 }
 
 export interface BuildServerOptions {
   name?: string;
   version?: string;
+  /** Toolsets to expose (see toolsets.ts); defaults to DEFAULT_TOOLSETS. */
+  toolsets?: readonly Toolset[];
 }
 
 /**
@@ -657,7 +664,8 @@ export function buildServer(client: DaluxClient, options: BuildServerOptions = {
     },
   );
 
-  leanToolSchemas(server);
+  const toolsets = options.toolsets ?? DEFAULT_TOOLSETS;
+  configureToolRegistration(server, toolsInToolsets(toolsets));
   for (const spec of TOOLS) {
     server.registerTool(
       spec.name,
@@ -676,7 +684,7 @@ export function buildServer(client: DaluxClient, options: BuildServerOptions = {
 
   registerIfcViewer(server, client);
   registerTaskTimeline(server, client);
-  registerSkills(server);
+  registerSkills(server, toolsets);
 
   return server;
 }

@@ -129,10 +129,27 @@ function subjectFor(raw: string): { key: string; label: string } {
   return { key: `SUBJECT:${normalizeId(text)}`, label: text };
 }
 
+/**
+ * Standard editions and national annexes in the patterns' form (facts.ts STANDARD_PATTERN): edition
+ * "2005+AC:2010", national annex "2013". The model often repeats the standard label or the NA in the value
+ * ("DS/EN 1992-1-1:2005 + NA:2013").
+ */
+function standardValue(attribute: 'edition' | 'national_annex', value: string): string | null {
+  const rest = value.replace(/^(?:DS\/EN ISO|DS\/EN|DS\/ISO|EN ISO|DS|EN|ISO)\s?\d{3,5}(?:-\d{1,3})*/i, '');
+  const annex = /(?:,\s*)?(?:DK\s?)?NA\s?:?\s?(\d{4})/i.exec(rest);
+  if (attribute === 'national_annex') return annex?.[1] ?? /\d{4}(?!.*\d{4})/.exec(rest)?.[0] ?? null;
+  const edition = (annex ? rest.slice(0, annex.index) : rest).replace(/\s/g, '').replace(/^:|[+,;]+$/g, '');
+  return edition || null;
+}
+
 /** Bring a model-extracted value into the same canonical form the patterns produce; null drops it. */
 function canonical(attribute: string, value: string, unit: string): { value: string; unit?: string } | null {
   const trimmed = value.trim();
   if (!trimmed) return null;
+  if (attribute === 'edition' || attribute === 'national_annex') {
+    const standard = standardValue(attribute, trimmed);
+    return standard ? { value: standard } : null;
+  }
   if (isDateAttribute(attribute)) {
     const date = normalizeDate(trimmed);
     return date ? { value: date } : null;

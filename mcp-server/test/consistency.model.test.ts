@@ -211,4 +211,28 @@ describe('document consistency with Mistral', () => {
     }
   });
 
+  it('compares model and pattern standard editions and national annexes in the same form', async () => {
+    const a = writeDocx(fixtures, 'statik.docx', paragraph('Laster efter DS/EN 1991-1-1:2007 + DK NA:2013.'));
+    const b = writeDocx(fixtures, 'konstruktion.docx', paragraph('Nyttelast iht. DS/EN 1991-1-1:2007, NA:2013.'));
+    complete.mockImplementation(async (request: Request) => {
+      if (request.responseFormat.jsonSchema.name !== 'document_facts') {
+        return reply({ verdict: 'confirmed', explanation: '', precedenceNote: '' });
+      }
+      const quote = 'Laster efter DS/EN 1991-1-1:2007 + DK NA:2013.';
+      return reply({
+        facts: request.messages[1].content.includes('statik.docx')
+          ? [
+              { subject: 'DS/EN 1991-1-1', attribute: 'edition', value: 'DS/EN 1991-1-1:2007 + DK NA:2013', unit: '', location: 'nowhere', quote },
+              { subject: 'DS/EN 1991-1-1', attribute: 'national_annex', value: 'DS/EN 1991-1-1 DK NA:2013', unit: '', location: 'nowhere', quote },
+            ]
+          : [],
+      });
+    });
+    const client = fakeClient([
+      { fileId: 's1', fileName: 'statik.docx', source: a },
+      { fileId: 's2', fileName: 'konstruktion.docx', source: b },
+    ]);
+    const result = await consistency.checkDocumentConsistency(client, { projectId: 'p1', fileAreaId: 'fa1' });
+    expect(result).toMatchObject({ complete: true, findingsCount: 0, dismissedByModel: 0 });
+  });
 });

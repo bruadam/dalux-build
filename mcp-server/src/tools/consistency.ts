@@ -29,7 +29,7 @@ export const checkDocumentConsistencyInput = z.object({
   folderPath: z
     .string()
     .optional()
-    .describe('Restrict to one folder (and its subfolders) by path, e.g. "Files/2_Udbud". Omit for the whole file area.'),
+    .describe('Restrict to one folder (and its subfolders) by its full path: the file area name, then the root folder name, then the subfolders, e.g. "Files/Files/2_Udbud". Omit for the whole file area.'),
   fileIds: z.array(z.string()).optional().describe('Only compare these files (within the file area/folder).'),
   extensions: z
     .array(z.string())

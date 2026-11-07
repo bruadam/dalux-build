@@ -11,12 +11,15 @@ import path from 'node:path';
 import type { LoadedModel } from '@ifc-lite/mcp';
 
 import { derivedDirFor } from '../cachePaths';
+import { currentCaller } from '../access/requestScope';
 import { extractVolumes, type ElementVolume, type TypeVolumeSummary } from './volumeEngine';
 
 export type VolumeJobStatus = 'running' | 'done' | 'error';
 
 export interface VolumeJob {
   id: string;
+  /** Only this caller can see the job (see currentCaller). */
+  owner?: string;
   fileId: string;
   type?: string;
   status: VolumeJobStatus;
@@ -50,6 +53,7 @@ export interface StartVolumeJobOptions {
 export function startVolumeJob(opts: StartVolumeJobOptions): VolumeJob {
   const job: VolumeJob = {
     id: randomUUID(),
+    owner: currentCaller(),
     fileId: opts.fileId,
     type: opts.type,
     status: 'running',
@@ -81,7 +85,8 @@ export function startVolumeJob(opts: StartVolumeJobOptions): VolumeJob {
 }
 
 export function getVolumeJob(id: string): VolumeJob | undefined {
-  return jobs.get(id);
+  const job = jobs.get(id);
+  return job?.owner === currentCaller() ? job : undefined;
 }
 
 export function describeVolumeJob(job: VolumeJob) {

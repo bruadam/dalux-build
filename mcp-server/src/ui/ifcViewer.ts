@@ -3,8 +3,8 @@ import { z } from 'zod';
 import type { DaluxClient } from 'dalux-build-api';
 import type { ModelLinkStore } from '../modelLinks';
 import { IFC_VIEWER_BUNDLE_JS } from './ifcViewerBundle.generated';
-import { checkAccess } from '../access/checkAccess';
-import { UNRESTRICTED_CONTEXT, type RequestContext } from '../access/context';
+import { UNRESTRICTED_CONTEXT } from '../access/context';
+import { createToolGuard, type ToolGuard } from '../access/guard';
 
 /**
  * Interactive 3D viewer for IFC models, delivered as an MCP App (SEP-1865 /
@@ -86,7 +86,7 @@ export function registerIfcViewer(
   server: McpServer,
   client: DaluxClient,
   hosting: IfcHostingOptions | undefined,
-  context: RequestContext = UNRESTRICTED_CONTEXT,
+  guard: ToolGuard = createToolGuard(UNRESTRICTED_CONTEXT),
 ): void {
   server.registerResource(
     'ifc-viewer',
@@ -116,57 +116,59 @@ export function registerIfcViewer(
       outputSchema: viewModel3dOutput,
       _meta: { ui: { resourceUri: RESOURCE_URI }, [LEGACY_RESOURCE_URI_META_KEY]: RESOURCE_URI },
     },
-    async (args) => {
-      const decision = checkAccess(context, 'view_model_3d', args);
-      if (!decision.allowed) {
-        return {
-          content: [{ type: 'text' as const, text: decision.reason }],
-          structuredContent: { available: false, message: decision.reason },
+    (args) =>
+      guard(
+        'view_model_3d',
+        args,
+        (reason) => ({
+          content: [{ type: 'text' as const, text: reason }],
+          structuredContent: { available: false, message: reason },
           isError: true,
-        };
-      }
-      if (!hosting) {
-        const message =
-          'The 3D viewer needs this Dalux MCP server running with --public-url (the HTTP/OAuth deployment) ' +
-          'so the viewer can fetch model bytes over the network. Over stdio, use download_file instead.';
-        return {
-          content: [{ type: 'text' as const, text: message }],
-          structuredContent: { available: false, message },
-        };
-      }
+        }),
+        async () => {
+          if (!hosting) {
+            const message =
+              'The 3D viewer needs this Dalux MCP server running with --public-url (the HTTP/OAuth deployment) ' +
+              'so the viewer can fetch model bytes over the network. Over stdio, use download_file instead.';
+            return {
+              content: [{ type: 'text' as const, text: message }],
+              structuredContent: { available: false, message },
+            };
+          }
 
-      const fileInfo = await client.files.getFile(args.projectId, args.fileAreaId, args.fileId);
-      if (typeof fileInfo === 'string' || !fileInfo) {
-        const message = `File not found: ${args.fileId}`;
-        return {
-          content: [{ type: 'text' as const, text: message }],
-          structuredContent: { available: false, message },
-          isError: true,
-        };
-      }
-      const data = (fileInfo as { data?: Record<string, unknown> } & Record<string, unknown>).data ?? fileInfo;
-      const fileName = ((data as Record<string, unknown>).fileName as string | undefined) ?? args.fileId;
-      if (!fileName.toLowerCase().endsWith('.ifc')) {
-        const message = `${fileName} is not an .ifc file.`;
-        return {
-          content: [{ type: 'text' as const, text: message }],
-          structuredContent: { available: false, message },
-          isError: true,
-        };
-      }
+          const fileInfo = await client.files.getFile(args.projectId, args.fileAreaId, args.fileId);
+          if (typeof fileInfo === 'string' || !fileInfo) {
+            const message = `File not found: ${args.fileId}`;
+            return {
+              content: [{ type: 'text' as const, text: message }],
+              structuredContent: { available: false, message },
+              isError: true,
+            };
+          }
+          const data = (fileInfo as { data?: Record<string, unknown> } & Record<string, unknown>).data ?? fileInfo;
+          const fileName = ((data as Record<string, unknown>).fileName as string | undefined) ?? args.fileId;
+          if (!fileName.toLowerCase().endsWith('.ifc')) {
+            const message = `${fileName} is not an .ifc file.`;
+            return {
+              content: [{ type: 'text' as const, text: message }],
+              structuredContent: { available: false, message },
+              isError: true,
+            };
+          }
 
-      const token = hosting.modelLinks.issue({
-        daluxBaseUrl: hosting.daluxBaseUrl,
-        daluxApiKey: hosting.daluxApiKey,
-        projectId: args.projectId,
-        fileAreaId: args.fileAreaId,
-        fileId: args.fileId,
-      });
-      const modelUrl = new URL(`/models/${token}`, hosting.publicUrl).toString();
-      return {
-        content: [{ type: 'text' as const, text: `Rendering ${fileName} in the 3D viewer.` }],
-        structuredContent: { available: true, modelUrl, fileName },
-      };
-    },
+          const token = hosting.modelLinks.issue({
+            daluxBaseUrl: hosting.daluxBaseUrl,
+            daluxApiKey: hosting.daluxApiKey,
+            projectId: args.projectId,
+            fileAreaId: args.fileAreaId,
+            fileId: args.fileId,
+          });
+          const modelUrl = new URL(`/models/${token}`, hosting.publicUrl).toString();
+          return {
+            content: [{ type: 'text' as const, text: `Rendering ${fileName} in the 3D viewer.` }],
+            structuredContent: { available: true, modelUrl, fileName },
+          };
+        },
+      ),
   );
 }

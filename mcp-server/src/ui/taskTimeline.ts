@@ -2,8 +2,8 @@ import type { McpServer } from '@modelcontextprotocol/server';
 import { z } from 'zod';
 import type { DaluxClient } from 'dalux-build-api';
 import { TASK_TIMELINE_BUNDLE_JS } from './taskTimelineBundle.generated';
-import { checkAccess } from '../access/checkAccess';
-import { UNRESTRICTED_CONTEXT, type RequestContext } from '../access/context';
+import { UNRESTRICTED_CONTEXT } from '../access/context';
+import { createToolGuard, type ToolGuard } from '../access/guard';
 
 /**
  * Interactive lifecycle timeline for a set of Dalux tasks, delivered as an
@@ -92,7 +92,7 @@ function normalizeTask(taskId: string, raw: unknown): TimelineTask {
 export function registerTaskTimeline(
   server: McpServer,
   client: DaluxClient,
-  context: RequestContext = UNRESTRICTED_CONTEXT,
+  guard: ToolGuard = createToolGuard(UNRESTRICTED_CONTEXT),
 ): void {
   server.registerResource(
     'task-timeline',
@@ -118,51 +118,53 @@ export function registerTaskTimeline(
       outputSchema: viewTasksTimelineOutput,
       _meta: { ui: { resourceUri: RESOURCE_URI }, [LEGACY_RESOURCE_URI_META_KEY]: RESOURCE_URI },
     },
-    async (args) => {
-      const decision = checkAccess(context, 'view_tasks_timeline', args);
-      if (!decision.allowed) {
-        return {
-          content: [{ type: 'text' as const, text: decision.reason }],
-          structuredContent: { available: false, message: decision.reason },
+    (args) =>
+      guard(
+        'view_tasks_timeline',
+        args,
+        (reason) => ({
+          content: [{ type: 'text' as const, text: reason }],
+          structuredContent: { available: false, skipped: [], message: reason },
           isError: true,
-        };
-      }
-      const results = await Promise.all(
-        args.taskIds.map(async (taskId) => {
-          try {
-            const raw = await client.tasks.getTask(args.projectId, taskId);
-            if (typeof raw === 'string' || !raw) return { taskId, ok: false as const };
-            return { taskId, ok: true as const, task: normalizeTask(taskId, raw) };
-          } catch {
-            return { taskId, ok: false as const };
-          }
         }),
-      );
+        async () => {
+          const results = await Promise.all(
+            args.taskIds.map(async (taskId) => {
+              try {
+                const raw = await client.tasks.getTask(args.projectId, taskId);
+                if (typeof raw === 'string' || !raw) return { taskId, ok: false as const };
+                return { taskId, ok: true as const, task: normalizeTask(taskId, raw) };
+              } catch {
+                return { taskId, ok: false as const };
+              }
+            }),
+          );
 
-      const tasks = results.filter((r) => r.ok).map((r) => r.task);
-      const skipped = results.filter((r) => !r.ok).map((r) => r.taskId);
+          const tasks = results.filter((r) => r.ok).map((r) => r.task);
+          const skipped = results.filter((r) => !r.ok).map((r) => r.taskId);
 
-      if (tasks.length === 0) {
-        const message = `Couldn't load any of the requested tasks: ${skipped.join(', ')}`;
-        return {
-          content: [{ type: 'text' as const, text: message }],
-          structuredContent: { available: false, skipped, message },
-          isError: true,
-        };
-      }
+          if (tasks.length === 0) {
+            const message = `Couldn't load any of the requested tasks: ${skipped.join(', ')}`;
+            return {
+              content: [{ type: 'text' as const, text: message }],
+              structuredContent: { available: false, skipped, message },
+              isError: true,
+            };
+          }
 
-      const summary =
-        skipped.length > 0
-          ? `Rendering ${tasks.length} task(s) on the timeline (skipped ${skipped.length}: ${skipped.join(', ')}).`
-          : `Rendering ${tasks.length} task(s) on the timeline.`;
-      return {
-        content: [{ type: 'text' as const, text: summary }],
-        structuredContent: {
-          available: true,
-          tasks,
-          ...(skipped.length > 0 ? { skipped, message: `Skipped: ${skipped.join(', ')}` } : {}),
+          const summary =
+            skipped.length > 0
+              ? `Rendering ${tasks.length} task(s) on the timeline (skipped ${skipped.length}: ${skipped.join(', ')}).`
+              : `Rendering ${tasks.length} task(s) on the timeline.`;
+          return {
+            content: [{ type: 'text' as const, text: summary }],
+            structuredContent: {
+              available: true,
+              tasks,
+              ...(skipped.length > 0 ? { skipped, message: `Skipped: ${skipped.join(', ')}` } : {}),
+            },
+          };
         },
-      };
-    },
+      ),
   );
 }

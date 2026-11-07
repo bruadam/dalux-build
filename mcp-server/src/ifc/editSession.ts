@@ -28,6 +28,7 @@ import type { DaluxClient } from 'dalux-build-api';
 import type { LoadedModel, ModelRegistry } from '@ifc-lite/mcp';
 
 import { derivedDirFor } from '../cachePaths';
+import { currentCaller } from '../access/requestScope';
 import { loadIfcLite } from './runtime';
 import { assertReadable, ensureLocalIfc, type IfcRef } from './session';
 
@@ -56,6 +57,8 @@ export interface AppliedOp {
 }
 
 export interface EditSession {
+  /** Only this caller can use the session (see currentCaller). */
+  owner?: string;
   id: string;
   ref: IfcRef;
   fileName: string;
@@ -101,6 +104,7 @@ export async function openEditSession(client: DaluxClient, ref: IfcRef): Promise
 
   const session: EditSession = {
     id,
+    owner: currentCaller(),
     ref,
     fileName: path.basename(filePath),
     model,
@@ -120,7 +124,7 @@ export async function openEditSession(client: DaluxClient, ref: IfcRef): Promise
  */
 export async function getEditSession(client: DaluxClient, id: string): Promise<EditSession> {
   const session = sessions.get(id);
-  if (!session) {
+  if (!session || session.owner !== currentCaller()) {
     throw new Error(
       `Unknown editId "${id}". Edit sessions live in this server's memory only — they are dropped after ` +
         `${IDLE_TTL_MS / 3_600_000}h idle, when the process restarts, or when discarded. Queued edits are not ` +

@@ -91,8 +91,9 @@ describe('checkAccess', () => {
       { projectId: 'p1', fileAreaId: 'fa2', fileId: 'f2' },
     ]);
     const args = { projectId: 'p1', models: [{ fileAreaId: 'fa1', fileId: 'f1' }] };
-    expect(checkAccess(user(grant('models:read', { projectId: 'p1' })), 'ifc_clash_start', args).allowed).toBe(true);
-    expect(checkAccess(user(grant('models:read', { projectId: 'p2' })), 'ifc_clash_start', args).allowed).toBe(false);
+    const filesP1 = grant('files:read', { projectId: 'p1' });
+    expect(checkAccess(user(grant('models:read', { projectId: 'p1' }), filesP1), 'ifc_clash_start', args).allowed).toBe(true);
+    expect(checkAccess(user(grant('models:read', { projectId: 'p2' }), filesP1), 'ifc_clash_start', args).allowed).toBe(false);
   });
 
   it('accepts a call naming no resource when the capability is held anywhere', () => {

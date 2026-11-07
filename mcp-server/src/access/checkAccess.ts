@@ -27,7 +27,39 @@ function within(grant: EffectiveAccess, scope: ResourceScope): boolean {
   );
 }
 
-export function checkAccess(context: RequestContext, toolName: string, args: Record<string, unknown>): AccessDecision {
+function grantsFor(context: RequestContext, capability: Capability): EffectiveAccess[] {
+  if (context.access === 'unrestricted') return [];
+  return context.access.filter((grant) => grant.capability === capability && grant.connectionId === context.connection?.id);
+}
+
+function coversAll(grants: EffectiveAccess[], capability: Capability, scopes: ResourceScope[], partial: boolean): boolean {
+  if (!grants.length) return false;
+  return scopes
+    .map((s) => effectiveScope(capability, s))
+    .every((scope) => grants.some((grant) => covers(grant, scope) || (partial && within(grant, scope))));
+}
+
+/** The caller may read all of `scope` with `capability`. */
+export function canSee(context: RequestContext, capability: Capability, scope: ResourceScope): boolean {
+  return context.access === 'unrestricted' || coversAll(grantsFor(context, capability), capability, [scope], false);
+}
+
+/** The caller may read `scope` or some part of it, e.g. one folder of a file area. */
+export function reaches(context: RequestContext, capability: Capability, scope: ResourceScope): boolean {
+  if (context.access === 'unrestricted') return true;
+  return grantsFor(context, capability).some((grant) => covers(grant, scope) || within(grant, scope));
+}
+
+/**
+ * `scopes` defaults to what the tool's resolver reads from `args`; callers pass
+ * them when they have filled in folder information the arguments lack.
+ */
+export function checkAccess(
+  context: RequestContext,
+  toolName: string,
+  args: Record<string, unknown>,
+  scopes?: ResourceScope[],
+): AccessDecision {
   if (context.access === 'unrestricted') return { allowed: true };
 
   const tool = TOOL_ACCESS[toolName];
@@ -38,16 +70,12 @@ export function checkAccess(context: RequestContext, toolName: string, args: Rec
   const { capability } = tool;
   if (capability === 'none') return { allowed: true };
 
-  const grants = context.access.filter(
-    (grant) => grant.capability === capability && grant.connectionId === context.connection?.id,
-  );
-  const denied: AccessDecision = { allowed: false, reason: `Missing capability ${capability} for this resource.` };
-  if (!grants.length) return denied;
-
-  for (const scope of tool.scopes(args).map((s) => effectiveScope(capability, s))) {
-    if (grants.some((grant) => covers(grant, scope))) continue;
-    if (tool.filtersOutput && grants.some((grant) => within(grant, scope))) continue;
-    return denied;
+  const resolved = scopes ?? tool.scopes(args);
+  if (!coversAll(grantsFor(context, capability), capability, resolved, tool.filtersOutput ?? false)) {
+    return { allowed: false, reason: `Missing capability ${capability} for this resource.` };
+  }
+  if (tool.readsFiles && !coversAll(grantsFor(context, 'files:read'), 'files:read', resolved, false)) {
+    return { allowed: false, reason: 'Missing capability files:read for this file.' };
   }
   return { allowed: true };
 }

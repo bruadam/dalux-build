@@ -4,7 +4,8 @@
  * Seeded (never written to disk, just merged in on read) with ifc-lite's
  * built-in discipline-matrix presets — MEPxSTR, HVACxSTR, HVACxARCH, ... —
  * so the catalog is never empty. Custom rules saved via saveRule are kept in
- * a single JSON file (see cachePaths.clashRulesPath) and upserted by id, so a
+ * a single JSON file, one per connection in platform mode (see
+ * cachePaths.clashRulesPath), and upserted by id, so a
  * team's rule library grows call by call rather than being overwritten
  * wholesale on every save.
  *
@@ -14,6 +15,7 @@
  */
 import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 import { clashRulesPath } from '../cachePaths';
+import { currentContext } from '../access/requestScope';
 import { loadIfcClash } from './runtime';
 
 export type ClashRuleMode = 'hard' | 'clearance';
@@ -53,8 +55,12 @@ async function builtinRules(): Promise<CatalogRule[]> {
   }));
 }
 
+function rulesFile(): string {
+  return clashRulesPath(currentContext().connection?.id);
+}
+
 function readCustom(): CatalogRule[] {
-  const filePath = clashRulesPath();
+  const filePath = rulesFile();
   if (!existsSync(filePath)) return [];
   try {
     const parsed = JSON.parse(readFileSync(filePath, 'utf-8')) as CatalogFile;
@@ -67,7 +73,7 @@ function readCustom(): CatalogRule[] {
 }
 
 function writeCustom(rules: CatalogRule[]): void {
-  writeFileSync(clashRulesPath(), JSON.stringify({ custom: rules }, null, 2), 'utf-8');
+  writeFileSync(rulesFile(), JSON.stringify({ custom: rules }, null, 2), 'utf-8');
 }
 
 /** Built-ins plus custom rules, custom taking precedence on a shared id. */

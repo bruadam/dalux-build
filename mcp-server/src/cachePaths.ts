@@ -107,11 +107,11 @@ export function docsIndexDir(indexId: string): string {
  * and projects rather than be re-entered every restart. `DALUX_MCP_CACHE_DIR`
  * is honoured so tests can redirect it alongside the rest of the cache.
  */
-export function clashRulesPath(): string {
+export function clashRulesPath(connectionId?: string): string {
   const configured = process.env.DALUX_MCP_CACHE_DIR;
   const base = configured ? path.resolve(configured) : path.join(homedir(), '.dalux-mcp');
   mkdirSync(base, { recursive: true });
-  return path.join(base, 'clash-rules.json');
+  return path.join(base, connectionId ? `clash-rules.${connectionId}.json` : 'clash-rules.json');
 }
 
 /**

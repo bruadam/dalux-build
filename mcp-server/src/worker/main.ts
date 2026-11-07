@@ -61,7 +61,7 @@ export async function startWorker(env: NodeJS.ProcessEnv = process.env): Promise
   setIndexStores(build, build);
   await failInterruptedRuns(db);
 
-  // The `pgboss` schema is created by migration 0006 and owned by the worker role.
+  // The `pgboss` schema is created by migration 0008 and owned by the worker role.
   // pg-boss is ESM-only; this server builds to CJS, so it is loaded with a runtime import().
   const { PgBoss } = await import('pg-boss');
   const boss = new PgBoss({ connectionString: url, schema: 'pgboss', createSchema: false });

@@ -93,8 +93,14 @@ every minute queues what is due:
   files with reasons, duration, and embedding tokens (from the provider's usage; marked
   *estimated* when it returns none). One run at a time.
 - **Embedding key**: the key in *Settings*. Setting it is the admin's consent to send
-  document text to Mistral; without it, indexes are lexical only. `MISTRAL_API_KEY` is
-  not used by the worker.
+  document text to Mistral; without it, indexes and searches are lexical only. The worker
+  and search-time query embeddings on platform-token requests use only this key:
+  `MISTRAL_API_KEY` and `DALUX_MCP_ALLOW_EXTERNAL_MODEL_IO` do not apply to them. They
+  still gate consistency checks and Dalux-header-mode requests, as outside platform mode.
+- **Toolsets**: `/mcp` and `/mcp/c/<slug>` serve the same default toolsets as outside
+  platform mode (`DALUX_MCP_TOOLSETS` / `--toolsets` change it); a client picks others
+  with `?toolsets=`, e.g. `/mcp/c/site-a?toolsets=default,ifc`. Toolsets only choose
+  what is listed; every tool call is still checked against the caller's grants.
 - **Dalux user matching** (*Dalux users*): per connection, the users of every project
   (`GET /1.2/projects/{projectId}/users`, deduplicated by user id) are loaded when the
   connection is new, daily, and on *Load users and match now*. Personal accounts are

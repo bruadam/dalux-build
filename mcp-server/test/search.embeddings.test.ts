@@ -14,7 +14,7 @@ import path from 'node:path';
 import type { DaluxClient } from 'dalux-build-api';
 
 import { readManifest, writeManifest } from '../src/store/file/fileAreaStore';
-import { embedTexts } from '../src/search/rank';
+import { embedTexts, withEmbeddingKey } from '../src/search/rank';
 import { searchChunks } from '../src/search/documentSearch';
 import * as fileAreaIndex from '../src/tools/fileAreaIndex';
 import { paragraph, writeDocx } from './fixtures/office';
@@ -103,6 +103,33 @@ describe('embeddings ranking', () => {
       delete process.env.MISTRAL_API_KEY;
       const result = await searchChunks([{ page: 1, location: 'p. 1', text: 'fire' }], 'fire', 1);
       expect(result.warning).toBeUndefined();
+    });
+  });
+
+  describe('platform mode (embedding session from the admin settings)', () => {
+    const chunks = [
+      { page: 1, location: 'p. 1', text: 'Slab thickness and concrete cover.' },
+      { page: 2, location: 'p. 2', text: 'Escape route doors and their fire rating.' },
+    ];
+
+    it('uses the settings key without DALUX_MCP_ALLOW_EXTERNAL_MODEL_IO', async () => {
+      delete process.env.DALUX_MCP_ALLOW_EXTERNAL_MODEL_IO;
+      delete process.env.MISTRAL_API_KEY;
+      const { result, usage } = await withEmbeddingKey('test-key', () => searchChunks(chunks, 'fire', 1));
+      expect(result.mode).toBe('embeddings');
+      expect(result.matches[0].location).toBe('p. 2');
+      expect(usage.calls).toBe(1);
+    });
+
+    it('stays lexical when no key is set in the settings, even with the env opt-in', async () => {
+      const { result } = await withEmbeddingKey(null, async () => ({
+        search: await searchChunks(chunks, 'fire', 1),
+        embed: await embedTexts(['anything']).catch((error: Error) => error.message),
+      }));
+      expect(result.search.mode).toBe('lexical');
+      expect(result.search.warning).toBeUndefined();
+      expect(result.embed).toMatch(/platform settings/);
+      expect(stub.calls).toHaveLength(0);
     });
   });
 

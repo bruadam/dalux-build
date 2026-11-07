@@ -41,6 +41,7 @@ export interface Connection {
 export interface Caller {
   account: { id: string; role: 'admin' | 'user' };
   token: { id: string; name: string; connectionId: string | null; expiresAt: Date | null };
+  defaultConnectionId: string | null;
   /** Effective access on every connection, narrowed to the token's capabilities. */
   access: EffectiveAccess[];
 }
@@ -100,6 +101,7 @@ export class Platform {
       caller: {
         account: { id: account.id, role: account.role },
         token: { id: token.id, name: token.name, connectionId: token.connectionId, expiresAt: token.expiresAt },
+        defaultConnectionId: account.defaultConnectionId,
         access: allowed ? access.filter((row) => allowed.includes(row.capability)) : access,
       },
     };

@@ -18,6 +18,8 @@ import { createOAuthServer, type OAuthServer } from './oauth';
 import { validateDaluxBaseUrl } from './daluxUrl';
 import { createModelLinkStore, resolveModelFile, type ModelLinkStore } from './modelLinks';
 import { IFCLITE_EMBED_ORIGIN } from './ui/ifcViewer';
+import type { Platform } from './platform/platform';
+import { createPlatformHandler } from './platform/http';
 
 /** Exported for tests only — not part of the public module surface. */
 export const MODEL_ROUTE_PREFIX = '/models/';
@@ -116,6 +118,12 @@ export interface BuildHttpAppOptions {
    * static-header-only.
    */
   publicUrl?: string;
+  /**
+   * Platform mode (DATABASE_URL set): callers authenticate with platform API
+   * tokens and reach a connection at /mcp/c/<slug>; Dalux headers only work
+   * when an admin has turned header mode on. See platform/http.ts.
+   */
+  platform?: Platform;
 }
 
 export interface HttpApp {
@@ -269,7 +277,8 @@ export function buildHttpApp(options: BuildHttpAppOptions = {}): HttpApp {
 
   let oauthServer: OAuthServer | undefined;
   let resourceMetadataUrl: string | undefined;
-  if (options.publicUrl) {
+  // In platform mode OAuth is off until the platform's own authorization server exists.
+  if (options.publicUrl && !options.platform) {
     const issuerUrl = new URL(options.publicUrl);
     if (issuerUrl.protocol !== 'https:') {
       throw new Error('publicUrl must be an https:// URL for OAuth support');
@@ -278,6 +287,69 @@ export function buildHttpApp(options: BuildHttpAppOptions = {}): HttpApp {
     oauthServer = createOAuthServer({ issuer: issuerUrl.origin, resourceUrl });
     resourceMetadataUrl = getOAuthProtectedResourceMetadataUrl(resourceUrl);
   }
+
+  const serveWithHeaders = async (request: Request): Promise<Response> => {
+    const bearerToken = parseBearerToken(request.headers.get('authorization'));
+
+    let daluxCredentials: { baseUrl: string; apiKey: string } | undefined;
+    if (oauthServer && bearerToken) {
+      try {
+        const authInfo = await oauthServer.tokenVerifier.verifyAccessToken(bearerToken);
+        const extra = authInfo.extra as { daluxBaseUrl: string; daluxApiKey: string };
+        daluxCredentials = { baseUrl: extra.daluxBaseUrl, apiKey: extra.daluxApiKey };
+      } catch {
+        // Not a recognized OAuth access token — fall through to the
+        // shared-secret / static-header flow below.
+      }
+    }
+
+    if (!daluxCredentials) {
+      if (options.token) {
+        if (!bearerToken || !constantTimeEqual(bearerToken, options.token)) {
+          return new Response(JSON.stringify({ error: 'invalid_token' }), {
+            status: 401,
+            headers: { 'Content-Type': 'application/json', 'WWW-Authenticate': 'Bearer' },
+          });
+        }
+      }
+
+      const credentials = extractCredentials(request);
+      if ('error' in credentials) {
+        if (resourceMetadataUrl) {
+          return bearerAuthChallengeResponse(new OAuthError(OAuthErrorCode.InvalidToken, credentials.error), {
+            resourceMetadataUrl,
+          });
+        }
+        return new Response(JSON.stringify({ error: 'missing_credentials', message: credentials.error }), {
+          status: 401,
+          headers: { 'Content-Type': 'application/json' },
+        });
+      }
+      daluxCredentials = credentials;
+    }
+
+    const key = `${daluxCredentials.baseUrl} ${daluxCredentials.apiKey}`;
+    let mcpHandler = handlersByCredentials.get(key);
+    if (!mcpHandler) {
+      const client = createClient({ baseUrl: daluxCredentials.baseUrl, apiKey: daluxCredentials.apiKey });
+      const hosting = options.publicUrl
+        ? {
+            publicUrl: options.publicUrl,
+            daluxBaseUrl: daluxCredentials.baseUrl,
+            daluxApiKey: daluxCredentials.apiKey,
+            modelLinks,
+          }
+        : undefined;
+      mcpHandler = createMcpHandler(() => buildServer(client, { hosting, context: UNRESTRICTED_CONTEXT }));
+      handlersByCredentials.set(key, mcpHandler);
+    }
+    return mcpHandler.fetch(request);
+  };
+
+  const platform = options.platform;
+  const serve = platform
+    ? createPlatformHandler({ platform, publicUrl: options.publicUrl, modelLinks, serveWithHeaders })
+    : serveWithHeaders;
 
   const guardedHandler = {
     fetch: async (request: Request): Promise<Response> => {
@@ -289,63 +361,9 @@ export function buildHttpApp(options: BuildHttpAppOptions = {}): HttpApp {
         if (oauthResponse) return oauthResponse;
       }
 
-      const bearerToken = parseBearerToken(request.headers.get('authorization'));
-
-      let daluxCredentials: { baseUrl: string; apiKey: string } | undefined;
-      if (oauthServer && bearerToken) {
-        try {
-          const authInfo = await oauthServer.tokenVerifier.verifyAccessToken(bearerToken);
-          const extra = authInfo.extra as { daluxBaseUrl: string; daluxApiKey: string };
-          daluxCredentials = { baseUrl: extra.daluxBaseUrl, apiKey: extra.daluxApiKey };
-        } catch {
-          // Not a recognized OAuth access token — fall through to the
-          // shared-secret / static-header flow below.
-        }
-      }
-
-      if (!daluxCredentials) {
-        if (options.token) {
-          if (!bearerToken || !constantTimeEqual(bearerToken, options.token)) {
-            return new Response(JSON.stringify({ error: 'invalid_token' }), {
-              status: 401,
-              headers: { 'Content-Type': 'application/json', 'WWW-Authenticate': 'Bearer' },
-            });
-          }
-        }
-
-        const credentials = extractCredentials(request);
-        if ('error' in credentials) {
-          if (resourceMetadataUrl) {
-            return bearerAuthChallengeResponse(new OAuthError(OAuthErrorCode.InvalidToken, credentials.error), {
-              resourceMetadataUrl,
-            });
-          }
-          return new Response(JSON.stringify({ error: 'missing_credentials', message: credentials.error }), {
-            status: 401,
-            headers: { 'Content-Type': 'application/json' },
-          });
-        }
-        daluxCredentials = credentials;
-      }
-
-      const key = `${daluxCredentials.baseUrl} ${daluxCredentials.apiKey}`;
-      let mcpHandler = handlersByCredentials.get(key);
-      if (!mcpHandler) {
-        const client = createClient({ baseUrl: daluxCredentials.baseUrl, apiKey: daluxCredentials.apiKey });
-        const hosting = options.publicUrl
-          ? {
-              publicUrl: options.publicUrl,
-              daluxBaseUrl: daluxCredentials.baseUrl,
-              daluxApiKey: daluxCredentials.apiKey,
-              modelLinks,
-            }
-          : undefined;
-        mcpHandler = createMcpHandler(() => buildServer(client, { hosting, context: UNRESTRICTED_CONTEXT }));
-        handlersByCredentials.set(key, mcpHandler);
-      }
       // Peek before the handler consumes the body, log after it answers.
       const peek = LOG_DISCOVERY ? await peekJsonRpc(request) : undefined;
-      const response = await mcpHandler.fetch(request);
+      const response = await serve(request);
       if (peek) logDiscovery(peek, request, response);
       return response;
     },

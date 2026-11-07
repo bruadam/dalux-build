@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { folderPaths, safeFileName, toFileEntry } from "../src/lib/files";
+import { filesOfUser, folderPaths, safeFileName, toFileEntry, type FileEntry } from "../src/lib/files";
 
 test("folderPaths joins parents and treats unknown parents as root", () => {
   const paths = folderPaths([
@@ -37,4 +37,21 @@ test("safeFileName strips path separators and leading dots", () => {
   assert.equal(safeFileName("a/b:c.pdf"), "a_b_c.pdf");
   assert.equal(safeFileName("..secret"), "_secret");
   assert.equal(safeFileName(""), "file");
+});
+
+test("filesOfUser keeps files the user uploaded or last modified", () => {
+  const file = (fileId: string, uploadedByUserId?: string, lastModifiedByUserId?: string): FileEntry => ({
+    fileId,
+    fileName: fileId,
+    fileAreaId: "fa",
+    fileAreaName: "Documents",
+    folderPath: "",
+    uploadedByUserId,
+    lastModifiedByUserId,
+  });
+  const files = [file("a", "u1", "u2"), file("b", "u2", "u1"), file("c", "u2", "u2")];
+  assert.deepEqual(
+    filesOfUser(files, "u1").map((f) => f.fileId),
+    ["a", "b"],
+  );
 });

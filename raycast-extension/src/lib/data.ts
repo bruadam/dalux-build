@@ -100,11 +100,8 @@ export function useUsers(projectId: string | undefined) {
       // Company names only decorate users; a key without access to companies still gets the user list.
       collectAll((params) => client.companies.listProjectCompanies(projectId!, params)).catch(() => []),
     ]);
-    const companyNames = new Map<string, string>();
-    for (const company of companies) {
-      if (company.companyId && company.name) companyNames.set(company.companyId, company.name);
-    }
-    return users.map((user) => toUserEntry(user, companyNames)).sort((a, b) => a.name.localeCompare(b.name));
+    const byId = new Map(companies.filter((c) => c.companyId).map((c) => [c.companyId!, c]));
+    return users.map((user) => toUserEntry(user, byId)).sort((a, b) => a.name.localeCompare(b.name));
   });
 }
 

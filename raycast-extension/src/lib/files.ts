@@ -35,6 +35,7 @@ export interface FileEntry {
   folderPath: string;
   version?: string;
   uploaded?: string;
+  uploadedByUserId?: string;
   lastModified?: string;
   lastModifiedByUserId?: string;
   fileType?: string;
@@ -78,12 +79,18 @@ export function toFileEntry(file: DaluxFile, fileAreaName: string, paths: Map<st
     folderPath: (file.folderId && paths.get(file.folderId)) || "",
     version: file.version ?? undefined,
     uploaded: file.uploaded ?? undefined,
+    uploadedByUserId: file.uploadedByUserId ?? undefined,
     lastModified: file.lastModified ?? undefined,
     lastModifiedByUserId: file.lastModifiedByUserId ?? undefined,
     fileType: file.fileType ?? undefined,
     fileSize: file.fileSize ?? undefined,
     downloadLink: file.downloadLink ?? undefined,
   };
+}
+
+/** Files the user uploaded or last modified. */
+export function filesOfUser(files: readonly FileEntry[], userId: string): FileEntry[] {
+  return files.filter((file) => file.uploadedByUserId === userId || file.lastModifiedByUserId === userId);
 }
 
 export function fileRankFields(file: FileEntry): RankField[] {

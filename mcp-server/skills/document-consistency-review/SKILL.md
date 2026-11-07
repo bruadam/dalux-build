@@ -34,7 +34,7 @@ For Danish contract documents, document types and the precedence rules, read the
 | --- | --- |
 | `check_document_consistency({ projectId, fileAreaId, folderPath?, fileIds?, extensions?, focus?, maxFiles?, timeBudgetSeconds?, useModel? })` | Runs the check over the scope. Returns `{ reportId, complete, filesInScope, filesAnalyzed, skipped[], findingsCount, bySeverity, topFindings[], warnings[] }`. |
 | `list_inconsistencies({ reportId, severity?, type?, fileId?, offset?, limit? })` | Pages through findings: `{ total, findings[] }`. |
-| `export_inconsistency_report({ reportId, format })` | Returns the register as `xlsx`, `docx` or `md`, the same way `download_file` returns files. |
+| `export_inconsistency_report({ reportId, format })` | Returns the register as `xlsx`, `docx`, `md` or `annotated-pdf` (zip of highlighted PDFs plus the xlsx), the same way `download_file` returns files. |
 | `list_consistency_reports()` / `drop_consistency_report({ reportId })` | See or delete cached reports. |
 | `search_file_content`, `search_file_area`, `render_pdf_page` | Follow-up: read the exact passage, find more statements on the same subject, look at drawing geometry. |
 | `list_files`, `get_file`, `search_files_by_name` | Find the files and revisions in scope; check the drawing register against what exists. |
@@ -174,6 +174,10 @@ lower-ranked document is the one the site will actually use (e.g. the drawing).
 
 1. Call `export_inconsistency_report({ reportId, format })`. Default to `xlsx` for a register the user will
    filter and assign; use `docx` for a review memo and `md` for a quick look in chat. Give the user the file.
+   For the user, prefer `export_inconsistency_report` with `format: 'annotated-pdf'`. It returns a zip with each
+   affected PDF, where every quoted statement is highlighted and has a comment naming the conflicting value and
+   where it is. The xlsx register is included. Report `unmatchedQuotes` (quotes shown as a page note instead of a
+   highlight) and any PDFs listed as not annotated (e.g. encrypted).
 2. In your answer, summarise:
    - scope, precedence used (quoted, with location), and coverage: `filesAnalyzed` of `filesInScope`, the
      skipped files and why;

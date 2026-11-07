@@ -17,8 +17,12 @@ function textStream(lines: string[]): string {
   return drawn;
 }
 
-/** Write a PDF with one page per entry; an empty array of lines yields a page with no text. */
-export function writePdf(dir: string, name: string, pages: string[][]): string {
+/**
+ * Write a PDF with one page per entry; an empty array of lines yields a page
+ * with no text. `pageEntries[i]` is added to page i's dictionary verbatim,
+ * e.g. '/Rotate 90 /CropBox [36 36 576 756]'.
+ */
+export function writePdf(dir: string, name: string, pages: string[][], pageEntries: string[] = []): string {
   const objects: string[] = [];
   const add = (body: string) => {
     objects.push(body);
@@ -29,15 +33,15 @@ export function writePdf(dir: string, name: string, pages: string[][]): string {
   // page objects below have been allocated their numbers.
   add('');
   add('');
-  const fontNumber = add('<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>');
+  const fontNumber = add('<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica /Encoding /WinAnsiEncoding >>');
 
   const pageNumbers: number[] = [];
-  for (const lines of pages) {
+  for (const [index, lines] of pages.entries()) {
     const content = textStream(lines);
     const contentNumber = add(`<< /Length ${content.length} >>\nstream\n${content}\nendstream`);
     pageNumbers.push(
       add(
-        '<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] ' +
+        `<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] ${pageEntries[index] ?? ''} ` +
           `/Resources << /Font << /F1 ${fontNumber} 0 R >> >> /Contents ${contentNumber} 0 R >>`,
       ),
     );

@@ -280,13 +280,21 @@ IFC is out of scope. Read-only towards Dalux: the report lives in the server's l
 check_document_consistency(projectId, fileAreaId, folderPath?, fileIds?, extensions?, focus?, maxFiles?, timeBudgetSeconds?, useModel?)
     -> { reportId, complete, filesInScope, filesAnalyzed, skipped, findingsCount, bySeverity, topFindings, warnings }
 list_inconsistencies(reportId, severity?, type?, fileId?, offset?, limit?)  ->  { total, findings }
-export_inconsistency_report(reportId, format: 'xlsx' | 'docx' | 'md')      ->  { fileName, filePath, downloadUrl, findingsCount }
+export_inconsistency_report(reportId, format: 'xlsx' | 'docx' | 'md' | 'annotated-pdf')
+    -> { reportId, format, fileName, filePath, downloadUrl, findingsCount, annotatedFiles?, unmatchedQuotes? }
 list_consistency_reports() / drop_consistency_report(reportId)
 \`\`\`
 
 - **Workflow**: run \`check_document_consistency\` on a folder (e.g. the tender folder); while \`complete\` is
   false, call it again with the *same* arguments. Then page through \`list_inconsistencies\` (high severity first)
   and, if the user wants a document, \`export_inconsistency_report\` and share the \`downloadUrl\`.
+- **Annotated PDFs**: \`format: 'annotated-pdf'\` returns a zip with a copy of every PDF that has findings
+  (\`<name>.annotated.pdf\`) plus the xlsx register. Each quote is highlighted (red high, orange medium, yellow
+  low) with a comment in the document's language (Danish or English) naming the conflicting value and where it
+  is, e.g. "Dette dokument: EI30. Modstrid med Dørliste.xlsx, ark 'Døre', række 14: EI60". Quotes that cannot
+  be found get a note at the top of the page and are counted in \`unmatchedQuotes\`; encrypted PDFs are skipped
+  and listed on the register's Annotations sheet. Findings in Word/Excel/CSV only appear in the register and as
+  the other side of the PDF comments. The PDFs are downloaded again from Dalux for this; nothing is uploaded.
 - **Findings**: each has a type (\`value_conflict\`, \`quantity_conflict\`, \`date_conflict\`,
   \`reference_conflict\`, \`revision_conflict\`, \`other\`), a severity (fire, structural, deadline and money
   conflicts are high) and at least two statements from different files, each with file, location and verbatim

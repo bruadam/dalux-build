@@ -263,7 +263,7 @@ export const TOOLS = [
   tool({
     name: 'list_project_tasks',
     description:
-      'List a project\'s tasks, one page at a time. Dalux\'s OData filter accepts only `data/type/typeId eq \'<id>\'`; use conditions for any other filter.',
+      'List a project\'s tasks, one page at a time. Filter with typeId and conditions; Dalux supports no other OData.',
     inputSchema: tasks.listProjectTasksInput,
     handler: tasks.listProjectTasks,
   }),

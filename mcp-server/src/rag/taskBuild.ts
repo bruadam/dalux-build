@@ -18,6 +18,7 @@ import type { DaluxClient } from 'dalux-build-api';
 import { taskIndexRoot, pruneStaleIndexes } from '../cachePaths';
 import { collectAllDaluxItems } from '../daluxPagination';
 import { CHUNK_OVERLAP, CHUNK_SIZE, packLines } from '../extract/chunk';
+import { collectProjectTasks, resolveTaskQuery } from '../taskFilter';
 import { EMBEDDING_DIMENSIONS, EMBEDDING_MODEL, embedTexts, embeddingsAvailable, rankingModeWarning } from '../search/rank';
 import { extractAttachmentTextsByTaskId, groupAttachmentsByTaskId } from './taskAttachments';
 import { groupChangesByTaskId, renderTaskLines, str, taskRevisionKey, unwrapTask, type AttachmentText } from './taskText';
@@ -122,15 +123,10 @@ export async function buildTaskIndex(
   if (rankingWarning) warnings.push(rankingWarning);
   if (useEmbeddings) manifest.embedding = { model: EMBEDDING_MODEL, dimensions: EMBEDDING_DIMENSIONS };
 
-  const params: Record<string, unknown> = {};
-  if (scope.filter) {
-    params.$filter = scope.filter;
-  } else if (scope.typeId) {
-    params.$filter = `data/type/typeId eq '${scope.typeId.replace(/'/g, "''")}'`;
-  }
-
+  const taskQuery = resolveTaskQuery({ typeId: scope.typeId ?? undefined, filter: scope.filter ?? undefined });
+  if (taskQuery.note) warnings.push(taskQuery.note);
   const [rawTasks, rawChanges, rawAttachments] = await Promise.all([
-    collectAllDaluxItems((pageParams) => client.tasks.getProjectTasks(scope.projectId, { ...params, ...pageParams })),
+    collectProjectTasks(client, scope.projectId, taskQuery),
     collectAllDaluxItems((pageParams) => client.tasks.getProjectTaskChanges(scope.projectId, pageParams)),
     collectAllDaluxItems((pageParams) => client.tasks.getProjectTaskAttachments(scope.projectId, pageParams)),
   ]);

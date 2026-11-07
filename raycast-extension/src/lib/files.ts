@@ -1,0 +1,101 @@
+import type { RankField } from "./rank";
+
+/** Matches the client's `FolderSchema`. */
+export interface Folder {
+  folderId: string;
+  folderName: string;
+  parentFolderId?: string | null;
+}
+
+/** The subset of the client's `FileSchema` used here. */
+export interface DaluxFile {
+  fileId: string;
+  fileRevisionId?: string | null;
+  fileName: string;
+  fileAreaId: string;
+  folderId?: string | null;
+  uploadedByUserId?: string | null;
+  uploaded?: string | null;
+  lastModifiedByUserId?: string | null;
+  lastModified?: string | null;
+  version?: string | null;
+  deleted?: boolean | null;
+  fileType?: string | null;
+  fileSize?: number | null;
+  downloadLink?: string | null;
+}
+
+export interface FileEntry {
+  fileId: string;
+  fileRevisionId?: string;
+  fileName: string;
+  fileAreaId: string;
+  fileAreaName: string;
+  folderId?: string;
+  folderPath: string;
+  version?: string;
+  uploaded?: string;
+  lastModified?: string;
+  lastModifiedByUserId?: string;
+  fileType?: string;
+  fileSize?: number;
+  downloadLink?: string;
+}
+
+/**
+ * Full "/"-joined path of every folder. A parent id that is not in the list
+ * is treated as the file area root.
+ */
+export function folderPaths(folders: readonly Folder[]): Map<string, string> {
+  const byId = new Map(folders.map((folder) => [folder.folderId, folder]));
+  const paths = new Map<string, string>();
+
+  function resolve(folderId: string, visiting: Set<string>): string {
+    const known = paths.get(folderId);
+    if (known !== undefined) return known;
+    const folder = byId.get(folderId);
+    if (!folder) return "";
+    const parentId = folder.parentFolderId;
+    const parentPath =
+      parentId && byId.has(parentId) && !visiting.has(parentId) ? resolve(parentId, visiting.add(folderId)) : "";
+    const path = parentPath ? `${parentPath}/${folder.folderName}` : folder.folderName;
+    paths.set(folderId, path);
+    return path;
+  }
+
+  for (const folder of folders) resolve(folder.folderId, new Set());
+  return paths;
+}
+
+export function toFileEntry(file: DaluxFile, fileAreaName: string, paths: Map<string, string>): FileEntry {
+  return {
+    fileId: file.fileId,
+    fileRevisionId: file.fileRevisionId ?? undefined,
+    fileName: file.fileName,
+    fileAreaId: file.fileAreaId,
+    fileAreaName,
+    folderId: file.folderId ?? undefined,
+    folderPath: (file.folderId && paths.get(file.folderId)) || "",
+    version: file.version ?? undefined,
+    uploaded: file.uploaded ?? undefined,
+    lastModified: file.lastModified ?? undefined,
+    lastModifiedByUserId: file.lastModifiedByUserId ?? undefined,
+    fileType: file.fileType ?? undefined,
+    fileSize: file.fileSize ?? undefined,
+    downloadLink: file.downloadLink ?? undefined,
+  };
+}
+
+export function fileRankFields(file: FileEntry): RankField[] {
+  return [
+    { text: file.fileName, weight: 3 },
+    { text: file.folderPath, weight: 1 },
+    { text: file.fileAreaName, weight: 0.5 },
+    { text: file.fileType, weight: 0.5 },
+  ];
+}
+
+/** File names can contain characters that are not valid in a local path segment. */
+export function safeFileName(name: string): string {
+  return name.replace(/[/\\:]/g, "_").replace(/^\.+/, "_") || "file";
+}

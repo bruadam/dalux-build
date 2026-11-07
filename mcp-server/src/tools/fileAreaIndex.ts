@@ -17,24 +17,20 @@ import { searchIndex } from '../rag/search';
 import { indexStores } from '../store';
 
 const scopeShape = {
-  projectId: z.string().describe('The Dalux project ID.'),
+  projectId: z.string(),
   fileAreaId: z.string().describe('The file area ID to index.'),
   folderId: z.string().optional().describe('Restrict to one folder (omit to index the whole file area).'),
   folderPath: z
     .string()
-    .optional()
-    .describe('Restrict to one folder by path, e.g. "Files/4_Design/Contracts". Alternative to folderId.'),
+    .optional().describe('Folder path, e.g. "Files/4_Design". Alternative to folderId.'),
   recursive: z.boolean().optional().describe('Include subfolders of the chosen folder (default true).'),
   extensions: z
     .array(z.string())
     .optional()
-    .describe(`Formats to index (default all supported: ${SUPPORTED_EXTENSIONS.join(', ')}).`),
+    .describe('Extensions to index (default all supported).'),
   includeDrawings: z
     .boolean()
-    .optional()
-    .describe(
-      'Include files Dalux classifies as drawings (default true). Their text layer holds title blocks, room names and annotations; scanned sheets contribute nothing.',
-    ),
+    .optional().describe('Include drawings (default true).'),
 };
 
 // ---------- build_file_area_index ----------
@@ -46,17 +42,15 @@ export const buildFileAreaIndexInput = z.object({
     .int()
     .min(1)
     .max(2000)
-    .optional()
-    .describe('Max files to index in this call (default 250). Call again to continue a large file area.'),
+    .optional().describe('Max files per call (default 250).'),
   maxFileSizeMb: z.number().min(1).max(500).optional().describe('Skip files larger than this (default 60 MB).'),
   timeBudgetSeconds: z
     .number()
     .int()
     .min(10)
     .max(900)
-    .optional()
-    .describe('Stop this pass after roughly this long and report what is left (default 120).'),
-  refresh: z.boolean().optional().describe('Re-extract and re-embed every file, ignoring cached revisions.'),
+    .optional().describe('Time budget per call (default 120).'),
+  refresh: z.boolean().optional().describe('Rebuild everything.'),
 });
 export type BuildFileAreaIndexInput = z.infer<typeof buildFileAreaIndexInput>;
 
@@ -83,18 +77,17 @@ export async function buildFileAreaIndex(client: DaluxClient, args: BuildFileAre
 // ---------- search_file_area ----------
 
 export const searchFileAreaInput = z.object({
-  query: z.string().describe('What to look for, in natural language.'),
+  query: z.string().describe('Natural-language query.'),
   indexId: z
     .string()
-    .optional()
-    .describe('Index to search, as returned by build_file_area_index. Omit to address it by scope instead.'),
-  projectId: z.string().optional().describe('With fileAreaId: address the index by scope instead of indexId.'),
-  fileAreaId: z.string().optional().describe('The file area ID the index covers.'),
-  folderId: z.string().optional().describe('The folder ID the index covers, if it was scoped to one.'),
-  folderPath: z.string().optional().describe('The folder path the index covers, if it was scoped to one.'),
-  recursive: z.boolean().optional().describe('Must match the value the index was built with (default true).'),
-  extensions: z.array(z.string()).optional().describe('Must match the value the index was built with.'),
-  includeDrawings: z.boolean().optional().describe('Must match the value the index was built with (default true).'),
+    .optional().describe('From build_file_area_index; or give the scope instead.'),
+  projectId: z.string().optional().describe('Or address the index by scope.'),
+  fileAreaId: z.string().optional(),
+  folderId: z.string().optional(),
+  folderPath: z.string().optional(),
+  recursive: z.boolean().optional().describe('As at build time (default true).'),
+  extensions: z.array(z.string()).optional().describe('As at build time.'),
+  includeDrawings: z.boolean().optional().describe('As at build time (default true).'),
   topK: z.number().int().min(1).max(50).optional().describe('Max passages to return (default 8).'),
   perFileLimit: z
     .number()
@@ -163,7 +156,7 @@ export async function listFileAreaIndexes() {
 // ---------- drop_file_area_index ----------
 
 export const dropFileAreaIndexInput = z.object({
-  indexId: z.string().describe('The index to delete, as reported by list_file_area_indexes.'),
+  indexId: z.string(),
 });
 export type DropFileAreaIndexInput = z.infer<typeof dropFileAreaIndexInput>;
 

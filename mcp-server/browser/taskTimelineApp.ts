@@ -11,7 +11,7 @@
  * field the chart draws already arrived over the MCP Apps postMessage
  * channel, so this works identically over stdio and HTTP.
  */
-import { App, PostMessageTransport } from '@modelcontextprotocol/ext-apps';
+import { App } from '@modelcontextprotocol/ext-apps';
 
 interface TimelineTask {
   taskId: string;
@@ -418,7 +418,7 @@ async function main(): Promise<void> {
   });
 
   if (root) renderEmpty(root, 'Loading tasks…');
-  await app.connect(new PostMessageTransport(window.parent, window.parent));
+  await app.connect();
 }
 
 main().catch((err) => {

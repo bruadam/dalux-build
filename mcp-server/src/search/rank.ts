@@ -1,7 +1,7 @@
 /**
  * Ranking for document search.
  *
- * With `MISTRAL_API_KEY` set, chunks are ranked by cosine similarity of
+ * When Mistral may be used (see mistral.ts), chunks are ranked by cosine similarity of
  * embeddings (real semantic search). Without it, ranking falls back to BM25 —
  * still useful for the code-like identifiers that dominate construction
  * documents (drawing numbers, "C30/37", "EN 1992-1-1"), where lexical matching
@@ -9,6 +9,8 @@
  */
 
 import { AsyncLocalStorage } from 'node:async_hooks';
+
+import { mistralAllowed, mistralUnavailableReason, semanticRankingWarning } from '../mistral';
 
 export const EMBEDDING_MODEL = 'mistral-embed';
 export const EMBEDDING_DIMENSIONS = 1024;
@@ -62,18 +64,35 @@ export async function withEmbeddingKey<T>(
   return { result, usage };
 }
 
+/**
+ * Inside an embedding session (platform mode) the session key is the only key:
+ * the admin setting it is the consent. Outside one, main's gate applies
+ * (MISTRAL_API_KEY plus DALUX_MCP_ALLOW_EXTERNAL_MODEL_IO=true).
+ */
 function embeddingKey(): string | null {
   const session = embeddingSession.getStore();
-  return session ? session.apiKey : process.env.MISTRAL_API_KEY || null;
+  if (session) return session.apiKey;
+  return mistralAllowed() ? process.env.MISTRAL_API_KEY! : null;
 }
+
+const NO_PLATFORM_KEY = 'no embedding key is set in the platform settings';
 
 export function embeddingsAvailable(): boolean {
   return Boolean(embeddingKey());
 }
 
+/** The warning for a lexical-only search result, when it is worth one. */
+export function rankingModeWarning(hasStoredEmbeddings: boolean): string | undefined {
+  if (embeddingsAvailable()) return undefined;
+  if (embeddingSession.getStore()) {
+    return hasStoredEmbeddings ? `Semantic ranking is off: ${NO_PLATFORM_KEY}.` : undefined;
+  }
+  return semanticRankingWarning(hasStoredEmbeddings);
+}
+
 export async function embedTexts(texts: readonly string[]): Promise<number[][]> {
   const apiKey = embeddingKey();
-  if (!apiKey) throw new Error('MISTRAL_API_KEY is not set.');
+  if (!apiKey) throw new Error(`${embeddingSession.getStore() ? NO_PLATFORM_KEY : mistralUnavailableReason()}.`);
   const usage = embeddingSession.getStore()?.usage;
   if (!texts.length) return [];
 

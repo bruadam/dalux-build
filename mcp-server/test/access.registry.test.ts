@@ -4,10 +4,14 @@ import type { DaluxClient } from 'dalux-build-api';
 import type { RequestContext } from '../src/access/context';
 import { CAPABILITIES, TOOL_ACCESS } from '../src/access/registry';
 import { buildServer } from '../src/server';
+import { TOOLSET_NAMES, toolsInToolsets } from '../src/toolsets';
 
 async function registeredTools(context?: RequestContext) {
   const getProject = jest.fn(async () => ({ data: { projectId: 'p1' } }));
-  const server = buildServer({ projects: { getProject } } as unknown as DaluxClient, { context });
+  const server = buildServer({ projects: { getProject } } as unknown as DaluxClient, {
+    context,
+    toolsets: TOOLSET_NAMES,
+  });
   const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
   const client = new Client({ name: 'test-client', version: '1.0.0' });
   await Promise.all([client.connect(clientTransport), server.connect(serverTransport)]);
@@ -21,6 +25,8 @@ describe('tool access registry', () => {
     const names = tools.map((tool) => tool.name).sort();
 
     expect(Object.keys(TOOL_ACCESS).sort()).toEqual(names);
+    // Toolsets group the same tools the registry guards: one list of tool names, two concerns.
+    expect([...toolsInToolsets(TOOLSET_NAMES)].sort()).toEqual(names);
     for (const name of names) {
       expect([...CAPABILITIES, 'none']).toContain(TOOL_ACCESS[name].capability);
     }

@@ -7,7 +7,7 @@
  * array of floats that any later process can re-read without a database.
  */
 
-import { EMBEDDING_MODEL, bm25Scores, cosineSimilarity, embedTexts, embeddingsAvailable, type RankMode } from '../search/rank';
+import { EMBEDDING_MODEL, bm25Scores, cosineSimilarity, embedTexts, embeddingsAvailable, rankingModeWarning, type RankMode } from '../search/rank';
 import type { TextChunk } from '../extract';
 import { indexStores } from '../store';
 import type { IndexManifest } from '../store/types';
@@ -58,9 +58,8 @@ function rankingWarnings(embedding: IndexManifest['embedding'], missingVectors: 
   if (embedding && embedding.model !== EMBEDDING_MODEL) {
     warnings.push('Embedding model changed — ranking lexically until the index is rebuilt.');
   }
-  if (embedding && !embeddingsAvailable()) {
-    warnings.push('MISTRAL_API_KEY is not set — ranking lexically (BM25) instead of semantically.');
-  }
+  const rankingWarning = rankingModeWarning(Boolean(embedding));
+  if (rankingWarning) warnings.push(rankingWarning);
   if (missingVectors) {
     warnings.push(
       'Some documents have no embeddings (indexed before the key was set) — ranking lexically so scores stay comparable. Re-run build_file_area_index with refresh=true to embed them.',

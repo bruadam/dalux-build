@@ -29,14 +29,15 @@ Reads the same environment variables as the rest of the Dalux Build clients:
 | --- | --- | --- |
 | `DALUX_BASE_URL` | yes | Your Dalux Build API base URL |
 | `DALUX_API_KEY` | yes | Your company's X-API-KEY |
-| `MISTRAL_API_KEY` | no | Enables semantic (embedding-based) ranking in document search; without it, ranking falls back to BM25. Also enables model-based fact extraction and judging in `check_document_consistency` (only together with `DALUX_MCP_ALLOW_EXTERNAL_MODEL_IO`) |
-| `DALUX_MCP_ALLOW_EXTERNAL_MODEL_IO` | no | Set to `true` to let `check_document_consistency` send document text to Mistral. Off by default: without it the check runs deterministic patterns only and says so in `warnings` |
+| `MISTRAL_API_KEY` | no | Mistral key for semantic (embedding-based) ranking in document and task search and for model-based fact extraction and judging in `check_document_consistency`. Used only together with `DALUX_MCP_ALLOW_EXTERNAL_MODEL_IO=true`; otherwise ranking is BM25 |
+| `DALUX_MCP_ALLOW_EXTERNAL_MODEL_IO` | no | Set to `true` to allow sending document and task text to Mistral: embeddings for `search_file_content`, `search_tasks`, the file-area, task and docs indexes, and `check_document_consistency`. Off by default: search ranks with BM25 and the consistency check runs deterministic patterns only; when `MISTRAL_API_KEY` is set without it, results carry a warning naming this variable |
 | `DALUX_MCP_ANALYSIS_MODEL` | no | Mistral chat model used by `check_document_consistency` (default `mistral-large-latest`, the same default as the Python client) |
 | `DALUX_MCP_CACHE_DIR` | no | Where downloads and the ephemeral file-area/task indexes are cached (default `$TMPDIR/dalux-mcp`). Set it when the temp directory is small or wiped between restarts. Also used by the docs index if `DALUX_MCP_DOCS_DIR` is unset |
 | `DALUX_MCP_DOCS_DIR` | no | Where the (persistent) docs-repo index is stored (default `~/.dalux-mcp/docs-index`) — separate from `DALUX_MCP_CACHE_DIR` because, unlike the other two indexes, this one is meant to survive restarts |
 | `DOCS_GITHUB_TOKEN` (or `GITHUB_TOKEN`) | only for a private docs repo | Token `npm run docs:build` sends to the GitHub API — required to read a private repo, optional (but raises the rate limit) for a public one. Needs read access to the repo's contents; no other scope |
 | `DOCS_GITHUB_USE_GH_CLI` | no | Set to `1` to have `npm run docs:build` fetch the docs repo via the local `gh` CLI's own login instead of a token — a dev-machine-only alternative to `DOCS_GITHUB_TOKEN`; ignored once a token is set |
 | `DOCS_GITHUB_OWNER`, `DOCS_GITHUB_REPO`, `DOCS_GITHUB_REF`, `DOCS_GITHUB_PATH` | no | Which repo/branch/folder `docs:build`/`search_docs` index — this deployment's one pinned docs corpus. `ref` defaults to `main`, `path` to `docs` if unset — see [Docs-repo search](#docs-repo-search-laws-guidelines-standards-procedures) below |
+| `DALUX_MCP_TOOLSETS` | no | Comma-separated toolsets to expose (same as `--toolsets`); see [Toolsets](#toolsets). Default `core,files,tasks,forms,quality,scheduling,search` |
 | `DALUX_MCP_TOKEN` | HTTP transport only | Shared-secret bearer token clients must send as `Authorization: Bearer <token>` |
 | `PORT` | HTTP transport only | Port to listen on (default `8080`) |
 | `HOST` | HTTP transport only | Address to bind (default `127.0.0.1`; use `0.0.0.0` for Docker/remote — see below) |
@@ -56,6 +57,7 @@ A `.env` file in the working directory is picked up automatically (via the under
 
 ```sh
 node dist/cli.js
+node dist/cli.js --toolsets default,ifc   # see Toolsets
 # or during development:
 npm run dev
 ```
@@ -175,21 +177,42 @@ List tools follow Dalux pagination to completion, then return one page: `limit` 
 
 `search_projects_by_name`, `search_files_by_name` and `search_folders_by_name` complement the exact-match `find_project_by_name` / exact-`folderId` lookups: they match a substring anywhere in the name, case-insensitively, and can return several matches rather than assuming there is exactly one — useful when only part of the name (or its casing) is known.
 
+### Toolsets
+
+Tools are grouped into toolsets (`src/toolsets.ts`), so a host lists only what a deployment needs. Every tool in `tools/list` costs model context in every conversation: about 5,000 tokens for the default set, about 9,500 for all toolsets.
+
+| toolset | tools | default |
+| --- | --- | --- |
+| `core` | projects, users, companies, `get_skill`, `report_feedback` | always on |
+| `files` | file areas, folders, files, `download_file`, `search_file_content`, `render_pdf_page` | yes |
+| `tasks` | task list/search/detail, changes, attachments, `view_tasks_timeline` | yes |
+| `forms`, `quality`, `scheduling` | forms; test and inspection plans; work packages, version sets | yes |
+| `search` | file-area and task indexes | yes |
+| `consistency` | `check_document_consistency` and its report tools | no |
+| `docs` | `search_docs`, `list_docs_indexes` | no |
+| `ifc` | `ifc_*` tools and `view_model_3d` | no |
+| `legacy` | `search_pdf_content` (old name of `search_file_content`) | no |
+
+Select them with `--toolsets` / `DALUX_MCP_TOOLSETS`, or per connection with a `?toolsets=` query parameter on the HTTP endpoint URL (e.g. `https://host/mcp?toolsets=default,ifc`), which overrides the server setting. Values are comma-separated toolset names, `default` and `all`; an unknown name is an error. The `get_skill` overview lists the toolsets that are not enabled and how to enable them.
+
 ### Usage guide (`get_skill`)
 
 The server bundles its own usage documentation and serves it over MCP, so any connecting client gets it — not just a Claude Code checkout of this repo with `.claude/skills/` on disk. `buildServer()` sets the server's `instructions` (delivered at `initialize`, before the model decides what to call first) to name `get_skill` explicitly as the recommended first call.
 
-`get_skill(topic?)` (`src/tools/skills.ts`) returns markdown. Called with no arguments it returns the `overview` topic, which orients the model and lists the others:
+`get_skill(topic?)` (`src/tools/skills.ts`) returns markdown as one text block (no `structuredContent` copy). Tool descriptions stay short; the usage detail lives here. Called with no arguments it returns the `overview` topic, which lists the others and the toolsets:
 
 | topic | covers |
 | --- | --- |
-| `overview` | tool categories, general usage principles, how errors are reported |
-| `tasks` | `list_project_tasks` filtering — OData `$filter`/`$select`/`$orderby` syntax, field paths, worked examples |
-| `documents` | `search_file_content`, `render_pdf_page`, cross-document search (`build_file_area_index`/`search_file_area`), cross-document consistency checks (`check_document_consistency`) |
-| `files` | file areas/folders/files navigation, path-based lookups, projects, directory (users/companies) |
-| `models_and_quality` | IFC model tools (incl. `ifc_diff` and the `ifc_edit_*` group), the 3D viewer, forms, quality plans, scheduling |
+| `overview` | topics, general principles (IDs, paging, lean items, errors), toolsets |
+| `files` | projects, file areas, folders, files, `download_file` caps, users and companies |
+| `documents` | `search_file_content`, `render_pdf_page` |
+| `tasks` | `list_project_tasks` paging and `conditions` (Dalux OData accepts only `typeId eq`; the server translates the rest), `search_tasks`, history, attachments |
+| `search` | file-area, task and reference-docs indexes |
+| `consistency` | `check_document_consistency` workflow, findings, verdicts |
+| `models_and_quality` | IFC analysis, clash, volumes, `ifc_diff`, the 3D viewer, forms, quality, scheduling |
+| `ifc_editing` | the `ifc_edit_*` session, AI marking, operations, saving |
 
-The same five docs are also published as `dalux-build://skill/<topic>` resources (`text/markdown`), for hosts that surface MCP resources directly (Claude Code's resource tools, Claude Desktop's resource picker) rather than relying on the model to call a tool. Both paths read from the same content in `src/tools/skills.ts` — there is only one copy to keep in sync.
+Each built-in topic is under 1,000 tokens. The same docs are also published as `dalux-build://skill/<topic>` resources (`text/markdown`), for hosts that surface MCP resources directly (Claude Code's resource tools, Claude Desktop's resource picker) rather than relying on the model to call a tool. Both paths read from the same content in `src/tools/skills.ts` — there is only one copy to keep in sync.
 
 ### Document search
 
@@ -230,14 +253,14 @@ list_file_area_indexes()                                   ->  what is currently
 drop_file_area_index(indexId)                              ->  delete one (nothing in Dalux is touched)
 ```
 
-The index is a disposable directory under the cache root: per-document chunks plus, when `MISTRAL_API_KEY` is set, their embeddings as raw `Float32`. Indexes untouched for a week are deleted on the next build. Retrieval is deliberately all that these tools do — they return cited passages, and the calling agent does the reasoning, which is what makes this usable from any MCP host without a second model API key.
+The index is a disposable directory under the cache root: per-document chunks plus, when Mistral is enabled (`MISTRAL_API_KEY` and `DALUX_MCP_ALLOW_EXTERNAL_MODEL_IO=true`), their embeddings as raw `Float32`. Indexes untouched for a week are deleted on the next build. Retrieval is deliberately all that these tools do — they return cited passages, and the calling agent does the reasoning, which is what makes this usable from any MCP host without a second model API key.
 
 Details worth knowing before pointing it at a large file area:
 
 - **Scope** is (project, file area, optional folder subtree, extension filter). It hashes to a stable `indexId`, so re-running `build_file_area_index` with the same arguments reuses what is already on disk instead of re-downloading — you can address an index by scope in `search_file_area` and never handle the id yourself.
 - **Incremental**: a file is re-downloaded only when its `contentHash`/revision changed; files that left the file area have their chunks dropped; files that fail to extract are recorded once and not retried until their revision changes.
 - **Budgeted**: each call indexes at most `maxFiles` (250) files and stops after `timeBudgetSeconds` (120), so a large file area never blows the host's tool timeout. If the result says `complete: false`, call it again with the same arguments to continue where it left off.
-- **Ranking**: cosine similarity over embeddings when `MISTRAL_API_KEY` is set, BM25 otherwise. BM25 scores are absolute (`raw / (raw + 3)`), not normalised to the best hit, so the top result of a query nothing matches looks weak instead of scoring a misleading 1.0.
+- **Ranking**: cosine similarity over embeddings when Mistral is enabled, BM25 otherwise. BM25 scores are absolute (`raw / (raw + 3)`), not normalised to the best hit, so the top result of a query nothing matches looks weak instead of scoring a misleading 1.0.
 - **Cost**: with a key, indexing embeds every chunk once (`text-embedding-3-small`); a 250-document folder is a few million tokens of embeddings. Without one, indexing makes no API calls at all.
 
 This is the TypeScript counterpart of the corpus-wide RAG agent in the Python package (`python/dalux_build/ai/`), which uses Chroma and LangChain and hosts its own LLM loop. Chunk size and overlap match (1000/150) so passages read the same through either path.
@@ -256,16 +279,16 @@ list_consistency_reports() / drop_consistency_report(reportId)
 ```
 
 - **Deterministic first**: facts (element/door/room IDs, fire classes, concrete and exposure classes, U-values, sound requirements, dimensions, BoQ rows, milestone dates incl. Danish formats and week numbers, amounts in kr./DKK, standard editions, drawing revisions) are extracted with patterns, normalised, and compared per subject and attribute across *different* files. Equal values written differently (`EI 60`/`EI60`, `1.200 mm`/`1,2 m`, `01-03-2027`/`1. marts 2027`) do not conflict.
-- **With `MISTRAL_API_KEY` and `DALUX_MCP_ALLOW_EXTERNAL_MODEL_IO=true`** (and `useModel` not false), Mistral (`DALUX_MCP_ANALYSIS_MODEL`) also extracts facts the patterns miss, then judges every finding: false alarms are dropped, the rest become `verdict: "confirmed"` with an explanation and a precedence note based on the `danish-construction-contracts` skill. The opt-in variable is required because document text leaves the server; if it is missing, the check runs the patterns only and a warning names the variable. Model extraction respects `timeBudgetSeconds` inside a file too: a large file (e.g. a long bill of quantities) is read in batches, the progress is saved, and the next call continues it. Without the model, findings stay `verdict: "candidate"` for the calling agent to review with the `document-consistency-review` skill.
+- **With `MISTRAL_API_KEY` and `DALUX_MCP_ALLOW_EXTERNAL_MODEL_IO=true`** (and `useModel` not false), Mistral (`DALUX_MCP_ANALYSIS_MODEL`) also extracts facts the patterns miss, then judges every finding: false alarms are dropped, the rest become `verdict: "confirmed"` with an explanation and a precedence note based on the `danish-construction-contracts` skill. The opt-in variable is required because document text leaves the server; if it is missing, the check runs the patterns only and a warning names the variable. Model extraction respects `timeBudgetSeconds` inside a file too: a large file (e.g. a long bill of quantities) is read in batches, the progress is saved, and the next call continues it. Without the model, findings stay `verdict: "candidate"` for the calling agent to review with the `document-consistency-review` skill. When the model ran, `modelUsage` reports the Mistral calls and prompt/completion tokens of that call.
 - **Resumable and incremental**: same arguments give the same `reportId`; while `complete` is false, call again. Facts are cached per file revision, so later calls only re-read changed files. Reports untouched for a week are deleted.
 - **Export**: xlsx (one row per statement, grouped by finding), docx (summary and table) or md, written locally and returned as a download link — never uploaded to Dalux.
 - **Annotated PDFs**: `annotated-pdf` returns a zip with an annotated copy of every PDF that has findings (`<name>.annotated.pdf`) plus the xlsx register. Each quote gets a highlight annotation (red/orange/yellow for high/medium/low) with a comment and popup in the document's language (Danish or English), naming the conflicting value and its location in the other document; `/NM` is the finding id. The PDFs are downloaded again from Dalux and annotated as an incremental update ([`@cantoo/pdf-lib`](https://github.com/cantoo-scribe/pdf-lib), MIT), so the original bytes are kept. Quotes that cannot be found on their page or its neighbours get a note at the top of the page and are counted in `unmatchedQuotes`; encrypted PDFs are skipped. Both are listed on the register's Annotations sheet.
 
 ### Task search
 
-`list_project_tasks` filters with an exact OData `$filter` expression (see `get_skill({ topic: "tasks" })`) — precise, but it needs the model to write correct OData and can only match the literal field it's pointed at. Two tools answer "which tasks are about X" without that:
+`list_project_tasks` filters on exact field values (`typeId`, `conditions`, or simple OData that the server translates — see `get_skill({ topic: "tasks" })`) — precise, but it can only match the literal field it's pointed at. Two tools answer "which tasks are about X" without that:
 
-`search_tasks(projectId, query, typeId?, filter?, includeChanges?, topK?)` is the ad-hoc, no-setup option: it fetches the project's tasks (optionally narrowed with `typeId`/`filter` first), renders each one's subject, type, status, custom fields and (if `includeChanges: true`) change-history text, ranks them against `query` (embeddings if `MISTRAL_API_KEY` is set, BM25 otherwise — see `src/search/rank.ts`), and returns the best-matching tasks (default `topK` 10) as `{ taskId, number, subject, type, status, score, snippet }`. Call `get_task` for the full task. Good for a one-off question; it re-fetches and re-renders every task on every call.
+`search_tasks(projectId, query, typeId?, filter?, includeChanges?, topK?)` is the ad-hoc, no-setup option: it fetches the project's tasks (optionally narrowed with `typeId`/`filter` first), renders each one's subject, type, status, custom fields and (if `includeChanges: true`) change-history text, ranks them against `query` (embeddings if Mistral is enabled, BM25 otherwise — see `src/mistral.ts`), and returns the best-matching tasks (default `topK` 10) as `{ taskId, number, subject, type, status, score, snippet }`. Call `get_task` for the full task. Good for a one-off question; it re-fetches and re-renders every task on every call.
 
 For repeated searches over the same project, build an index instead — the task-side counterpart of `build_file_area_index`/`search_file_area`, combining each task with its change history into one searchable document per task:
 
@@ -406,8 +429,8 @@ npm run build --workspace=mcp-server
 
 ### Mistral embeddings
 
-Set `MISTRAL_API_KEY` to enable semantic ranking using the official
-`@mistralai/mistralai` SDK and `mistral-embed` (1024 dimensions). Without a key,
-search uses BM25. Indexes made with a different embedding model are searched
+Set `MISTRAL_API_KEY` and `DALUX_MCP_ALLOW_EXTERNAL_MODEL_IO=true` to enable
+semantic ranking using the official `@mistralai/mistralai` SDK and `mistral-embed`
+(1024 dimensions). Without both, search uses BM25. Indexes made with a different embedding model are searched
 lexically until rebuilt; the next build re-embeds their documents. MCP tools
 return cited passages for the calling agent to reason over.

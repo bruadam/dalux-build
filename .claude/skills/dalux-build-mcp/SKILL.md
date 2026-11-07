@@ -51,77 +51,22 @@ guidance without an extra tool round-trip.
 - If a call errors, the tool returns `Error: <message>` as its content (not a thrown exception the host hides) —
   read that message; for OData calls it's usually the parser pointing at the exact bad token.
 
-## Filtering tasks: `list_project_tasks` and OData
+## Filtering tasks: `list_project_tasks`, OData and `conditions`
 
-`list_project_tasks(projectId, typeId?, filter?, select?, orderby?)` wraps `GET
-/5.2/projects/{projectId}/tasks`, which speaks OData. The tool's parameters are named `filter`/`select`/`orderby`
-**without** the `$` — a literal `$filter` property name fails some clients' tool-schema validation and silently
-drops the whole tool — and are translated back to `$filter`/`$select`/`$orderby` before the HTTP call
-(`mcp-server/src/tools/tasks.ts`).
+The full guide is the server's own `get_skill({ topic: "tasks" })`. The short version:
 
-**`typeId` vs `filter`:** `typeId` is shorthand that expands to `$filter=data/type/typeId eq '<typeId>'`
-(quotes in the value are escaped for you). It's ignored the moment `filter` is also set — the two are not
-merged. So: use `typeId` alone for "just tasks of this type"; the moment you need anything else too, drop
-`typeId` and write the full condition, type check included, inside `filter` yourself.
-
-### Field paths (under `data/`)
-
-Confirmed by the published Dalux schema (`docs/official-api-docs/Dalux Build API.yaml`,
-`ApiTaskGet`/`TaskTypeReference`/`WorkflowReference`):
-
-| Path | Meaning |
-| --- | --- |
-| `data/taskId` | task ID |
-| `data/subject` | title/subject text |
-| `data/usage` | one of `task`, `approval`, `safetyissue`, `safetyobservation`, `goodpractice` |
-| `data/type/typeId` | task type ID — what the `typeId` shorthand filters on |
-| `data/type/name` | task type display name |
-| `data/number` | task number, e.g. `"T-042"` |
-| `data/created` | creation timestamp (ISO 8601 date-time) |
-| `data/createdBy/userId` | creator's user ID |
-| `data/workflow/name` | workflow/status name |
-
-The **only** filter behaviour the official docs actually commit to is `typeId eq` on `data/type/typeId` — the
-rest of the table is real schema, not confirmed filter support. Real task payloads commonly carry more fields
-than this table (`deadline`, `status`, `assignedTo`, `currentResponsible`, `workpackageId`,
-`userDefinedFields`, per the change-tracking schema in `javascript/src/models/tasks/index.ts`) — if you need to
-filter on one of those, verify its exact key first (see "check the real shape" above) rather than guessing the
-`data/...` path.
-
-### Operators
-
-Standard OData v4 syntax, prefixed with `data/`:
-
-- Comparison: `eq`, `ne`, `gt`, `ge`, `lt`, `le`
-- Logical: `and`, `or`, `not` — combine multiple conditions in one `filter` string
-- String functions: `contains(data/subject,'text')`, `startswith(...)`, `endswith(...)`
-- String literals: single-quoted; a literal `'` inside one is escaped as `''`
-- Date literals: try a plain ISO string first (`data/created ge '2026-01-01T00:00:00Z'`); fall back to
-  `datetime'2026-01-01T00:00:00Z'` if the plain form 400s — only `eq` on `typeId` is doc-guaranteed, so treat
-  comparisons/date literals as "try it on a small project first," not settled syntax.
-
-### Examples
+- `filter` (sent to Dalux as `$filter`) accepts exactly one shape: `data/type/typeId eq '<id>'`. No `and`/`or`, no
+  other operators, no other fields; anything else fails with "Parameter validation failed for OData query".
+  `typeId` is shorthand for that filter and is ignored when `filter` is set.
+- Use `conditions` for every other filter. They run server-side after fetching, ANDed together, and `field` is a
+  dot path into the task JSON the tool returns (not an OData path):
 
 ```
-# All safety issues
-filter: "data/usage eq 'safetyissue'"
-
-# A given task type, created on/after a date
-filter: "data/type/typeId eq 'abc123' and data/created ge '2026-01-01T00:00:00Z'"
-
-# Subject keyword search
-filter: "contains(data/subject,'foundation')"
-
-# Trim payload to just what you need when scanning many tasks
-select: "taskId,subject,type,workflow"
-orderby: "created desc"
+conditions: [
+  {"field": "created", "op": "ge", "value": "2026-08-01T00:00:00Z"},
+  {"field": "workflow.name", "op": "contains", "value": "open"}
+]
 ```
 
-### When a filter call fails
-
-1. Re-read the `Error: ...` text the tool returned — it's the OData parser's own complaint, and usually names
-   the exact clause it choked on.
-2. Narrow to one condition at a time to isolate which clause is the problem.
-3. If a field path genuinely isn't filterable server-side, fall back to fetching the (already fully paginated)
-   unfiltered list and filtering client-side — `list_project_tasks`' `conditions` argument does this
-   server-side before paging, so prefer it over walking every page in the conversation.
+- Task types carry different fields: read one real task with `get_task` before filtering on a field you have not
+  seen.

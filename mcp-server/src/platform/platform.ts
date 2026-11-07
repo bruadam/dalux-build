@@ -70,7 +70,7 @@ export class Platform {
   private readonly accessByAccount = cache<EffectiveAccess[]>();
   private readonly connectionsBySlug = cache<Connection | undefined>();
   private readonly connectionList = cache<{ id: string; slug: string }[]>();
-  private readonly settingsRow = cache<{ headerModeEnabled: boolean }>();
+  private readonly settingsRow = cache<{ headerModeEnabled: boolean; embeddingKey: string | null }>();
   private readonly daluxUsers = cache<string | undefined>();
   private readonly clients = new Map<string, { key: string; connection: Connection }>();
 
@@ -195,12 +195,25 @@ export class Platform {
     return connection;
   }
 
-  async headerModeEnabled(): Promise<boolean> {
-    const row = await this.settingsRow('settings', async () => {
-      const [found] = await this.db.select({ headerModeEnabled: settings.headerModeEnabled }).from(settings);
-      return found ?? { headerModeEnabled: false };
+  private settingsValues() {
+    return this.settingsRow('settings', async () => {
+      const [found] = await this.db
+        .select({ headerModeEnabled: settings.headerModeEnabled, embeddingKey: settings.embeddingKeyEncrypted })
+        .from(settings);
+      return {
+        headerModeEnabled: found?.headerModeEnabled ?? false,
+        embeddingKey: found?.embeddingKey ? decryptSecret(found.embeddingKey, this.encryptionKey) : null,
+      };
     });
-    return row.headerModeEnabled;
+  }
+
+  async headerModeEnabled(): Promise<boolean> {
+    return (await this.settingsValues()).headerModeEnabled;
+  }
+
+  /** The admin's embedding key; setting it is the consent to send text to the provider (PRD). */
+  async embeddingKey(): Promise<string | null> {
+    return (await this.settingsValues()).embeddingKey;
   }
 
   /** Writes one audit row per tool call; failures are logged, never shown to the caller. */

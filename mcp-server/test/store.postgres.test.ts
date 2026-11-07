@@ -12,9 +12,12 @@ import { setIndexStores } from '../src/store';
 import { searchIndex } from '../src/rag/search';
 import { searchTaskIndex } from '../src/rag/taskSearch';
 import { searchDocsIndex } from '../src/rag/docsSearch';
-import { EMBEDDING_DIMENSIONS, EMBEDDING_MODEL } from '../src/search/rank';
+import { EMBEDDING_DIMENSIONS, EMBEDDING_MODEL, withEmbeddingKey } from '../src/search/rank';
 import type { IndexManifest, IndexStores, IndexedDocument, TaskIndexManifest, DocsIndexManifest } from '../src/store/types';
 import { createTestDatabase, type TestDatabase } from '../../platform/db/test/testDatabase';
+
+/** Platform mode: the embedding key comes from the admin settings, not MISTRAL_API_KEY. */
+const withPlatformKey = <T>(fn: () => Promise<T>) => withEmbeddingKey('test-key', fn).then(({ result }) => result);
 
 const embeddings = new Map<string, number[]>();
 jest.mock('@mistralai/mistralai', () => ({
@@ -202,26 +205,21 @@ describeDb('Postgres index store', () => {
   });
 
   it('ranks semantically in Postgres with the same result shape as the file store', async () => {
-    process.env.MISTRAL_API_KEY = 'test-key';
     embeddings.set('membrane', axis(2, 3, 0.5));
-    try {
-      const result = await as('alice', () => searchIndex('idx-small', 'membrane', { topK: 2 }));
-      expect(result).toMatchObject({ mode: 'embeddings', filesSearched: 2, chunksSearched: 4, warnings: [] });
-      expect(result.matches.map((match) => match.text)).toEqual([
-        'Roof membrane with insulation',
-        'Concrete cover 35 mm for exposed walls',
-      ]);
-      expect(result.matches[0]).toEqual({
-        page: 1,
-        location: 'p. 1',
-        text: 'Roof membrane with insulation',
-        fileId: 'sub',
-        fileName: 'sub.pdf',
-        score: expect.closeTo(1 / Math.sqrt(1.25), 5),
-      });
-    } finally {
-      delete process.env.MISTRAL_API_KEY;
-    }
+    const result = await withPlatformKey(() => as('alice', () => searchIndex('idx-small', 'membrane', { topK: 2 })));
+    expect(result).toMatchObject({ mode: 'embeddings', filesSearched: 2, chunksSearched: 4, warnings: [] });
+    expect(result.matches.map((match) => match.text)).toEqual([
+      'Roof membrane with insulation',
+      'Concrete cover 35 mm for exposed walls',
+    ]);
+    expect(result.matches[0]).toEqual({
+      page: 1,
+      location: 'p. 1',
+      text: 'Roof membrane with insulation',
+      fileId: 'sub',
+      fileName: 'sub.pdf',
+      score: expect.closeTo(1 / Math.sqrt(1.25), 5),
+    });
   });
 
   it('ranks lexically with full-text search on an absolute scale', async () => {
@@ -264,21 +262,19 @@ describeDb('Postgres index store', () => {
   });
 
   it('falls back to lexical ranking while the embedding model differs or vectors are missing', async () => {
-    process.env.MISTRAL_API_KEY = 'test-key';
     try {
       await as('admin', () =>
         build.fileAreas.writeManifest({ ...manifestFor('idx-small', documents), embedding: { model: 'old-model', dimensions: EMBEDDING_DIMENSIONS } }),
       );
-      const changed = await as('alice', () => searchIndex('idx-small', 'concrete'));
+      const changed = await withPlatformKey(() => as('alice', () => searchIndex('idx-small', 'concrete')));
       expect(changed.mode).toBe('lexical');
       expect(changed.warnings).toContain('Embedding model changed — ranking lexically until the index is rebuilt.');
 
       await writeIndex('idx-partial', documents, [vectors[0], null]);
-      const partial = await as('alice', () => searchIndex('idx-partial', 'concrete'));
+      const partial = await withPlatformKey(() => as('alice', () => searchIndex('idx-partial', 'concrete')));
       expect(partial.mode).toBe('lexical');
       expect(partial.warnings.join(' ')).toMatch(/Some documents have no embeddings/);
     } finally {
-      delete process.env.MISTRAL_API_KEY;
       await as('admin', () => build.fileAreas.writeManifest(manifestFor('idx-small', documents)));
     }
   });

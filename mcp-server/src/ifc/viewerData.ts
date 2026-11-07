@@ -8,13 +8,22 @@ import { readFile } from 'node:fs/promises';
 import { gzipSync } from 'node:zlib';
 import type { LoadedModel } from '@ifc-lite/mcp';
 import type { ToolContext } from '@ifc-lite/mcp';
-import { packChunks } from './meshPack';
+import { packEncodedChunks } from './meshPack';
 import { callIfcTool, loadIfcGeometry } from './runtime';
 import { splitPath } from './catalogue';
 import { currentCaller } from '../access/requestScope';
 
-/** Raw bytes per geometry chunk, before gzip + base64. Keeps one tool result to a few MB. */
-const MAX_CHUNK_BYTES = 3 * 1024 * 1024;
+/**
+ * Claude writes a tool result over ~150,000 characters to its code-execution
+ * sandbox instead of handing it to the app, so the app never gets its data.
+ * Every result the viewer app reads stays at or under this many characters of
+ * serialized JSON.
+ */
+export const APP_RESULT_MAX_CHARS = 100_000;
+/** base64(gzip) characters per geometry chunk; the rest of the result is a short envelope. */
+const MAX_CHUNK_CHARS = 90_000;
+/** Express ids per ifc_viewer_selection page (at most 11 characters each in JSON). */
+export const SELECTION_PAGE_SIZE = 8_000;
 
 export interface ViewerGeometry {
   types: string[];
@@ -34,10 +43,10 @@ async function buildViewerGeometry(model: LoadedModel): Promise<ViewerGeometry> 
   try {
     await gp.init();
     const result = await gp.process(new Uint8Array(await readFile(model.filePath)));
-    const packed = packChunks(result.meshes, MAX_CHUNK_BYTES);
+    const packed = packEncodedChunks(result.meshes, MAX_CHUNK_CHARS, (chunk) => gzipSync(chunk).toString('base64'));
     return {
       types: packed.types,
-      chunks: packed.chunks.map((chunk) => gzipSync(chunk).toString('base64')),
+      chunks: packed.chunks,
       meshCount: result.meshes.length,
       triangleCount: result.totalTriangles,
     };
@@ -68,6 +77,8 @@ export interface ElementDetails {
   material?: string;
   /** Property sets and quantity sets, flattened to name → display value. */
   sets: { name: string; kind: 'pset' | 'qto'; values: Record<string, string | number | boolean | null> }[];
+  /** Set when values were shortened or sets dropped to keep the result small. */
+  truncated?: boolean;
 }
 
 interface RawSet {
@@ -100,7 +111,7 @@ export async function elementDetails(ctx: ToolContext, model: LoadedModel, expre
     globalId?: string; name?: string; type?: string; description?: string;
     properties?: RawSet[]; quantities?: RawSet[]; materials?: unknown;
   };
-  return {
+  return fitElementDetails({
     expressId,
     type: d.type ?? '',
     name: d.name ?? '',
@@ -111,7 +122,31 @@ export async function elementDetails(ctx: ToolContext, model: LoadedModel, expre
       ...(d.properties ?? []).map((s) => ({ name: s.name, kind: 'pset' as const, values: toValues(s.properties) })),
       ...(d.quantities ?? []).map((s) => ({ name: s.name, kind: 'qto' as const, values: toValues(s.quantities ?? s.properties) })),
     ],
+  });
+}
+
+const MAX_VALUE_CHARS = 2_000;
+
+/**
+ * Keeps an element's details under `maxChars` of JSON: long values are cut
+ * first, then trailing property sets are dropped and `truncated` is set.
+ */
+export function fitElementDetails(details: ElementDetails, maxChars = APP_RESULT_MAX_CHARS - 2_000): ElementDetails {
+  const size = (d: ElementDetails) => JSON.stringify(d).length;
+  if (size(details) <= maxChars) return details;
+  const cut = (v: string) => (v.length > MAX_VALUE_CHARS ? `${v.slice(0, MAX_VALUE_CHARS)}…` : v);
+  const fitted: ElementDetails = {
+    ...details,
+    description: details.description && cut(details.description),
+    material: details.material && cut(details.material),
+    sets: details.sets.map((set) => ({
+      ...set,
+      values: Object.fromEntries(Object.entries(set.values).map(([k, v]) => [cut(k), typeof v === 'string' ? cut(v) : v])),
+    })),
+    truncated: true,
   };
+  while (fitted.sets.length > 0 && size(fitted) > maxChars) fitted.sets.pop();
+  return fitted;
 }
 
 // ---------- selections ----------

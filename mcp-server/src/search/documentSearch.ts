@@ -8,7 +8,7 @@
  */
 
 import type { TextChunk } from '../extract';
-import { bm25Scores, cosineSimilarity, embedTexts, embeddingsAvailable, type RankMode } from './rank';
+import { bm25Scores, cosineSimilarity, embedTexts, embeddingsAvailable, rankingModeWarning, type RankMode } from './rank';
 
 export interface ScoredChunk extends TextChunk {
   score: number;
@@ -25,7 +25,7 @@ export async function searchChunks(
   chunks: readonly TextChunk[],
   query: string,
   topK: number,
-): Promise<{ mode: RankMode; matches: ScoredChunk[] }> {
+): Promise<{ mode: RankMode; matches: ScoredChunk[]; warning?: string }> {
   if (!chunks.length) return { mode: 'lexical', matches: [] };
 
   if (!embeddingsAvailable()) {
@@ -35,7 +35,7 @@ export async function searchChunks(
       .filter((chunk) => chunk.score > 0)
       .sort((a, b) => b.score - a.score)
       .slice(0, topK);
-    return { mode: 'lexical', matches };
+    return { mode: 'lexical', matches, warning: rankingModeWarning(false) };
   }
 
   let candidates = chunks;

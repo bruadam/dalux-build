@@ -1,7 +1,8 @@
 /**
  * The embeddings path with a stubbed Mistral SDK.
  *
- * This is the default ranking in any deployment that sets MISTRAL_API_KEY, and
+ * This is the default ranking in any deployment that sets MISTRAL_API_KEY and
+ * DALUX_MCP_ALLOW_EXTERNAL_MODEL_IO=true, and
  * the parts most likely to break quietly — request batching, restoring the
  * order Mistral returns, and the Float32 round-trip through the .vec files —
  * are invisible to the lexical tests, which is why they are covered here.
@@ -13,7 +14,7 @@ import path from 'node:path';
 import type { DaluxClient } from 'dalux-build-api';
 
 import { readManifest, writeManifest } from '../src/store/file/fileAreaStore';
-import { embedTexts } from '../src/search/rank';
+import { embedTexts, withEmbeddingKey } from '../src/search/rank';
 import { searchChunks } from '../src/search/documentSearch';
 import * as fileAreaIndex from '../src/tools/fileAreaIndex';
 import { paragraph, writeDocx } from './fixtures/office';
@@ -59,10 +60,13 @@ function stubMistral(): { calls: FetchCall[]; restore: () => void } {
 describe('embeddings ranking', () => {
   let stub: ReturnType<typeof stubMistral>;
   let originalKey: string | undefined;
+  let originalOptIn: string | undefined;
 
   beforeEach(() => {
     originalKey = process.env.MISTRAL_API_KEY;
+    originalOptIn = process.env.DALUX_MCP_ALLOW_EXTERNAL_MODEL_IO;
     process.env.MISTRAL_API_KEY = 'test-key';
+    process.env.DALUX_MCP_ALLOW_EXTERNAL_MODEL_IO = 'true';
     stub = stubMistral();
   });
 
@@ -70,7 +74,63 @@ describe('embeddings ranking', () => {
     stub.restore();
     if (originalKey === undefined) delete process.env.MISTRAL_API_KEY;
     else process.env.MISTRAL_API_KEY = originalKey;
+    if (originalOptIn === undefined) delete process.env.DALUX_MCP_ALLOW_EXTERNAL_MODEL_IO;
+    else process.env.DALUX_MCP_ALLOW_EXTERNAL_MODEL_IO = originalOptIn;
     jest.clearAllMocks();
+  });
+
+  describe('without DALUX_MCP_ALLOW_EXTERNAL_MODEL_IO', () => {
+    beforeEach(() => {
+      delete process.env.DALUX_MCP_ALLOW_EXTERNAL_MODEL_IO;
+    });
+
+    it('sends nothing to Mistral and ranks lexically, with one warning naming the variable', async () => {
+      const chunks = [
+        { page: 1, location: 'p. 1', text: 'Slab thickness and concrete cover.' },
+        { page: 2, location: 'p. 2', text: 'Escape route doors and their fire rating.' },
+      ];
+
+      const result = await searchChunks(chunks, 'fire', 1);
+
+      expect(result.mode).toBe('lexical');
+      expect(result.matches[0].location).toBe('p. 2');
+      expect(result.warning).toMatch(/DALUX_MCP_ALLOW_EXTERNAL_MODEL_IO=true/);
+      await expect(embedTexts(['anything'])).rejects.toThrow('DALUX_MCP_ALLOW_EXTERNAL_MODEL_IO');
+      expect(stub.calls).toHaveLength(0);
+    });
+
+    it('stays silent when no Mistral key is configured either', async () => {
+      delete process.env.MISTRAL_API_KEY;
+      const result = await searchChunks([{ page: 1, location: 'p. 1', text: 'fire' }], 'fire', 1);
+      expect(result.warning).toBeUndefined();
+    });
+  });
+
+  describe('platform mode (embedding session from the admin settings)', () => {
+    const chunks = [
+      { page: 1, location: 'p. 1', text: 'Slab thickness and concrete cover.' },
+      { page: 2, location: 'p. 2', text: 'Escape route doors and their fire rating.' },
+    ];
+
+    it('uses the settings key without DALUX_MCP_ALLOW_EXTERNAL_MODEL_IO', async () => {
+      delete process.env.DALUX_MCP_ALLOW_EXTERNAL_MODEL_IO;
+      delete process.env.MISTRAL_API_KEY;
+      const { result, usage } = await withEmbeddingKey('test-key', () => searchChunks(chunks, 'fire', 1));
+      expect(result.mode).toBe('embeddings');
+      expect(result.matches[0].location).toBe('p. 2');
+      expect(usage.calls).toBe(1);
+    });
+
+    it('stays lexical when no key is set in the settings, even with the env opt-in', async () => {
+      const { result } = await withEmbeddingKey(null, async () => ({
+        search: await searchChunks(chunks, 'fire', 1),
+        embed: await embedTexts(['anything']).catch((error: Error) => error.message),
+      }));
+      expect(result.search.mode).toBe('lexical');
+      expect(result.search.warning).toBeUndefined();
+      expect(result.embed).toMatch(/platform settings/);
+      expect(stub.calls).toHaveLength(0);
+    });
   });
 
   describe('embedTexts', () => {
@@ -227,7 +287,20 @@ describe('embeddings ranking', () => {
 
       expect(result.mode).toBe('lexical');
       expect(result.matches[0].fileName).toBe('fire.docx');
-      expect(result.warnings.join(' ')).toMatch(/MISTRAL_API_KEY is not set/);
+      expect(result.warnings).toEqual([expect.stringMatching(/^Semantic ranking is off/)]);
+    });
+
+    it('builds a lexical index, with a warning, when the opt-in is missing', async () => {
+      const client = clientFor({
+        f1: writeDocx(fixtures, 'fire.docx', paragraph('Escape route doors shall hold their fire rating.')),
+      });
+      delete process.env.DALUX_MCP_ALLOW_EXTERNAL_MODEL_IO;
+
+      const built = await fileAreaIndex.buildFileAreaIndex(client, { projectId: 'p1', fileAreaId: 'fa-no-opt-in' });
+
+      expect(built.mode).toBe('lexical');
+      expect(built.warnings).toEqual([expect.stringMatching(/DALUX_MCP_ALLOW_EXTERNAL_MODEL_IO=true/)]);
+      expect(stub.calls).toHaveLength(0);
     });
 
     it('refuses old model vectors and rebuilds unchanged documents with the new model', async () => {

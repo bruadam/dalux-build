@@ -9,26 +9,14 @@ import {
 } from '../feedbackReport';
 
 export const reportFeedbackInput = z.object({
-  type: z.enum(['bug', 'enhancement']).describe('"bug" for something broken, "enhancement" for a feature request or improvement idea.'),
-  title: z.string().min(1).max(200).describe('A short, one-line summary — this becomes the GitHub issue title.'),
+  type: z.enum(['bug', 'enhancement']),
+  title: z.string().min(1).max(200).describe('One-line issue title.'),
   body: z
     .string()
-    .min(1)
-    .describe(
-      'The report itself, in Markdown. Describe the MCP server/tool behavior only — never include Dalux project ' +
-        'data (project/file/task names or IDs, document content, company or user names) or any personal data. ' +
-        'Keep it general enough that it would make sense with no context about which Dalux project or company the ' +
-        'user is on.',
-    ),
+    .min(1).describe('Markdown. Server/tool behavior only; no project or personal data.'),
   confirmed: z
     .boolean()
-    .optional()
-    .describe(
-      'Leave unset (or false) to preview the exact issue that would be filed, without posting anything. Only ' +
-        'set this to true after showing the user the exact title and body from the preview and receiving their ' +
-        'explicit, affirmative confirmation to post — not an inferred "sounds good", an actual yes to that exact ' +
-        'content. If the user asks for any change, send a fresh (unconfirmed) call with the updated text first.',
-    ),
+    .optional().describe('Omit to preview. Set true only after the user approved this exact title and body.'),
 });
 export type ReportFeedbackInput = z.infer<typeof reportFeedbackInput>;
 

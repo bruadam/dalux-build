@@ -19,6 +19,11 @@ export interface RequestContext {
    * the only limit. Otherwise the union of the account's and its groups' grants.
    */
   access: 'unrestricted' | EffectiveAccess[];
+  /**
+   * Keeps the temporary file indexes of a caller without an account apart from
+   * everyone else's: header mode in platform mode sets it to a hash of the Dalux credentials.
+   */
+  fileNamespace?: string;
 }
 
 export const UNRESTRICTED_CONTEXT: RequestContext = { access: 'unrestricted' };

@@ -1,4 +1,7 @@
 import { randomUUID } from 'node:crypto';
+import { mkdtempSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import path from 'node:path';
 import { Pool } from 'pg';
 import { createDb, DB_ROLES, encryptSecret, runMigrations, type Db } from '@dalux-platform/db';
 
@@ -19,6 +22,7 @@ const FILES = [
   { fileId: 'x1', fileName: 'granted.ifc', fileAreaId: 'fa1', folderId: 'fB1' },
   { fileId: 'x2', fileName: 'other.ifc', fileAreaId: 'fa1', folderId: 'fC' },
   { fileId: 'x3', fileName: 'top.pdf', fileAreaId: 'fa1', folderId: 'fA' },
+  { fileId: 'x4', fileName: 'notes.md', fileAreaId: 'fa1', folderId: 'fA', downloadLink: 'link:x4', contentHash: 'v1' },
 ];
 
 const daluxCalls: string[] = [];
@@ -43,6 +47,11 @@ jest.mock('dalux-build-api', () => ({
         daluxCalls.push(`getFile ${fileId}`);
         return { data: FILES.find((f) => f.fileId === fileId) };
       },
+      downloadFileFromLink: async (_link: string, name: string, dir: string) => {
+        const target = require('node:path').join(dir, name);
+        require('node:fs').writeFileSync(target, '# Site notes\n\nThe crane foundation needs rebar inspection.\n');
+        return target;
+      },
     },
     tasks: {
       getTask: async (_projectId: string, taskId: string) => ({ data: { taskId, subject: 'A task' } }),
@@ -51,7 +60,7 @@ jest.mock('dalux-build-api', () => ({
 }));
 
 import { buildHttpApp } from '../../src/http';
-import { setIndexStores } from '../../src/store';
+import { setAccountIndexStores } from '../../src/store';
 import { postgresIndexStores } from '../../src/store/postgres';
 import { hashApiToken, Platform } from '../../src/platform/platform';
 
@@ -63,6 +72,8 @@ const BASE = 'http://localhost';
 let admin: Pool;
 let owner: Pool;
 let mcpDb: Db;
+let workerDb: Db;
+let cacheDir: string;
 let dbName: string;
 const ids: Record<string, string> = {};
 
@@ -100,6 +111,12 @@ beforeAll(async () => {
   await runMigrations(dbUrl('migrator'), Object.fromEntries(DB_ROLES.map((role) => [role, ROLE_PASSWORD])));
   owner = new Pool({ connectionString: dbUrl('migrator') });
   mcpDb = createDb(dbUrl('mcp'));
+  workerDb = createDb(dbUrl('worker'));
+  const { search, build } = postgresIndexStores({ mcp: mcpDb, worker: workerDb });
+  setAccountIndexStores(search, build);
+  cacheDir = mkdtempSync(path.join(tmpdir(), 'dalux-mcp-platform-'));
+  process.env.DALUX_MCP_CACHE_DIR = cacheDir;
+  delete process.env.MISTRAL_API_KEY;
 
   const connection = (slug: string) =>
     insert('connections', {
@@ -139,7 +156,8 @@ beforeAll(async () => {
 });
 
 afterAll(async () => {
-  await Promise.all([owner.end(), mcpDb.$client.end()]);
+  await Promise.all([owner.end(), mcpDb.$client.end(), workerDb.$client.end()]);
+  rmSync(cacheDir, { recursive: true, force: true });
   for (let attempt = 0; ; attempt++) {
     try {
       await admin.query(`DROP DATABASE ${dbName}`);
@@ -322,20 +340,6 @@ describe('platform mode: access', () => {
   });
 });
 
-describe('platform mode: Postgres index store', () => {
-  it('runs index tools as the calling account and connection', async () => {
-    const workerDb = createDb(dbUrl('worker'));
-    const { search, build } = postgresIndexStores({ mcp: mcpDb, worker: workerDb });
-    setIndexStores(search, build);
-    try {
-      const result = await call(tokens.alice, 'list_file_area_indexes', {});
-      expect(result.isError).toBe(false);
-    } finally {
-      await workerDb.$client.end();
-    }
-  });
-});
-
 describe('platform mode: audit', () => {
   /** Audit rows are written after the response, so poll for the expected one. */
   async function auditRow(match: Record<string, string>) {
@@ -372,17 +376,48 @@ describe('platform mode: audit', () => {
 });
 
 describe('platform mode: Dalux header mode', () => {
-  const headers = { 'X-Dalux-Base-Url': 'https://node1.field.dalux.com/service/api', 'X-Dalux-Api-Key': 'k' };
+  const headersFor = (apiKey: string) => ({
+    'X-Dalux-Base-Url': 'https://node1.field.dalux.com/service/api',
+    'X-Dalux-Api-Key': apiKey,
+  });
+  const scope = { projectId: 'p1', fileAreaId: 'fa1' };
+  let handleWithHeaderMode: typeof handle;
+
+  async function headerCall(apiKey: string, name: string, args: Record<string, unknown>) {
+    const { status, body } = await rpc('/mcp', 'tools/call', { name, arguments: args }, headersFor(apiKey), handleWithHeaderMode);
+    expect(status).toBe(200);
+    return JSON.parse(body.result.content[0].text);
+  }
+  const indexIds = (listing: { indexes: { indexId: string }[] }) => listing.indexes.map((index) => index.indexId);
 
   it('is off by default', async () => {
-    const { status } = await rpc('/mcp', 'tools/list', {}, headers);
+    const { status } = await rpc('/mcp', 'tools/list', {}, headersFor('key-a'));
     expect(status).toBe(401);
   });
 
   it('serves header requests when an admin turned it on', async () => {
-    await owner.query('INSERT INTO settings (id, header_mode_enabled) VALUES (true, true) ON CONFLICT (id) DO UPDATE SET header_mode_enabled = true');
-    const { status, body } = await rpc('/mcp', 'tools/list', {}, headers, app().handleRequest);
+    await owner.query(
+      'INSERT INTO settings (id, header_mode_enabled) VALUES (true, true) ON CONFLICT (id) DO UPDATE SET header_mode_enabled = true',
+    );
+    handleWithHeaderMode = app().handleRequest;
+    const { status, body } = await rpc('/mcp', 'tools/list', {}, headersFor('key-a'), handleWithHeaderMode);
     expect(status).toBe(200);
     expect(body.result.tools.map((t: { name: string }) => t.name)).toContain('build_file_area_index');
+  });
+
+  it('builds and searches a temporary file index per credentials, apart from the Postgres indexes', async () => {
+    const accountBuild = await call(tokens.bob, 'build_file_area_index', scope);
+    expect(accountBuild.isError).toBe(false);
+    const accountIndexes = indexIds(JSON.parse((await call(tokens.bob, 'list_file_area_indexes', {})).text));
+    expect(accountIndexes).toHaveLength(1);
+
+    const built = await headerCall('key-a', 'build_file_area_index', scope);
+    expect(built.indexId).toBeTruthy();
+    const hits = await headerCall('key-a', 'search_file_area', { ...scope, query: 'crane foundation' });
+    expect(JSON.stringify(hits)).toContain('crane foundation');
+
+    expect(indexIds(await headerCall('key-a', 'list_file_area_indexes', {}))).toEqual([built.indexId]);
+    expect(indexIds(await headerCall('key-b', 'list_file_area_indexes', {}))).toEqual([]);
+    expect(indexIds(JSON.parse((await call(tokens.bob, 'list_file_area_indexes', {})).text))).toEqual(accountIndexes);
   });
 });

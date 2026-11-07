@@ -1,5 +1,5 @@
 import { createServer as createNodeServer } from 'node:http';
-import { timingSafeEqual } from 'node:crypto';
+import { createHash, timingSafeEqual } from 'node:crypto';
 import { createReadStream } from 'node:fs';
 import { stat } from 'node:fs/promises';
 import { Readable } from 'node:stream';
@@ -13,7 +13,7 @@ import {
 import { toNodeHandler, localhostHostValidation, localhostOriginValidation } from '@modelcontextprotocol/node';
 import { createClient } from 'dalux-build-api';
 import { buildServer } from './server';
-import { UNRESTRICTED_CONTEXT } from './access/context';
+import { UNRESTRICTED_CONTEXT, type RequestContext } from './access/context';
 import { createOAuthServer, type OAuthServer } from './oauth';
 import { validateDaluxBaseUrl } from './daluxUrl';
 import { createModelLinkStore, resolveModelFile, type ModelLinkStore } from './modelLinks';
@@ -340,7 +340,11 @@ export function buildHttpApp(options: BuildHttpAppOptions = {}): HttpApp {
             modelLinks,
           }
         : undefined;
-      mcpHandler = createMcpHandler(() => buildServer(client, { hosting, context: UNRESTRICTED_CONTEXT }));
+      // In platform mode, header callers' temporary indexes are kept apart per credentials (PRD 6.5).
+      const context: RequestContext = options.platform
+        ? { access: 'unrestricted', fileNamespace: createHash('sha256').update(key).digest('hex').slice(0, 32) }
+        : UNRESTRICTED_CONTEXT;
+      mcpHandler = createMcpHandler(() => buildServer(client, { hosting, context }));
       handlersByCredentials.set(key, mcpHandler);
     }
     return mcpHandler.fetch(request);

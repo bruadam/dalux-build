@@ -211,7 +211,7 @@ class Viewer {
   fit(box: THREE.Box3): void {
     const sphere = box.getBoundingSphere(new THREE.Sphere());
     const r = Math.max(sphere.radius, 0.5);
-    const dist = r / Math.sin(THREE.MathUtils.degToRad(this.camera.fov / 2));
+    const dist = (0.75 * r) / Math.sin(THREE.MathUtils.degToRad(this.camera.fov / 2));
     const dir = this.camera.position.clone().sub(this.controls.target);
     if (dir.lengthSq() < 1e-9) dir.set(1, 0.8, 1.2);
     this.controls.target.copy(sphere.center);

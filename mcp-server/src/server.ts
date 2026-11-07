@@ -390,7 +390,7 @@ export const TOOLS = [
   }),
   tool({
     name: 'ifc_query_elements',
-    description: 'Filter IFC elements by type and/or a property comparison (= != > < >= <= contains exists matches).',
+    description: 'Filter IFC elements by type and/or a property comparison (= != > < >= <= contains exists matches). Returns a selectionId for the full match set: pass it to view_model_3d to show the result in 3D.',
     inputSchema: ifc.ifcQueryElementsInput,
     handler: ifc.ifcQueryElements,
   }),

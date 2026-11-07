@@ -153,7 +153,7 @@ This is fully additive: deployments that never set `PUBLIC_URL` behave exactly a
 
 **IFC editing** (local only — see [IFC editing](#ifc-editing-ifc_edit_) below): `ifc_edit_start`, `ifc_edit_apply`, `ifc_edit_review`, `ifc_edit_save`
 
-**3D viewer**: `view_model_3d` (renders an interactive MCP App in supporting hosts — see below; requires `PUBLIC_URL`)
+**3D viewer**: `view_model_3d` (renders an interactive MCP App in supporting hosts — see below)
 
 **Feedback**: `report_feedback` (files a bug/enhancement report on this server's own GitHub repo — see [Feedback reporting](#feedback-reporting) below)
 
@@ -276,11 +276,16 @@ Details worth knowing:
 
 ### `view_model_3d` (3D IFC viewer)
 
-`view_model_3d` renders an interactive 3D view of an `.ifc` file inline in the conversation, using [MCP Apps](https://github.com/modelcontextprotocol/ext-apps) (`ui://` resources, stable since 2026-01-26) and the [ifclite](https://ifclite.dev/) embed viewer (`@ifc-lite/embed-sdk`). Supporting hosts — currently Claude.ai and Claude Desktop — render the tool's `ui://dalux-build/ifc-viewer` resource in a sandboxed iframe; the viewer inside it streams the model from a short-lived signed URL served by this same server.
+`view_model_3d` renders an interactive 3D view of an `.ifc` file inline in the conversation, using [MCP Apps](https://github.com/modelcontextprotocol/ext-apps) (`ui://` resources). Supporting hosts render the tool's `ui://dalux-build/ifc-viewer` resource in a sandboxed iframe. It works on stdio and HTTP alike.
 
-This only works on the **HTTP transport with `PUBLIC_URL` set** (see [OAuth](#oauth-claudeai--chatgpt-custom-connectors) above) — the embed viewer needs a real `https://` URL it can fetch cross-origin, which stdio can't offer. Without `PUBLIC_URL`, the tool still appears in `tools/list` (so its presence doesn't depend on how the server happens to be deployed) but returns a message explaining to use `download_file` instead, rather than erroring.
+The app is plain WebGL (three.js) and makes no network requests of its own, so it runs under the default MCP Apps CSP (`connect-src 'none'`) and needs no WebGPU. It pulls everything through host-proxied calls to app-only tools (`_meta.ui.visibility: ["app"]`, hidden from the model):
 
-Mechanics, if you're curious: calling the tool issues a random, in-memory, 15-minute ticket (`src/modelLinks.ts`) bound to the request's Dalux credentials and file, and returns `https://<PUBLIC_URL>/models/<ticket>` as `modelUrl` in `structuredContent`. `GET /models/<ticket>` (handled in `http.ts`, ahead of the localhost Host/Origin checks that guard the main `/mcp` endpoint, since this route carries its own auth and is fetched cross-origin from `embed.ifclite.com` by design) resolves the ticket, downloads (or reuses the cache for) the file, and streams it back with CORS scoped to `https://embed.ifclite.com` and `Range` support. The Dalux API key itself never reaches the browser. Selecting an element in the viewer reports its IFC properties back to the model via `ui/update-model-context`.
+- `ifc_viewer_geometry` — the model tessellated once on the server with ifc-lite, packed into ~3 MB binary chunks (`src/ifc/meshPack.ts`), gzip + base64.
+- `ifc_viewer_element` — class, name, GlobalId, material, property and quantity sets for the side panel.
+- `ifc_viewer_selection` — the express ids behind a `selectionId`.
+
+Chat-driven filtering: `ifc_query_elements` returns a `selectionId` for its full match set (stored in memory for an hour, bound to the file). Pass it — or a `filter` / up to 200 `globalIds` — to `view_model_3d` with `mode` `isolate`, `xray` (default) or `highlight`; the viewer shows a filter chip with a mode switch and **Show all**. Clicking an element opens its properties and reports it back to the model via `ui/update-model-context`; **Ask in chat** sends it as a message. Other controls: fit (`F`), x-ray (`X`), per-class visibility, a section slider, `Esc` to close the panel.
+
 
 ### `ifc_diff` (revision comparison)
 

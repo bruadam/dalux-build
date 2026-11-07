@@ -403,11 +403,12 @@ idle or on restart, and queued edits are **not** persisted.
 
 ## \`view_model_3d\` — interactive 3D viewer
 
-Renders an \`.ifc\` file as an interactive 3D view inline, using MCP Apps in supporting hosts (currently Claude.ai
-and Claude Desktop). **This only works on the HTTP transport with \`PUBLIC_URL\` configured** — on stdio (the
-common local Claude Desktop/Claude Code setup) the tool still appears in the tool list, but replies with
-instructions to use \`download_file\` instead of erroring. If you see that reply, that's expected behaviour for
-this deployment, not a bug.
+Renders an \`.ifc\` file as an interactive 3D view inline, using MCP Apps in supporting hosts (Claude.ai, Claude
+Desktop, and other MCP Apps hosts), on stdio and HTTP alike. The user can orbit, click an element for its
+properties, toggle IFC classes, x-ray and section. To show the answer to a question in 3D, run
+\`ifc_query_elements\` and pass its \`selectionId\` (or a \`filter\` / up to 200 \`globalIds\`) with a \`mode\`:
+\`isolate\` hides the rest, \`xray\` (default) ghosts it, \`highlight\` colours the selection. The element the user
+clicks is shared back as model context.
 
 ## Forms
 

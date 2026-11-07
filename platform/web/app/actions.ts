@@ -1,0 +1,171 @@
+'use server';
+
+import { revalidatePath } from 'next/cache';
+import { headers } from 'next/headers';
+import { redirect } from 'next/navigation';
+import { auth } from '@/lib/auth';
+import type { Preset } from '@/lib/capabilities';
+import type { FormState } from '@/lib/form-state';
+import { inviteAccount, reissueInvite, setAccountRole, setAccountStatus } from '@/lib/server/accounts';
+import type { Actor } from '@/lib/server/actor';
+import { addConnection, rotateConnectionKey } from '@/lib/server/connections';
+import { db } from '@/lib/server/db';
+import { UserError } from '@/lib/server/errors';
+import { createGrant, deleteGrant } from '@/lib/server/grants';
+import { addMember, createGroup, deleteGroup, removeMember } from '@/lib/server/groups';
+import { createRobot, reassignRobotOwner } from '@/lib/server/robots';
+import { requireActor } from '@/lib/server/session';
+import { setEmbeddingKey, setHeaderMode } from '@/lib/server/settings';
+import { signUp } from '@/lib/server/signup';
+import { createApiToken, revokeApiToken } from '@/lib/server/tokens';
+
+const text = (form: FormData, name: string) => String(form.get(name) ?? '');
+const role = (form: FormData) => (text(form, 'role') === 'admin' ? 'admin' : 'user');
+
+/**
+ * Runs a change as the signed-in account. Each domain function checks its own
+ * permissions; `UserError` messages are shown, anything else is logged.
+ */
+async function run(change: (actor: Actor) => Promise<FormState | void>): Promise<FormState> {
+  const actor = await requireActor();
+  try {
+    const result = (await change(actor)) ?? {};
+    revalidatePath('/', 'layout');
+    return { done: true, ...result };
+  } catch (error) {
+    if (error instanceof UserError) return { error: error.message };
+    console.error(error);
+    return { error: 'Something went wrong. Check the server log.' };
+  }
+}
+
+async function inviteLink(token: string): Promise<string> {
+  const base = process.env.PUBLIC_URL ?? `http://${(await headers()).get('host')}`;
+  return `${base}/signup?invite=${encodeURIComponent(token)}`;
+}
+
+export async function signUpAction(_: FormState, form: FormData): Promise<FormState> {
+  const email = text(form, 'email');
+  const password = text(form, 'password');
+  try {
+    await signUp(
+      db(),
+      async (login) => {
+        await auth().api.signUpEmail({ body: login });
+      },
+      { email, password, name: text(form, 'name'), inviteToken: text(form, 'invite') || undefined },
+    );
+    await auth().api.signInEmail({ body: { email, password }, headers: await headers() });
+  } catch (error) {
+    if (error instanceof UserError) return { error: error.message };
+    return { error: (error as Error).message || 'Sign-up failed' };
+  }
+  redirect('/');
+}
+
+export async function signOutAction(): Promise<void> {
+  await auth().api.signOut({ headers: await headers() });
+  redirect('/login');
+}
+
+export const createOwnTokenAction = async (_: FormState, form: FormData) =>
+  run(async (actor) => {
+    const { token } = await createApiToken(db(), actor, {
+      accountId: actor.accountId,
+      name: text(form, 'name'),
+      connectionId: text(form, 'connectionId'),
+      expiresInDays: Number(text(form, 'expiresInDays')) || undefined,
+    });
+    return { secret: { label: 'Copy this token now. It is not shown again.', value: token } };
+  });
+
+export const createRobotTokenAction = async (_: FormState, form: FormData) =>
+  run(async (actor) => {
+    const { token } = await createApiToken(db(), actor, {
+      accountId: text(form, 'accountId'),
+      name: text(form, 'name'),
+      connectionId: text(form, 'connectionId'),
+      expiresInDays: Number(text(form, 'expiresInDays')) || undefined,
+    });
+    return { secret: { label: 'Copy this token now. It is not shown again.', value: token } };
+  });
+
+export const revokeTokenAction = async (_: FormState, form: FormData) =>
+  run((actor) => revokeApiToken(db(), actor, text(form, 'tokenId')));
+
+export const inviteAccountAction = async (_: FormState, form: FormData) =>
+  run(async (actor) => {
+    const { inviteToken } = await inviteAccount(db(), actor, { email: text(form, 'email'), name: text(form, 'name'), role: role(form) });
+    return { secret: { label: 'Send this invite link to the person. It works once, for 7 days.', value: await inviteLink(inviteToken) } };
+  });
+
+export const reissueInviteAction = async (_: FormState, form: FormData) =>
+  run(async (actor) => {
+    const token = await reissueInvite(db(), actor, text(form, 'accountId'));
+    return { secret: { label: 'New invite link (works once, for 7 days):', value: await inviteLink(token) } };
+  });
+
+export const setAccountStatusAction = async (_: FormState, form: FormData) =>
+  run((actor) => setAccountStatus(db(), actor, text(form, 'accountId'), text(form, 'status') === 'disabled' ? 'disabled' : 'active'));
+
+export const setAccountRoleAction = async (_: FormState, form: FormData) =>
+  run((actor) => setAccountRole(db(), actor, text(form, 'accountId'), role(form)));
+
+export const createRobotAction = async (_: FormState, form: FormData) =>
+  run(async (actor) => {
+    await createRobot(db(), actor, { name: text(form, 'name'), description: text(form, 'description'), ownerAccountId: text(form, 'ownerAccountId') });
+  });
+
+export const reassignRobotOwnerAction = async (_: FormState, form: FormData) =>
+  run((actor) => reassignRobotOwner(db(), actor, text(form, 'robotId'), text(form, 'ownerAccountId')));
+
+export const createGroupAction = async (_: FormState, form: FormData) =>
+  run(async (actor) => {
+    await createGroup(db(), actor, { name: text(form, 'name'), description: text(form, 'description') });
+  });
+
+export const deleteGroupAction = async (_: FormState, form: FormData) =>
+  run((actor) => deleteGroup(db(), actor, text(form, 'groupId')));
+
+export const addMemberAction = async (_: FormState, form: FormData) =>
+  run((actor) => addMember(db(), actor, text(form, 'groupId'), text(form, 'accountId')));
+
+export const removeMemberAction = async (_: FormState, form: FormData) =>
+  run((actor) => removeMember(db(), actor, text(form, 'groupId'), text(form, 'accountId')));
+
+export const addConnectionAction = async (_: FormState, form: FormData) =>
+  run(async (actor) => {
+    await addConnection(db(), actor, {
+      name: text(form, 'name'),
+      slug: text(form, 'slug'),
+      baseUrl: text(form, 'baseUrl'),
+      apiKey: text(form, 'apiKey'),
+    });
+  });
+
+export const rotateConnectionKeyAction = async (_: FormState, form: FormData) =>
+  run((actor) => rotateConnectionKey(db(), actor, text(form, 'connectionId'), text(form, 'apiKey')));
+
+export const createGrantAction = async (_: FormState, form: FormData) =>
+  run(async (actor) => {
+    const [principalType, principalId] = text(form, 'principal').split(':');
+    await createGrant(db(), actor, {
+      accountId: principalType === 'account' ? principalId : undefined,
+      groupId: principalType === 'group' ? principalId : undefined,
+      connectionId: text(form, 'connectionId'),
+      projectId: text(form, 'projectId'),
+      fileAreaId: text(form, 'fileAreaId'),
+      folderId: text(form, 'folderId'),
+      preset: text(form, 'preset') === 'reader' ? ('reader' satisfies Preset) : undefined,
+      capabilities: form.getAll('capabilities').map(String),
+    });
+  });
+
+export const deleteGrantAction = async (_: FormState, form: FormData) =>
+  run((actor) => deleteGrant(db(), actor, text(form, 'grantId')));
+
+export const setEmbeddingKeyAction = async (_: FormState, form: FormData) =>
+  run((actor) => setEmbeddingKey(db(), actor, text(form, 'clear') ? null : text(form, 'apiKey')));
+
+export const setHeaderModeAction = async (_: FormState, form: FormData) =>
+  run((actor) => setHeaderMode(db(), actor, text(form, 'enabled') === 'on'));

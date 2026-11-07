@@ -1,5 +1,5 @@
 import { asc, eq } from 'drizzle-orm';
-import { createClient } from 'dalux-build-api';
+import { createWebClient } from 'dalux-build-api/web';
 import { connections, encryptSecret, loadEncryptionKey, type Db } from '@dalux-platform/db';
 import { validateDaluxBaseUrl } from '../../../../mcp-server/src/daluxUrl';
 import { assertAdmin, audit, type Actor } from './actor';
@@ -10,7 +10,8 @@ export type VerifyKey = (baseUrl: string, apiKey: string) => Promise<void>;
 /** Checks the key with a read call (list projects) before it is saved (PRD 6.2). */
 export const verifyDaluxKey: VerifyKey = async (baseUrl, apiKey) => {
   try {
-    await createClient({ baseUrl, apiKey }).projects.listProjects();
+    const client = createWebClient({ baseUrl, apiKey, fetch: (url, init) => fetch(url, { ...init, redirect: 'error' }) });
+    await client.projects.listProjects();
   } catch (error) {
     throw new UserError(`Dalux did not accept the key: ${(error as Error).message}`);
   }

@@ -43,6 +43,13 @@
       "when": 1794076302891,
       "tag": "0005_auth_invites_roles",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1794086320051,
+      "tag": "0007_oauth_consent_scope",
+      "breakpoints": true
     }
   ]
 }

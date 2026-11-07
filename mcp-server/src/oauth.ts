@@ -56,7 +56,7 @@ export interface OAuthServer {
   handleRequest: (request: Request) => Promise<Response | undefined>;
 }
 
-function randomId(bytes: number): string {
+export function randomId(bytes: number): string {
   return randomBytes(bytes).toString('base64url');
 }
 
@@ -92,11 +92,11 @@ const CORS_HEADERS: Record<string, string> = {
   'Access-Control-Allow-Headers': 'content-type, authorization',
 };
 
-function corsPreflightResponse(): Response {
+export function corsPreflightResponse(): Response {
   return new Response(null, { status: 204, headers: CORS_HEADERS });
 }
 
-function jsonResponse(status: number, body: unknown): Response {
+export function jsonResponse(status: number, body: unknown): Response {
   return new Response(JSON.stringify(body), { status, headers: { 'Content-Type': 'application/json', ...CORS_HEADERS } });
 }
 
@@ -145,6 +145,41 @@ ${params.error ? `<p class="error">${htmlEscape(params.error)}</p>` : ''}
 <button type="submit">Authorize</button>
 </form>
 </body></html>`;
+}
+
+/** RFC 7591 redirect_uris check: https, or http on loopback for local testing. Returns an error response or the URIs. */
+export function validateRedirectUris(redirectUris: unknown): Response | string[] {
+  if (!Array.isArray(redirectUris) || redirectUris.length === 0 || !redirectUris.every((uri) => typeof uri === 'string')) {
+    return jsonResponse(400, {
+      error: 'invalid_client_metadata',
+      error_description: 'redirect_uris must be a non-empty array of strings',
+    });
+  }
+  for (const uri of redirectUris as string[]) {
+    let parsed: URL;
+    try {
+      parsed = new URL(uri);
+    } catch {
+      return jsonResponse(400, { error: 'invalid_redirect_uri', error_description: `Invalid redirect_uri: ${uri}` });
+    }
+    const isLoopback = parsed.hostname === 'localhost' || parsed.hostname === '127.0.0.1';
+    if (parsed.protocol !== 'https:' && !(parsed.protocol === 'http:' && isLoopback)) {
+      return jsonResponse(400, {
+        error: 'invalid_redirect_uri',
+        error_description: `redirect_uri must be https:// (or http://localhost for local testing): ${uri}`,
+      });
+    }
+  }
+  return redirectUris as string[];
+}
+
+/** Token endpoint parameters, form-encoded per RFC 6749 or JSON (some browser clients send JSON). */
+export async function readParams(request: Request): Promise<URLSearchParams> {
+  if ((request.headers.get('content-type') ?? '').includes('application/json')) {
+    const body = (await request.json()) as Record<string, unknown>;
+    return new URLSearchParams(Object.entries(body).map(([key, value]): [string, string] => [key, String(value)]));
+  }
+  return new URLSearchParams(await request.text());
 }
 
 export function createOAuthServer(options: { issuer: string; resourceUrl: URL }): OAuthServer {
@@ -197,31 +232,11 @@ export function createOAuthServer(options: { issuer: string; resourceUrl: URL })
     } catch {
       return jsonResponse(400, { error: 'invalid_client_metadata', error_description: 'Body must be JSON' });
     }
-    const redirectUris = body.redirect_uris;
-    if (!Array.isArray(redirectUris) || redirectUris.length === 0 || !redirectUris.every((uri) => typeof uri === 'string')) {
-      return jsonResponse(400, {
-        error: 'invalid_client_metadata',
-        error_description: 'redirect_uris must be a non-empty array of strings',
-      });
-    }
-    for (const uri of redirectUris as string[]) {
-      let parsed: URL;
-      try {
-        parsed = new URL(uri);
-      } catch {
-        return jsonResponse(400, { error: 'invalid_redirect_uri', error_description: `Invalid redirect_uri: ${uri}` });
-      }
-      const isLoopback = parsed.hostname === 'localhost' || parsed.hostname === '127.0.0.1';
-      if (parsed.protocol !== 'https:' && !(parsed.protocol === 'http:' && isLoopback)) {
-        return jsonResponse(400, {
-          error: 'invalid_redirect_uri',
-          error_description: `redirect_uri must be https:// (or http://localhost for local testing): ${uri}`,
-        });
-      }
-    }
+    const redirectUris = validateRedirectUris(body.redirect_uris);
+    if (redirectUris instanceof Response) return redirectUris;
 
     const clientId = randomId(16);
-    clients.set(clientId, { clientId, redirectUris: redirectUris as string[] });
+    clients.set(clientId, { clientId, redirectUris });
     return jsonResponse(201, {
       client_id: clientId,
       redirect_uris: redirectUris,
@@ -292,14 +307,7 @@ export function createOAuthServer(options: { issuer: string; resourceUrl: URL })
   }
 
   async function handleToken(request: Request): Promise<Response> {
-    const contentType = request.headers.get('content-type') ?? '';
-    let params: URLSearchParams;
-    if (contentType.includes('application/json')) {
-      const body = (await request.json()) as Record<string, unknown>;
-      params = new URLSearchParams(Object.entries(body).map(([key, value]): [string, string] => [key, String(value)]));
-    } else {
-      params = new URLSearchParams(await request.text());
-    }
+    const params = await readParams(request);
 
     if (params.get('grant_type') !== 'authorization_code') {
       return jsonResponse(400, { error: OAuthErrorCode.UnsupportedGrantType });

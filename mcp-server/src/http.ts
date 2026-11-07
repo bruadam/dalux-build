@@ -12,6 +12,7 @@ import { createClient } from 'dalux-build-api';
 import { buildServer } from './server';
 import { UNRESTRICTED_CONTEXT, type RequestContext } from './access/context';
 import { createOAuthServer, type OAuthServer } from './oauth';
+import { createPlatformOAuthServer } from './oauthPlatform';
 import { validateDaluxBaseUrl } from './daluxUrl';
 import type { Platform } from './platform/platform';
 import { createPlatformHandler } from './platform/http';
@@ -203,15 +204,20 @@ export function buildHttpApp(options: BuildHttpAppOptions = {}): HttpApp {
 
   let oauthServer: OAuthServer | undefined;
   let resourceMetadataUrl: string | undefined;
-  // In platform mode OAuth is off until the platform's own authorization server exists.
-  if (options.publicUrl && !options.platform) {
+  let platformOAuth: ReturnType<typeof createPlatformOAuthServer> | undefined;
+  if (options.publicUrl) {
     const issuerUrl = new URL(options.publicUrl);
     if (issuerUrl.protocol !== 'https:') {
       throw new Error('publicUrl must be an https:// URL for OAuth support');
     }
-    const resourceUrl = new URL('/mcp', issuerUrl);
-    oauthServer = createOAuthServer({ issuer: issuerUrl.origin, resourceUrl });
-    resourceMetadataUrl = getOAuthProtectedResourceMetadataUrl(resourceUrl);
+    if (options.platform) {
+      // The platform is the authorization server: accounts log in on the web interface (PRD 6.5 mode B).
+      platformOAuth = createPlatformOAuthServer({ issuer: issuerUrl.origin, db: options.platform.db });
+    } else {
+      const resourceUrl = new URL('/mcp', issuerUrl);
+      oauthServer = createOAuthServer({ issuer: issuerUrl.origin, resourceUrl });
+      resourceMetadataUrl = getOAuthProtectedResourceMetadataUrl(resourceUrl);
+    }
   }
 
   const serveWithHeaders = async (request: Request): Promise<Response> => {
@@ -270,15 +276,13 @@ export function buildHttpApp(options: BuildHttpAppOptions = {}): HttpApp {
 
   const platform = options.platform;
   const serve = platform
-    ? createPlatformHandler({ platform, serveWithHeaders })
+    ? createPlatformHandler({ platform, serveWithHeaders, publicUrl: options.publicUrl })
     : serveWithHeaders;
 
   const guardedHandler = {
     fetch: async (request: Request): Promise<Response> => {
-      if (oauthServer) {
-        const oauthResponse = await oauthServer.handleRequest(request);
-        if (oauthResponse) return oauthResponse;
-      }
+      const oauthResponse = await (platformOAuth ?? oauthServer)?.handleRequest(request);
+      if (oauthResponse) return oauthResponse;
 
       // Peek before the handler consumes the body, log after it answers.
       const peek = LOG_DISCOVERY ? await peekJsonRpc(request) : undefined;

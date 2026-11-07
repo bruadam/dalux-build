@@ -1,5 +1,48 @@
 import { z } from 'zod';
-import { TOOLS, toolResultContent } from '../src/server';
+import { Client, InMemoryTransport } from '@modelcontextprotocol/client';
+import type { DaluxClient } from 'dalux-build-api';
+import { buildServer, TOOLS, toolResultContent } from '../src/server';
+
+async function connectedClient(dalux: Partial<Record<string, unknown>>): Promise<Client> {
+  const server = buildServer(dalux as unknown as DaluxClient);
+  const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
+  const client = new Client({ name: 'test-client', version: '1.0.0' });
+  await Promise.all([client.connect(clientTransport), server.connect(serverTransport)]);
+  return client;
+}
+
+describe('tools/list schemas', () => {
+  it('carry no $schema dialect key or safe-integer bounds, on any tool', async () => {
+    const client = await connectedClient({});
+    const { tools } = await client.listTools();
+
+    expect(tools.length).toBeGreaterThan(TOOLS.length);
+    const listed = JSON.stringify(tools.map((tool) => [tool.inputSchema, tool.outputSchema]));
+    expect(listed).not.toContain('$schema');
+    expect(listed).not.toContain(String(Number.MAX_SAFE_INTEGER));
+  });
+
+  it('stay within the tools/list size budget', async () => {
+    const client = await connectedClient({});
+    const { tools } = await client.listTools();
+
+    // ~4.3 chars per o200k token for this payload; tighten as tools/list shrinks.
+    expect(JSON.stringify(tools).length).toBeLessThanOrEqual(64_000);
+  });
+
+  it('still validates arguments against the original schema', async () => {
+    const listProjects = jest.fn().mockResolvedValue({ items: [{ projectId: 'p1' }] });
+    const client = await connectedClient({ projects: { listProjects } });
+
+    const rejected = await client.callTool({ name: 'list_projects', arguments: { limit: 0 } });
+    const accepted = await client.callTool({ name: 'list_projects', arguments: { limit: 1 } });
+
+    expect(rejected.isError).toBe(true);
+    expect(listProjects).toHaveBeenCalledTimes(1);
+    expect(accepted.isError).toBeFalsy();
+    expect(JSON.parse((accepted.content as { text: string }[])[0].text)).toMatchObject({ items: [{ projectId: 'p1' }] });
+  });
+});
 
 describe('TOOLS registry', () => {
   it('has 68 tools with unique names', () => {

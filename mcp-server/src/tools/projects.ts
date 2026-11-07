@@ -1,7 +1,7 @@
 import { z } from 'zod';
 import type { DaluxClient } from 'dalux-build-api';
 import { collectAllDaluxItems } from '../daluxPagination';
-import { fullListForLlm, type PaginatedForLlm } from '../serialize';
+import { pageInput, paginateForLlm, type PaginatedForLlm } from '../serialize';
 
 // ---------- list_projects ----------
 
@@ -10,6 +10,7 @@ export const listProjectsInput = z.object({
     .string()
     .optional()
     .describe('ISO 8601 timestamp; only return projects updated after this time.'),
+  ...pageInput,
 });
 export type ListProjectsInput = z.infer<typeof listProjectsInput>;
 
@@ -18,8 +19,9 @@ export async function listProjects(
   client: DaluxClient,
   args: ListProjectsInput,
 ): Promise<PaginatedForLlm<unknown>> {
-  const items = await collectAllDaluxItems((params) => client.projects.listProjects(params), args);
-  return fullListForLlm(items);
+  const { limit, offset, ...params } = args;
+  const items = await collectAllDaluxItems((pageParams) => client.projects.listProjects(pageParams), params);
+  return paginateForLlm(items, { limit, offset });
 }
 
 // ---------- get_project ----------
@@ -53,6 +55,7 @@ export async function findProjectByName(client: DaluxClient, args: FindProjectBy
 
 export const searchProjectsByNameInput = z.object({
   query: z.string().describe('Text to look for anywhere in the project name (case-insensitive, no exact match required).'),
+  ...pageInput,
 });
 export type SearchProjectsByNameInput = z.infer<typeof searchProjectsByNameInput>;
 
@@ -71,5 +74,5 @@ export async function searchProjectsByName(
     const projectName = (item as Record<string, unknown>).projectName;
     return typeof projectName === 'string' && projectName.toLowerCase().includes(needle);
   });
-  return fullListForLlm(matches);
+  return paginateForLlm(matches, args);
 }

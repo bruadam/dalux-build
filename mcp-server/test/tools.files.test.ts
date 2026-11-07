@@ -136,3 +136,93 @@ describe('tools/files', () => {
     expect(result.totalCount).toBe(1);
   });
 });
+
+describe('tools/files lean listings', () => {
+  const file = {
+    fileId: 'f1',
+    fileName: 'Plan.pdf',
+    folderId: 'fo1',
+    lastModified: '2026-01-01T00:00:00Z',
+    version: '2',
+    fileSize: 10,
+    downloadLink: 'https://example.invalid/download',
+    contentHash: 'abc',
+    uploadedByUserId: 'u1',
+  };
+
+  it('listFiles returns lean items by default and pages them', async () => {
+    const listFiles = jest.fn().mockResolvedValue({ items: Array.from({ length: 3 }, () => file) });
+    const client = fakeClient({ files: { listFiles } });
+
+    const result = await files.listFiles(client, { projectId: 'p1', fileAreaId: 'fa1', limit: 2 });
+
+    expect(listFiles).toHaveBeenCalledWith('p1', 'fa1', {});
+    expect(result.items).toEqual([
+      { fileId: 'f1', fileName: 'Plan.pdf', folderId: 'fo1', lastModified: '2026-01-01T00:00:00Z', version: '2', fileSize: 10 },
+      { fileId: 'f1', fileName: 'Plan.pdf', folderId: 'fo1', lastModified: '2026-01-01T00:00:00Z', version: '2', fileSize: 10 },
+    ]);
+    expect(result).toMatchObject({ totalCount: 3, returnedCount: 2, truncated: true, nextOffset: 2 });
+  });
+
+  it('listFiles adds the fields asked for', async () => {
+    const listFiles = jest.fn().mockResolvedValue({ items: [file] });
+    const client = fakeClient({ files: { listFiles } });
+
+    const result = await files.listFiles(client, { projectId: 'p1', fileAreaId: 'fa1', fields: ['downloadLink'] });
+
+    expect(result.items[0]).toMatchObject({ fileId: 'f1', downloadLink: 'https://example.invalid/download' });
+    expect(result.items[0]).not.toHaveProperty('contentHash');
+  });
+});
+
+describe('tools/files getFolderTree', () => {
+  // root > a > a1 > a1x > a1x1, root > b
+  const folders = [
+    { folderId: 'root', folderName: 'Files' },
+    { folderId: 'a', folderName: 'A', parentFolderId: 'root' },
+    { folderId: 'b', folderName: 'B', parentFolderId: 'root' },
+    { folderId: 'a1', folderName: 'A1', parentFolderId: 'a' },
+    { folderId: 'a1x', folderName: 'A1x', parentFolderId: 'a1' },
+    { folderId: 'a1x1', folderName: 'A1x1', parentFolderId: 'a1x' },
+  ];
+  const client = fakeClient({ folders: { listFolders: jest.fn().mockResolvedValue({ items: folders }) } });
+
+  it('returns an id/name tree cut at the default depth of 3, with childCount where cut', async () => {
+    const result = await files.getFolderTree(client, { projectId: 'p1', fileAreaId: 'fa1' });
+
+    expect(result).toEqual({
+      totalFolders: 6,
+      maxDepth: 3,
+      tree: [
+        {
+          id: 'root',
+          name: 'Files',
+          children: [
+            { id: 'a', name: 'A', children: [{ id: 'a1', name: 'A1', children: [{ id: 'a1x', name: 'A1x', childCount: 1 }] }] },
+            { id: 'b', name: 'B' },
+          ],
+        },
+      ],
+    });
+  });
+
+  it('honours maxDepth', async () => {
+    const result = await files.getFolderTree(client, { projectId: 'p1', fileAreaId: 'fa1', maxDepth: 1 });
+
+    expect(result.tree).toEqual([
+      { id: 'root', name: 'Files', children: [{ id: 'a', name: 'A', childCount: 1 }, { id: 'b', name: 'B' }] },
+    ]);
+  });
+
+  it('starts at folderId to go deeper', async () => {
+    const result = await files.getFolderTree(client, { projectId: 'p1', fileAreaId: 'fa1', folderId: 'a1x', maxDepth: 1 });
+
+    expect(result.tree).toEqual([{ id: 'a1x', name: 'A1x', children: [{ id: 'a1x1', name: 'A1x1' }] }]);
+  });
+
+  it('fails clearly for an unknown folderId', async () => {
+    await expect(
+      files.getFolderTree(client, { projectId: 'p1', fileAreaId: 'fa1', folderId: 'nope' }),
+    ).rejects.toThrow('Folder nope not found');
+  });
+});

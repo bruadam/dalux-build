@@ -17,13 +17,14 @@ import { extractDocument, isSupported, UnsupportedFormatError, type TextChunk } 
 
 /**
  * Cap on how many characters of extracted text get inlined. Unlike the byte
- * cap on image/file inlining, this bounds tokens directly — 200k characters
- * is a generous single-document budget without risking the whole context.
+ * cap on image/file inlining, this bounds tokens directly — 40k characters
+ * (~10k tokens) is a useful single-document budget without risking the
+ * whole context; search_file_content finds passages beyond it.
  * Override with DALUX_MCP_MAX_INLINE_CHARS, or per-call via
  * download_file/download_task_attachment's `maxInlineChars` argument (both
  * clamped to HARD_MAX_INLINE_CHARS).
  */
-const DEFAULT_MAX_INLINE_CHARS = 200_000;
+const DEFAULT_MAX_INLINE_CHARS = 40_000;
 export const HARD_MAX_INLINE_CHARS = 2_000_000;
 
 export function maxInlineChars(override?: number): number {
@@ -38,7 +39,7 @@ export function maxInlineChars(override?: number): number {
 }
 
 export type InlineTextResult =
-  | { inlined: true; format: string; text: string; truncated: boolean; pageCount?: number }
+  | { inlined: true; format: string; text: string; truncated: boolean; pageCount?: number; note?: string }
   | { inlined: false; reason: string };
 
 function renderChunk(chunk: TextChunk): string {
@@ -68,5 +69,11 @@ export async function buildInlineText(filePath: string, fileName: string, maxCha
     text: truncated ? full.slice(0, limit) : full,
     truncated,
     pageCount: extraction.pageCount,
+    ...(truncated && {
+      note:
+        `Text truncated to the first ${limit.toLocaleString('en-US')} of ${full.length.toLocaleString('en-US')} ` +
+        `characters. Call again with a larger maxInlineChars (max ${HARD_MAX_INLINE_CHARS.toLocaleString('en-US')}) ` +
+        'to get more.',
+    }),
   };
 }

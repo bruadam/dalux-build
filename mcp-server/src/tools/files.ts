@@ -1,7 +1,10 @@
 import { z } from 'zod';
 import type { DaluxClient } from 'dalux-build-api';
 import { collectAllDaluxItems } from '../daluxPagination';
-import { fullListForLlm, paginateForLlm, type PaginatedForLlm } from '../serialize';
+import { fieldsInput, pageInput, paginateForLlm, pickFields, type PaginatedForLlm } from '../serialize';
+
+/** File fields list tools return by default; the rest (downloadLink, contentHash, user ids, ...) via `fields` or get_file. */
+const FILE_FIELDS = ['fileId', 'fileName', 'folderId', 'lastModified', 'version', 'fileSize'] as const;
 
 /** Case-insensitive substring match on a named string field, tolerant of items missing that field. */
 function matchesNameQuery(item: unknown, field: string, needle: string): boolean {
@@ -38,6 +41,7 @@ export async function getFileArea(client: DaluxClient, args: GetFileAreaInput) {
 export const listFoldersInput = z.object({
   projectId: z.string().describe('The Dalux project ID.'),
   fileAreaId: z.string().describe('The file area ID.'),
+  ...pageInput,
 });
 export type ListFoldersInput = z.infer<typeof listFoldersInput>;
 
@@ -48,7 +52,7 @@ export async function listFolders(
   const items = await collectAllDaluxItems((params) =>
     client.folders.listFolders(args.projectId, args.fileAreaId, params),
   );
-  return fullListForLlm(items);
+  return paginateForLlm(items, args);
 }
 
 // ---------- search_folders_by_name ----------
@@ -57,7 +61,7 @@ export const searchFoldersByNameInput = z.object({
   projectId: z.string().describe('The Dalux project ID.'),
   fileAreaId: z.string().describe('The file area ID.'),
   query: z.string().describe('Text to look for anywhere in the folder name (case-insensitive, no exact match required).'),
-  limit: z.number().int().min(1).max(200).optional().describe('Max matches to return (default 50).'),
+  ...pageInput,
 });
 export type SearchFoldersByNameInput = z.infer<typeof searchFoldersByNameInput>;
 
@@ -71,7 +75,7 @@ export async function searchFoldersByName(
   );
   const needle = args.query.toLowerCase();
   const matches = items.filter((item) => matchesNameQuery(item, 'folderName', needle));
-  return paginateForLlm(matches, { limit: args.limit });
+  return paginateForLlm(matches, args);
 }
 
 // ---------- get_folder ----------
@@ -101,18 +105,68 @@ export async function getFolderByPath(client: DaluxClient, args: GetFolderByPath
 
 // ---------- get_folder_tree ----------
 
+const DEFAULT_TREE_DEPTH = 3;
+
 export const getFolderTreeInput = z.object({
   projectId: z.string().describe('The Dalux project ID.'),
   fileAreaId: z.string().describe('The file area ID.'),
+  folderId: z.string().optional().describe('Start the tree at this folder instead of the file area root.'),
+  maxDepth: z
+    .number()
+    .int()
+    .min(1)
+    .max(50)
+    .optional()
+    .describe(
+      `Folder levels below the start folder to include (default ${DEFAULT_TREE_DEPTH}). A folder cut off by the ` +
+        'limit reports childCount instead of children; call again with its id as folderId to go deeper.',
+    ),
 });
 export type GetFolderTreeInput = z.infer<typeof getFolderTreeInput>;
 
+interface FolderNode {
+  id: string;
+  name: string;
+  children?: FolderNode[];
+  childCount?: number;
+}
+
+type FolderItem = { folderId: string; folderName?: string; parentFolderId?: string };
+
 /**
- * Folders-only tree (no files) — cheap enough for an LLM to use for
- * navigation before drilling into a specific folder with list_files_in_folder.
+ * Folders-only tree (no files), depth-limited and reduced to id/name, so an
+ * LLM can navigate a large file area before drilling into a specific folder
+ * with list_files_in_folder.
  */
 export async function getFolderTree(client: DaluxClient, args: GetFolderTreeInput) {
-  return client.folders.getFileAreaTree(args.projectId, args.fileAreaId);
+  const folders = (await collectAllDaluxItems((params) =>
+    client.folders.listFolders(args.projectId, args.fileAreaId, params),
+  )) as FolderItem[];
+  const ids = new Set(folders.map((folder) => folder.folderId));
+  const childrenOf = new Map<string | undefined, FolderItem[]>();
+  for (const folder of folders) {
+    const parent = folder.parentFolderId && ids.has(folder.parentFolderId) ? folder.parentFolderId : undefined;
+    const siblings = childrenOf.get(parent);
+    if (siblings) siblings.push(folder);
+    else childrenOf.set(parent, [folder]);
+  }
+
+  const maxDepth = args.maxDepth ?? DEFAULT_TREE_DEPTH;
+  const build = (folder: FolderItem, depth: number): FolderNode => {
+    const node: FolderNode = { id: folder.folderId, name: folder.folderName ?? '' };
+    const children = childrenOf.get(folder.folderId) ?? [];
+    if (children.length === 0) return node;
+    if (depth >= maxDepth) return { ...node, childCount: children.length };
+    return { ...node, children: children.map((child) => build(child, depth + 1)) };
+  };
+
+  const roots = args.folderId
+    ? folders.filter((folder) => folder.folderId === args.folderId)
+    : (childrenOf.get(undefined) ?? []);
+  if (args.folderId && roots.length === 0) {
+    throw new Error(`Folder ${args.folderId} not found in file area ${args.fileAreaId}.`);
+  }
+  return { totalFolders: folders.length, maxDepth, tree: roots.map((root) => build(root, 0)) };
 }
 
 // ---------- list_files_in_folder ----------
@@ -121,6 +175,8 @@ export const listFilesInFolderInput = z.object({
   projectId: z.string().describe('The Dalux project ID.'),
   fileAreaId: z.string().describe('The file area ID.'),
   folderId: z.string().describe('The folder ID.'),
+  ...pageInput,
+  fields: fieldsInput(FILE_FIELDS),
 });
 export type ListFilesInFolderInput = z.infer<typeof listFilesInFolderInput>;
 
@@ -133,7 +189,7 @@ export async function listFilesInFolder(
     const record = file as Record<string, unknown>;
     return record.folderId === args.folderId;
   });
-  return fullListForLlm(inFolder);
+  return pickFields(paginateForLlm(inFolder, args), FILE_FIELDS, args.fields);
 }
 
 // ---------- list_files ----------
@@ -141,6 +197,8 @@ export async function listFilesInFolder(
 export const listFilesInput = z.object({
   projectId: z.string().describe('The Dalux project ID.'),
   fileAreaId: z.string().describe('The file area ID.'),
+  ...pageInput,
+  fields: fieldsInput(FILE_FIELDS),
 });
 export type ListFilesInput = z.infer<typeof listFilesInput>;
 
@@ -149,7 +207,7 @@ export async function listFiles(
   args: ListFilesInput,
 ): Promise<PaginatedForLlm<unknown>> {
   const items = await collectAllDaluxItems((params) => client.files.listFiles(args.projectId, args.fileAreaId, params));
-  return fullListForLlm(items);
+  return pickFields(paginateForLlm(items, args), FILE_FIELDS, args.fields);
 }
 
 // ---------- search_files_by_name ----------
@@ -158,7 +216,8 @@ export const searchFilesByNameInput = z.object({
   projectId: z.string().describe('The Dalux project ID.'),
   fileAreaId: z.string().describe('The file area ID.'),
   query: z.string().describe('Text to look for anywhere in the file name (case-insensitive, no exact match required).'),
-  limit: z.number().int().min(1).max(200).optional().describe('Max matches to return (default 50).'),
+  ...pageInput,
+  fields: fieldsInput(FILE_FIELDS),
 });
 export type SearchFilesByNameInput = z.infer<typeof searchFilesByNameInput>;
 
@@ -170,7 +229,7 @@ export async function searchFilesByName(
   const items = await collectAllDaluxItems((params) => client.files.listFiles(args.projectId, args.fileAreaId, params));
   const needle = args.query.toLowerCase();
   const matches = items.filter((item) => matchesNameQuery(item, 'fileName', needle));
-  return paginateForLlm(matches, { limit: args.limit });
+  return pickFields(paginateForLlm(matches, args), FILE_FIELDS, args.fields);
 }
 
 // ---------- get_file ----------

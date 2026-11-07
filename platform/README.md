@@ -26,11 +26,12 @@ Environment (all required unless a default is given):
 | Variable | Used by | Meaning |
 | --- | --- | --- |
 | `PLATFORM_DB_MIGRATOR_PASSWORD` | postgres, migrate | Password of the owner role `migrator` |
-| `PLATFORM_DB_WEB_PASSWORD` / `_MCP_` / `_WORKER_` | migrate, web, mcp | Login passwords of the `web`, `mcp`, `worker` roles |
+| `PLATFORM_DB_WEB_PASSWORD` / `_MCP_` / `_WORKER_` | migrate, web, mcp | Login passwords of the `web`, `mcp`, `worker` roles. The mcp service connects as `mcp` and writes index data as `worker` |
 | `PLATFORM_ENCRYPTION_KEY` | web, mcp | 32 bytes, base64 (`openssl rand -base64 32`); encrypts Dalux and embedding keys. Losing it makes stored keys unreadable |
 | `BETTER_AUTH_SECRET` | web | Signs interface sessions (`openssl rand -base64 32`) |
 | `PUBLIC_URL` | web, mcp | The public origin, e.g. `https://mcp.example.com`; used for invite links, cookies, and auth origin checks |
 | `PLATFORM_SITE_ADDRESS` | caddy | Host name Caddy serves and gets a certificate for (default `localhost`) |
+| `PLATFORM_HTTP_PORT` / `PLATFORM_HTTPS_PORT` / `PLATFORM_DB_PORT` | caddy, postgres | Host ports (defaults `80`, `443`, `5432`; Postgres binds to 127.0.0.1 only) |
 
 ## Interface
 

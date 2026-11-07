@@ -1,0 +1,12 @@
+*
+!package.json
+!package-lock.json
+!javascript/
+!javascript/**
+!platform/db/
+!platform/db/**
+!platform/web/package.json
+!mcp-server/
+!mcp-server/**
+**/node_modules
+**/dist

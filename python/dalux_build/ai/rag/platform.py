@@ -14,6 +14,7 @@ import asyncio
 import json
 from typing import Literal, cast
 
+import httpx
 from langchain_core.callbacks import (
     AsyncCallbackManagerForRetrieverRun,
     CallbackManagerForRetrieverRun,
@@ -32,6 +33,14 @@ class PlatformError(RuntimeError):
     """A platform MCP tool call failed (bad token, no access, missing index, ...)."""
 
 
+def _http_error(error: BaseException) -> httpx.HTTPStatusError | None:
+    """The HTTP error behind a failed call; the MCP client wraps it in exception groups."""
+    if isinstance(error, httpx.HTTPStatusError):
+        return error
+    nested: tuple[BaseException, ...] = getattr(error, "exceptions", ())
+    return next((found for e in nested if (found := _http_error(e))), None)
+
+
 async def call_platform_tool(
     platform: PlatformConfig, name: str, arguments: dict[str, object]
 ) -> dict[str, object]:
@@ -40,8 +49,16 @@ async def call_platform_tool(
     from mcp.types import TextContent
 
     client = MultiServerMCPClient({PLATFORM_SERVER_NAME: platform.mcp_connection()})
-    async with client.session(PLATFORM_SERVER_NAME) as session:
-        result = await session.call_tool(name, arguments)
+    try:
+        async with client.session(PLATFORM_SERVER_NAME) as session:
+            result = await session.call_tool(name, arguments)
+    except Exception as exc:
+        error = _http_error(exc)
+        if error is None:
+            raise
+        status = error.response.status_code
+        hint = " (check the platform token)" if status in (401, 403) else ""
+        raise PlatformError(f"{platform.mcp_url} answered HTTP {status}{hint}") from exc
     text = "".join(block.text for block in result.content if isinstance(block, TextContent))
     if result.isError:
         raise PlatformError(f"{name} failed: {text}")

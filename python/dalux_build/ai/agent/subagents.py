@@ -2,19 +2,23 @@
 
 Each subagent runs as its own isolated reasoning loop — a fresh context
 window, autonomous execution until completion, a single report handed back
-to the orchestrator — via deepagents' `task()` delegation. The orchestrator
+to the orchestrator — via the LangChain `task()` tool. The orchestrator
 picks which specialist to call based on each subagent's `description`; no
 extra wiring is needed for that beyond registering them here.
 """
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
+from typing import TypedDict
 
-from .skills_loader import SKILLS_DIR
 
-if TYPE_CHECKING:
-    from deepagents.middleware.subagents import SubAgent
+class SubAgent(TypedDict):
+    """Specialist configuration; all specialists share the Mistral model and tools."""
+
+    name: str
+    description: str
+    system_prompt: str
+
 
 _LEGAL_SYSTEM_PROMPT = (
     "You are a legal specialist reviewing construction project documents. "
@@ -82,7 +86,6 @@ def build_specialist_subagents() -> list[SubAgent]:
                 "specific to Danish construction law."
             ),
             "system_prompt": _LEGAL_SYSTEM_PROMPT,
-            "skills": [str(SKILLS_DIR)],
         },
         {
             "name": "construction-pm-specialist",
@@ -93,7 +96,6 @@ def build_specialist_subagents() -> list[SubAgent]:
                 "execution/status questions."
             ),
             "system_prompt": _CONSTRUCTION_PM_SYSTEM_PROMPT,
-            "skills": [str(SKILLS_DIR)],
         },
         {
             "name": "entrepriseret-specialist",
@@ -104,6 +106,5 @@ def build_specialist_subagents() -> list[SubAgent]:
                 "construction law and standard contract regimes."
             ),
             "system_prompt": _ENTREPRISERET_SYSTEM_PROMPT,
-            "skills": [str(SKILLS_DIR)],
         },
     ]

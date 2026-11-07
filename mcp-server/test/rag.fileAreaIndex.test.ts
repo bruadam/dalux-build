@@ -70,8 +70,8 @@ describe('file-area index', () => {
     originalCacheDir = process.env.DALUX_MCP_CACHE_DIR;
     process.env.DALUX_MCP_CACHE_DIR = cache;
     // Ranking must be deterministic: no key means BM25, no network.
-    originalKey = process.env.OPENAI_API_KEY;
-    delete process.env.OPENAI_API_KEY;
+    originalKey = process.env.MISTRAL_API_KEY;
+    delete process.env.MISTRAL_API_KEY;
 
     contract = writeDocx(
       fixtures,
@@ -89,7 +89,7 @@ describe('file-area index', () => {
   afterAll(() => {
     if (originalCacheDir === undefined) delete process.env.DALUX_MCP_CACHE_DIR;
     else process.env.DALUX_MCP_CACHE_DIR = originalCacheDir;
-    if (originalKey !== undefined) process.env.OPENAI_API_KEY = originalKey;
+    if (originalKey !== undefined) process.env.MISTRAL_API_KEY = originalKey;
     rmSync(fixtures, { recursive: true, force: true });
     rmSync(cache, { recursive: true, force: true });
   });

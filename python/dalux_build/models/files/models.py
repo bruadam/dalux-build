@@ -2,7 +2,7 @@
 
 import datetime
 from datetime import date
-from typing import TYPE_CHECKING, Any, Literal, TypedDict
+from typing import TYPE_CHECKING, Literal, TypedDict
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -169,7 +169,7 @@ class File(BaseModel):
         """Analyze the file content using AI providers.
 
         Downloads the file and sends it to Claude (via AI provider system) for analysis.
-        Uses the configured AI provider (Anthropic, Mistral, OpenAI, OpenRouter).
+        Uses Mistral for OCR and analysis.
 
         For drawing files, converts PDF to PNG images for visual interpretation.
         For other files, uses OCR text extraction or multimodal analysis.
@@ -230,7 +230,6 @@ class File(BaseModel):
 
         # Use AI provider system
         from ...ai.config import ProviderConfig
-        from ...ai.providers import ProviderType
 
         try:
             provider_config = ProviderConfig.create_provider_from_env(
@@ -249,7 +248,7 @@ class File(BaseModel):
         # Handle PDFs with OCR if using Mistral
         extracted_text = None
         page_images = []
-        if file_ext == "pdf" and provider_config.provider == ProviderType.MISTRAL:
+        if file_ext == "pdf":
             try:
                 from mistralai.client import Mistral
             except ImportError as e:
@@ -281,100 +280,23 @@ class File(BaseModel):
             # Extract images if requested
             if include_image_base64:
                 page_images = [
-                    page.image
+                    image.image_base64
                     for page in ocr_response.pages
-                    if hasattr(page, "image") and page.image
+                    for image in page.images
+                    if image.image_base64
                 ]  # noqa: E501
                 if page_images:
                     print(f"✓ Extracted {len(page_images)} page images")
 
-        # Send to AI provider for analysis
-        if provider_config.provider == ProviderType.ANTHROPIC:
-            try:
-                from anthropic import Anthropic
-            except ImportError as e:
-                raise ImportError(
-                    "Anthropic package required. Install with: pip install anthropic"
-                ) from e
-
-            client = Anthropic(api_key=provider_config.api_key)  # type: ignore[assignment]
-
-            if extracted_text and not include_image_base64:
-                # Use extracted text from OCR only
-                content: list[Any] = [
-                    {
-                        "type": "text",
-                        "text": f"File: {self.file_name}\n\nExtracted content:\n\n{extracted_text}\n\nQuestion: {question}",  # noqa: E501
-                    }
-                ]
-            elif extracted_text and include_image_base64 and page_images:
-                # Use extracted text + page images from Mistral OCR
-                content = [
-                    {
-                        "type": "text",
-                        "text": f"File: {self.file_name}\n\nExtracted content:\n\n{extracted_text}\n\nQuestion: {question}",  # noqa: E501
-                    }
-                ]
-                # Add page images
-                for _i, img_b64 in enumerate(page_images):
-                    content.append(
-                        {
-                            "type": "image",
-                            "source": {
-                                "type": "base64",
-                                "media_type": "image/png",
-                                "data": img_b64,
-                            },
-                        }
-                    )
-            elif extracted_text and include_image_base64:
-                # Extracted text available but no images from OCR
-                content = [
-                    {
-                        "type": "text",
-                        "text": f"File: {self.file_name}\n\nExtracted content:\n\n{extracted_text}\n\nQuestion: {question}",  # noqa: E501
-                    }
-                ]
-            else:
-                # Use multimodal for images/PDFs (no OCR)
-                b64_content = base64.standard_b64encode(file_content).decode("utf-8")
-                content = [
-                    {
-                        "type": "document",
-                        "source": {
-                            "type": "base64",
-                            "media_type": media_type,
-                            "data": b64_content,
-                        },
-                    },
-                    {
-                        "type": "text",
-                        "text": f"File name: {self.file_name}\n\n{question}",
-                    },
-                ]
-
-            message = client.messages.create(
-                model=provider_config.model,
-                max_tokens=2048,
-                messages=[{"role": "user", "content": content}],
-            )
-
-            if message.content and hasattr(message.content[0], "text"):
-                return message.content[0].text  # type: ignore[no-any-return]
-            return ""
-        else:
-            # For other providers, use extracted text or file metadata
-            if extracted_text:
-                prompt = f"File: {self.file_name}\n\nExtracted content:\n\n{extracted_text}\n\nQuestion: {question}"  # noqa: E501
-            else:
-                file_size_kb = len(file_content) / 1024
-                prompt = (
-                    f"File: {self.file_name}\n"
-                    f"Type: {media_type}\n"
-                    f"Size: {file_size_kb:.1f} KB\n\n"
-                    f"{question}"
-                )
-            return provider_config.call(prompt, max_tokens=2048)
+        prompt = f"File: {self.file_name}\n\nQuestion: {question}"
+        if extracted_text:
+            prompt += f"\n\nExtracted content:\n{extracted_text}"
+        if media_type.startswith("image/"):
+            image = base64.standard_b64encode(file_content).decode("utf-8")
+            page_images.append(f"data:{media_type};base64,{image}")
+        if page_images:
+            return provider_config.call_with_images(prompt, page_images)
+        return provider_config.call(prompt, max_tokens=2048)
 
     def _analyze_drawing_pdf(
         self, file_content: bytes, question: str, provider_config: "AIProviderManager", api_key: str
@@ -391,12 +313,10 @@ class File(BaseModel):
             AI analysis of the drawing.
 
         Raises:
-            ImportError: If pdf2image or Anthropic is not installed.
+            ImportError: If pdf2image or Mistral is not installed.
         """
         import base64
         import io
-
-        from ...ai.providers import ProviderType
 
         try:
             from pdf2image import convert_from_bytes
@@ -410,52 +330,12 @@ class File(BaseModel):
         pil_images = convert_from_bytes(file_content)
         print(f"✓ Converted {len(pil_images)} page(s) to images")
 
-        if provider_config.provider == ProviderType.ANTHROPIC:
-            try:
-                from anthropic import Anthropic
-            except ImportError as e:
-                raise ImportError(
-                    "Anthropic package required. Install with: pip install anthropic"
-                ) from e
-
-            client = Anthropic(api_key=provider_config.api_key)
-
-            # Convert PIL images to base64 PNG
-            content: list[Any] = [
-                {
-                    "type": "text",
-                    "text": f"File: {self.file_name} (drawing/schematic)\n\n{question}",
-                }
-            ]
-
-            for img_pil in pil_images:
-                img_bytes = io.BytesIO()
-                img_pil.save(img_bytes, format="PNG")
-                img_b64 = base64.standard_b64encode(img_bytes.getvalue()).decode("utf-8")
-                content.append(
-                    {
-                        "type": "image",
-                        "source": {
-                            "type": "base64",
-                            "media_type": "image/png",
-                            "data": img_b64,
-                        },
-                    }
-                )
-
-            response = client.messages.create(
-                model=provider_config.model,
-                max_tokens=2048,
-                messages=[{"role": "user", "content": content}],
-            )
-
-            if response.content and hasattr(response.content[0], "text"):
-                return response.content[0].text  # type: ignore[no-any-return]
-            return ""
-        else:
-            # Fallback: use provider's call method for other providers
-            prompt = (
-                f"File: {self.file_name} (drawing/schematic)\n\n"
-                f"This is a drawing file. Please analyze and answer: {question}"
-            )
-            return provider_config.call(prompt, max_tokens=2048)
+        images = []
+        for img_pil in pil_images:
+            img_bytes = io.BytesIO()
+            img_pil.save(img_bytes, format="PNG")
+            img_b64 = base64.standard_b64encode(img_bytes.getvalue()).decode("utf-8")
+            images.append(f"data:image/png;base64,{img_b64}")
+        return provider_config.call_with_images(
+            f"File: {self.file_name} (drawing/schematic)\n\n{question}", images
+        )

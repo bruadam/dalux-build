@@ -15,7 +15,5 @@ dependencies = [
 
 [project.optional-dependencies]
 ai = [
-    "anthropic>=0.28.0",
-    "mistralai>=0.0.11",
-    "openai>=1.3.0",
+    "mistralai>=2.0",
 ]

@@ -1,7 +1,7 @@
 """AI analysis capabilities for Dalux API endpoints.
 
 This module provides AI-powered analysis methods for any API endpoint using
-multiple LLM providers (Anthropic, Mistral, OpenAI, OpenRouter).
+Mistral.
 
 Automatically detects available providers from environment variables and shows
 an interactive menu if multiple are configured.
@@ -19,12 +19,12 @@ Usage (Recommended - through AI namespace):
     dalux.ai.list_providers()
 
     # Set provider
-    dalux.ai.set_provider("anthropic")
+    dalux.ai.set_provider("mistral")
 
 Usage (Direct - for advanced use):
     from dalux_build import AiMixin, ProviderType
 
-    AiMixin.set_ai_provider(ProviderType.ANTHROPIC)
+    AiMixin.set_ai_provider(ProviderType.MISTRAL)
     AiMixin.list_ai_providers()
 """
 

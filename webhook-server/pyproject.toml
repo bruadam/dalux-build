@@ -87,20 +87,11 @@ module = "dalux_build.webhook_server.models"
 disallow_any_explicit = false
 
 [[tool.mypy.overrides]]
-# Optional dependencies without type stubs
-module = "anthropic"
-ignore_missing_imports = true
-
-[[tool.mypy.overrides]]
 module = "mistralai"
 ignore_missing_imports = true
 
 [[tool.mypy.overrides]]
 module = "mistralai.client"
-ignore_missing_imports = true
-
-[[tool.mypy.overrides]]
-module = "openai"
 ignore_missing_imports = true
 
 [[tool.mypy.overrides]]
@@ -120,23 +111,11 @@ module = "pdf2image"
 ignore_missing_imports = true
 
 [[tool.mypy.overrides]]
-module = "deepagents.*"
-ignore_missing_imports = true
-
-[[tool.mypy.overrides]]
 module = "langchain.*"
 ignore_missing_imports = true
 
 [[tool.mypy.overrides]]
 module = "langchain_core.*"
-ignore_missing_imports = true
-
-[[tool.mypy.overrides]]
-module = "langchain_openai.*"
-ignore_missing_imports = true
-
-[[tool.mypy.overrides]]
-module = "langchain_openrouter.*"
 ignore_missing_imports = true
 
 [[tool.mypy.overrides]]
@@ -156,15 +135,7 @@ module = "langchain_text_splitters.*"
 ignore_missing_imports = true
 
 [[tool.mypy.overrides]]
-module = "langchain_huggingface.*"
-ignore_missing_imports = true
-
-[[tool.mypy.overrides]]
 module = "chromadb.*"
-ignore_missing_imports = true
-
-[[tool.mypy.overrides]]
-module = "sentence_transformers.*"
 ignore_missing_imports = true
 
 [[tool.mypy.overrides]]
@@ -186,7 +157,7 @@ module = "dalux_build.ai.providers"
 warn_unused_ignores = false
 
 [[tool.mypy.overrides]]
-# RAG/deepagents integration deals with loosely-typed upstream packages,
+# RAG/LangChain integration deals with loosely-typed upstream packages,
 # same rationale as the ai.providers override above.
 module = "dalux_build.ai.agent.*"
 warn_unused_ignores = false

@@ -31,6 +31,7 @@
     "@ifc-lite/parser": "^6.5.0",
     "@ifc-lite/query": "^2.4.0",
     "@ifc-lite/sdk": "^6.1.0",
+    "@mistralai/mistralai": "^2.7.0",
     "@modelcontextprotocol/node": "^2.1.1",
     "@modelcontextprotocol/server": "^2.0.0",
     "@napi-rs/canvas": "^0.1.80",

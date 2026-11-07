@@ -32,12 +32,12 @@ describe('tools/documents', () => {
 
   beforeAll(() => {
     cacheDir = mkdtempSync(path.join(tmpdir(), 'dalux-documents-'));
-    originalKey = process.env.OPENAI_API_KEY;
-    delete process.env.OPENAI_API_KEY;
+    originalKey = process.env.MISTRAL_API_KEY;
+    delete process.env.MISTRAL_API_KEY;
   });
 
   afterAll(async () => {
-    if (originalKey !== undefined) process.env.OPENAI_API_KEY = originalKey;
+    if (originalKey !== undefined) process.env.MISTRAL_API_KEY = originalKey;
     rmSync(cacheDir, { recursive: true, force: true });
     await _resetDownloadLinksForTests();
   });

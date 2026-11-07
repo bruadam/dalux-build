@@ -30,6 +30,6 @@ def manifest_path(cache_key: str) -> Path:
 
 def chroma_dir(cache_key: str) -> Path:
     """Persist directory for this scope's Chroma collection."""
-    path = scope_cache_dir(cache_key) / "chroma"
+    path = scope_cache_dir(cache_key) / "chroma-mistral-embed"
     path.mkdir(parents=True, exist_ok=True)
     return path

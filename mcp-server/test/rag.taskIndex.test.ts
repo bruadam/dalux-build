@@ -67,14 +67,14 @@ describe('task index', () => {
     originalCacheDir = process.env.DALUX_MCP_CACHE_DIR;
     process.env.DALUX_MCP_CACHE_DIR = cache;
     // Ranking must be deterministic: no key means BM25, no network.
-    originalKey = process.env.OPENAI_API_KEY;
-    delete process.env.OPENAI_API_KEY;
+    originalKey = process.env.MISTRAL_API_KEY;
+    delete process.env.MISTRAL_API_KEY;
   });
 
   afterAll(() => {
     if (originalCacheDir === undefined) delete process.env.DALUX_MCP_CACHE_DIR;
     else process.env.DALUX_MCP_CACHE_DIR = originalCacheDir;
-    if (originalKey !== undefined) process.env.OPENAI_API_KEY = originalKey;
+    if (originalKey !== undefined) process.env.MISTRAL_API_KEY = originalKey;
     rmSync(cache, { recursive: true, force: true });
   });
 

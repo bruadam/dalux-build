@@ -1,9 +1,9 @@
 /**
- * The embeddings path with a stubbed OpenAI endpoint.
+ * The embeddings path with a stubbed Mistral SDK.
  *
- * This is the default ranking in any deployment that sets OPENAI_API_KEY, and
+ * This is the default ranking in any deployment that sets MISTRAL_API_KEY, and
  * the parts most likely to break quietly — request batching, restoring the
- * order OpenAI returns, and the Float32 round-trip through the .vec files —
+ * order Mistral returns, and the Float32 round-trip through the .vec files —
  * are invisible to the lexical tests, which is why they are covered here.
  */
 
@@ -12,6 +12,7 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import type { DaluxClient } from 'dalux-build-api';
 
+import { readManifest, writeManifest } from '../src/rag/store';
 import { embedTexts } from '../src/search/rank';
 import { searchChunks } from '../src/search/documentSearch';
 import * as fileAreaIndex from '../src/tools/fileAreaIndex';
@@ -31,43 +32,44 @@ function toyEmbedding(text: string): number[] {
 }
 
 interface FetchCall {
-  input: string[];
+  inputs: string[];
   model: string;
 }
 
-function stubOpenAi(): { calls: FetchCall[]; restore: () => void } {
+const mockCreate = jest.fn();
+jest.mock('@mistralai/mistralai', () => ({
+  Mistral: jest.fn().mockImplementation(({ apiKey }: { apiKey: string }) => {
+    expect(apiKey).toBe('test-key');
+    return { embeddings: { create: mockCreate } };
+  }),
+}));
+
+function stubMistral(): { calls: FetchCall[]; restore: () => void } {
   const calls: FetchCall[] = [];
-  const original = global.fetch;
-  global.fetch = jest.fn(async (_url: unknown, init?: { body?: string }) => {
-    const body = JSON.parse(init?.body ?? '{}') as FetchCall;
-    calls.push(body);
+  mockCreate.mockImplementation(async (request: FetchCall) => {
+    expect(request.model).toBe('mistral-embed');
+    calls.push(request);
     return {
-      ok: true,
-      json: async () => ({
-        // Deliberately reversed: the client must restore order by `index`.
-        data: body.input
-          .map((text, index) => ({ embedding: toyEmbedding(text), index }))
-          .reverse(),
-      }),
+      data: request.inputs.map((text, index) => ({ embedding: toyEmbedding(text), index })).reverse(),
     };
-  }) as unknown as typeof fetch;
-  return { calls, restore: () => { global.fetch = original; } };
+  });
+  return { calls, restore: () => mockCreate.mockReset() };
 }
 
 describe('embeddings ranking', () => {
-  let stub: ReturnType<typeof stubOpenAi>;
+  let stub: ReturnType<typeof stubMistral>;
   let originalKey: string | undefined;
 
   beforeEach(() => {
-    originalKey = process.env.OPENAI_API_KEY;
-    process.env.OPENAI_API_KEY = 'test-key';
-    stub = stubOpenAi();
+    originalKey = process.env.MISTRAL_API_KEY;
+    process.env.MISTRAL_API_KEY = 'test-key';
+    stub = stubMistral();
   });
 
   afterEach(() => {
     stub.restore();
-    if (originalKey === undefined) delete process.env.OPENAI_API_KEY;
-    else process.env.OPENAI_API_KEY = originalKey;
+    if (originalKey === undefined) delete process.env.MISTRAL_API_KEY;
+    else process.env.MISTRAL_API_KEY = originalKey;
     jest.clearAllMocks();
   });
 
@@ -80,20 +82,34 @@ describe('embeddings ranking', () => {
       expect(vectors).toHaveLength(200);
       // 200 inputs at a batch size of 96 is three requests, not one oversized one.
       expect(stub.calls).toHaveLength(3);
-      expect(stub.calls.map((call) => call.input.length)).toEqual([96, 96, 8]);
-      // Order survives both the batching and OpenAI returning results shuffled.
+      expect(stub.calls.map((call) => call.inputs.length)).toEqual([96, 96, 8]);
+      // Order survives both the batching and Mistral returning results shuffled.
       expect(vectors[137]).toEqual(toyEmbedding('fire rating'));
       expect(vectors[0]).toEqual(toyEmbedding('clause 0'));
     });
 
-    it('surfaces an API failure with its status instead of returning empty results', async () => {
-      global.fetch = jest.fn(async () => ({
-        ok: false,
-        status: 429,
-        text: async () => 'rate limited',
-      })) as unknown as typeof fetch;
+    it('splits batches by size so a request stays under the token limit', async () => {
+      // 1000-character chunks, the indexers' default: 96 of them would be ~30k tokens in one request.
+      const texts = Array.from({ length: 100 }, (_, i) => `${i}`.padEnd(1000, 'x'));
 
-      await expect(embedTexts(['anything'])).rejects.toThrow(/HTTP 429/);
+      const vectors = await embedTexts(texts);
+
+      expect(stub.calls.map((call) => call.inputs.length)).toEqual([32, 32, 32, 4]);
+      expect(vectors[99]).toEqual(toyEmbedding(texts[99]));
+    });
+
+    it('retries rate limits and transient failures with backoff', async () => {
+      const { Mistral } = jest.requireMock('@mistralai/mistralai') as { Mistral: jest.Mock };
+
+      await embedTexts(['anything']);
+
+      expect(Mistral.mock.calls[0][0].retryConfig).toMatchObject({ strategy: 'backoff' });
+    });
+
+    it('surfaces an API failure with its status instead of returning empty results', async () => {
+      mockCreate.mockRejectedValue(new Error('Mistral API error: HTTP 401'));
+
+      await expect(embedTexts(['anything'])).rejects.toThrow(/401/);
     });
 
     it('makes no request at all for an empty input', async () => {
@@ -126,7 +142,7 @@ describe('embeddings ranking', () => {
       const { matches } = await searchChunks(chunks, 'fire concrete', 1);
 
       // 200 candidates + the query, batched — far fewer than embedding all 500.
-      const embedded = stub.calls.reduce((total, call) => total + call.input.length, 0);
+      const embedded = stub.calls.reduce((total, call) => total + call.inputs.length, 0);
       expect(embedded).toBeLessThanOrEqual(201);
       expect(matches[0].location).toBe('p. 400');
     });
@@ -206,12 +222,30 @@ describe('embeddings ranking', () => {
       const scope = { projectId: 'p1', fileAreaId: 'fa-embed-gone' };
       await fileAreaIndex.buildFileAreaIndex(client, scope);
 
-      delete process.env.OPENAI_API_KEY;
+      delete process.env.MISTRAL_API_KEY;
       const result = await fileAreaIndex.searchFileArea(client, { ...scope, query: 'fire rating' });
 
       expect(result.mode).toBe('lexical');
       expect(result.matches[0].fileName).toBe('fire.docx');
-      expect(result.warnings.join(' ')).toMatch(/OPENAI_API_KEY is not set/);
+      expect(result.warnings.join(' ')).toMatch(/MISTRAL_API_KEY is not set/);
+    });
+
+    it('refuses old model vectors and rebuilds unchanged documents with the new model', async () => {
+      const client = clientFor({
+        f1: writeDocx(fixtures, 'fire.docx', paragraph('Fire rating for escape route doors.')),
+      });
+      const scope = { projectId: 'p1', fileAreaId: 'fa-migration' };
+      const built = await fileAreaIndex.buildFileAreaIndex(client, scope);
+      const manifest = readManifest(built.indexId)!;
+      manifest.embedding!.model = 'retired-embedding-model';
+      writeManifest(manifest);
+      const before = await fileAreaIndex.searchFileArea(client, { ...scope, query: 'fire' });
+      expect(before.mode).toBe('lexical');
+      expect(before.warnings.join(' ')).toMatch(/model changed/i);
+      const rebuilt = await fileAreaIndex.buildFileAreaIndex(client, scope);
+      expect(rebuilt.filesIndexedThisPass).toBe(1);
+      expect(readManifest(built.indexId)!.embedding!.model).toBe('mistral-embed');
+      expect((await fileAreaIndex.searchFileArea(client, { ...scope, query: 'fire' })).mode).toBe('embeddings');
     });
 
     it('re-embeds an index that was built without a key once one is available', async () => {
@@ -220,11 +254,11 @@ describe('embeddings ranking', () => {
       });
       const scope = { projectId: 'p1', fileAreaId: 'fa-embed-later' };
 
-      delete process.env.OPENAI_API_KEY;
+      delete process.env.MISTRAL_API_KEY;
       const lexical = await fileAreaIndex.buildFileAreaIndex(client, scope);
       expect(lexical.mode).toBe('lexical');
 
-      process.env.OPENAI_API_KEY = 'test-key';
+      process.env.MISTRAL_API_KEY = 'test-key';
       const upgraded = await fileAreaIndex.buildFileAreaIndex(client, scope);
 
       expect(upgraded.mode).toBe('embeddings');

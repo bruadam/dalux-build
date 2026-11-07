@@ -118,8 +118,8 @@ export type SearchFileContentInput = z.infer<typeof searchFileContentInput>;
  *
  * Handles PDFs (documents and drawings), Word and Excel files; each match
  * carries a citable location — a page for PDFs, a heading for Word, a
- * sheet/row range for Excel. Uses OpenAI embeddings for semantic ranking when
- * OPENAI_API_KEY is set, otherwise BM25 — a lightweight, single-file
+ * sheet/row range for Excel. Uses Mistral embeddings for semantic ranking when
+ * MISTRAL_API_KEY is set, otherwise BM25 — a lightweight, single-file
  * complement to the file-area index in tools/fileAreaIndex.ts, not a
  * replacement for it.
  */

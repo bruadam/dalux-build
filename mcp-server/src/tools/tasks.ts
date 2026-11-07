@@ -130,7 +130,7 @@ export type ListProjectTasksInput = z.infer<typeof listProjectTasksInput>;
  * so the MCP endpoint itself does not apply additional list pagination.
  *
  * The `filter`/`select`/`orderby` input properties are named without the `$`
- * that OData expects — a literal `$filter` property name fails Anthropic's
+ * that OData expects — a literal `$filter` property name fails some clients'
  * tool-schema validation (property names must match /^[a-zA-Z0-9_.-]{1,64}$/),
  * which silently drops the whole tool from the model's tool list. They're
  * translated back to `$filter`/`$select`/`$orderby` here before calling the
@@ -215,7 +215,7 @@ export type SearchTasksInput = z.infer<typeof searchTasksInput>;
 /**
  * Ranked keyword/semantic search across a project's tasks — the "find tasks
  * about X" complement to list_project_tasks' exact OData filtering. Ranks by
- * BM25, or by OpenAI embeddings when OPENAI_API_KEY is set (see search/rank.ts).
+ * BM25, or by Mistral embeddings when MISTRAL_API_KEY is set (see search/rank.ts).
  *
  * Re-fetches and re-renders every task on each call, same trade-off as
  * search_file_content vs. build_file_area_index: cheap for one-off questions,

@@ -76,7 +76,7 @@
   ## What's New
   
   - `javascript/` (`dalux-build-api`) is now native TypeScript, built with `tsup` (dual `.d.ts` generation via `tsc`). Public API, method signatures, and runtime behavior — bookmark pagination (`getAllX`), path/name resolution (`getFolderByPath`, `getFolderByName`, `resolveFileAreaByName`), zod-validated responses, error classes — are unchanged; this is a typing/tooling upgrade, not a breaking change.
-  - New `mcp-server` package (`dalux-build-mcp`, private, not published to npm): an MCP server built on the MCP TypeScript SDK v2 (`@modelcontextprotocol/server`), exposing 28 read-only tools over Dalux Build data (file areas/folders/files, tasks, projects, forms, users/companies, test/inspection plans, work packages, version sets) plus `download_file` and `search_pdf_content` (lightweight per-file PDF search, semantic via `OPENAI_API_KEY` or keyword fallback). Supports stdio (Claude Code/Desktop/Cursor) and streamable-HTTP (bearer-token gated) transports, and ships a `Dockerfile` for remote deployment.
+  - New `mcp-server` package (`dalux-build-mcp`, private, not published to npm): an MCP server built on the MCP TypeScript SDK v2 (`@modelcontextprotocol/server`), exposing 28 read-only tools over Dalux Build data (file areas/folders/files, tasks, projects, forms, users/companies, test/inspection plans, work packages, version sets) plus `download_file` and `search_pdf_content` (lightweight per-file PDF search, semantic via `MISTRAL_API_KEY` or keyword fallback). Supports stdio (Claude Code/Desktop/Cursor) and streamable-HTTP (bearer-token gated) transports, and ships a `Dockerfile` for remote deployment.
   - `python/dalux_build/ai/agent/graph.py`'s deep agent now also loads these Dalux API tools via `langchain-mcp-adapters`, spawning the Node MCP server as a stdio subprocess alongside its existing document-retrieval tool — silently skipped if the server hasn't been built, same as the agent's other optional tool groups.
 
 ## 2.3.0
@@ -88,8 +88,8 @@
   ## What's New
   
   - New `.agent()` method on `dalux.ai.files`, `dalux.ai.folders`, and `dalux.ai.file_areas` that launches a local, skill-driven RAG chat agent over the PDFs in a given scope (file area, folder, or path).
-  - Local PDF ingestion and vector store built on Chroma with local or provider-hosted embeddings, cached under the platform user cache directory so re-runs only embed new or changed files.
-  - Pluggable chat model providers: OpenRouter (default) and Mistral, plus an interactive `pick_model` menu for browsing OpenRouter models.
+  - Local PDF ingestion and vector store built on Chroma with Mistral embeddings, cached under the platform user cache directory so re-runs only embed new or changed files.
+  - Mistral chat models with an interactive `pick_model` menu.
   - Skill library (`construction-project-management`, `entrepriseret`, `legal-contract-review`, `general-document-qa`) that grounds agent answers in retrieved document excerpts, selectable via `skill=`.
   - Reference document tooling (`byggerietsregler`, Firecrawl-backed crawling) for indexing external regulatory reference material alongside project documents.
   - New `dalux-skills` CLI entry point for managing the local skill library.
@@ -106,7 +106,7 @@
   
   ### AI Analysis Module
   - **New AI mixin** that adds `.health()` and `.ask()` methods to all API endpoints for AI-powered analysis
-  - **Multi-provider support** for Anthropic Claude, Mistral, OpenAI, and OpenRouter
+  - **AI support** for Mistral
   - **AINamespace** accessible via `client.ai.files`, `client.ai.tasks`, `client.ai.folders`, `client.ai.projects`
   
   ### File Content Analysis

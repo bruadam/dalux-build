@@ -37,9 +37,7 @@ Issues = "https://github.com/bruadam/dalux-build/issues"
 
 [project.optional-dependencies]
 ai = [
-    "anthropic>=0.28.0",
-    "mistralai>=0.0.11",
-    "openai>=1.3.0",
+    "mistralai>=2.0",
     "pdf2image>=1.17.0",
     "pillow>=11.0.0",
 ]
@@ -74,16 +72,14 @@ webhook = [
     "croniter>=2",
 ]
 rag = [
-    "deepagents>=0.1",
+    "mistralai>=2.0",
+    "langgraph>=1.0",
     "langgraph-cli[inmem]>=0.2",
-    "langchain[openai]>=0.3",
-    "langchain-openrouter>=0.2.8",
+    "langchain>=1.0",
     "langchain-mistralai>=0.2",
     "langchain-chroma>=0.2",
     "langchain-community>=0.3",
     "langchain-text-splitters>=0.3",
-    "langchain-huggingface>=0.1",
-    "sentence-transformers>=3",
     "chromadb>=0.5",
     "pypdf>=5",
     "platformdirs>=4",
@@ -150,16 +146,7 @@ module = "dalux_build.webhook_server.models"
 disallow_any_explicit = false
 
 [[tool.mypy.overrides]]
-# Optional dependencies without type stubs
-module = "anthropic"
-ignore_missing_imports = true
-
-[[tool.mypy.overrides]]
 module = "mistralai.*"
-ignore_missing_imports = true
-
-[[tool.mypy.overrides]]
-module = "openai"
 ignore_missing_imports = true
 
 [[tool.mypy.overrides]]
@@ -189,23 +176,11 @@ module = "dalux_build.models.files.models"
 warn_unused_ignores = false
 
 [[tool.mypy.overrides]]
-module = "deepagents.*"
-ignore_missing_imports = true
-
-[[tool.mypy.overrides]]
 module = "langchain.*"
 ignore_missing_imports = true
 
 [[tool.mypy.overrides]]
 module = "langchain_core.*"
-ignore_missing_imports = true
-
-[[tool.mypy.overrides]]
-module = "langchain_openai.*"
-ignore_missing_imports = true
-
-[[tool.mypy.overrides]]
-module = "langchain_openrouter.*"
 ignore_missing_imports = true
 
 [[tool.mypy.overrides]]
@@ -225,15 +200,7 @@ module = "langchain_text_splitters.*"
 ignore_missing_imports = true
 
 [[tool.mypy.overrides]]
-module = "langchain_huggingface.*"
-ignore_missing_imports = true
-
-[[tool.mypy.overrides]]
 module = "chromadb.*"
-ignore_missing_imports = true
-
-[[tool.mypy.overrides]]
-module = "sentence_transformers.*"
 ignore_missing_imports = true
 
 [[tool.mypy.overrides]]
@@ -249,7 +216,7 @@ module = "firecrawl.*"
 ignore_missing_imports = true
 
 [[tool.mypy.overrides]]
-# RAG/deepagents integration deals with loosely-typed upstream packages,
+# RAG/LangChain integration deals with loosely-typed upstream packages,
 # same rationale as the ai.providers override above.
 module = "dalux_build.ai.agent.*"
 warn_unused_ignores = false
@@ -267,6 +234,6 @@ warn_unused_ignores = false
 # above), which makes mypy treat it as returning Any; strict mode's
 # disallow_any_decorated/disallow_untyped_decorators would otherwise flag
 # every @tool-decorated function in this module.
-module = "dalux_build.ai.agent.graph"
+module = "dalux_build.ai.agent.graph_runtime"
 disallow_any_decorated = false
 disallow_untyped_decorators = false

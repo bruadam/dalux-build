@@ -29,7 +29,7 @@ Reads the same environment variables as the rest of the Dalux Build clients:
 | --- | --- | --- |
 | `DALUX_BASE_URL` | yes | Your Dalux Build API base URL |
 | `DALUX_API_KEY` | yes | Your company's X-API-KEY |
-| `OPENAI_API_KEY` | no | Enables semantic (embedding-based) ranking in document search; without it, ranking falls back to BM25 |
+| `MISTRAL_API_KEY` | no | Enables semantic (embedding-based) ranking in document search; without it, ranking falls back to BM25 |
 | `DALUX_MCP_CACHE_DIR` | no | Where downloads and the ephemeral file-area/task indexes are cached (default `$TMPDIR/dalux-mcp`). Set it when the temp directory is small or wiped between restarts. Also used by the docs index if `DALUX_MCP_DOCS_DIR` is unset |
 | `DALUX_MCP_DOCS_DIR` | no | Where the (persistent) docs-repo index is stored (default `~/.dalux-mcp/docs-index`) — separate from `DALUX_MCP_CACHE_DIR` because, unlike the other two indexes, this one is meant to survive restarts |
 | `DOCS_GITHUB_TOKEN` (or `GITHUB_TOKEN`) | only for a private docs repo | Token `npm run docs:build` sends to the GitHub API — required to read a private repo, optional (but raises the rate limit) for a public one. Needs read access to the repo's contents; no other scope |
@@ -216,14 +216,14 @@ list_file_area_indexes()                                   ->  what is currently
 drop_file_area_index(indexId)                              ->  delete one (nothing in Dalux is touched)
 ```
 
-The index is a disposable directory under the cache root: per-document chunks plus, when `OPENAI_API_KEY` is set, their embeddings as raw `Float32`. Indexes untouched for a week are deleted on the next build. Retrieval is deliberately all that these tools do — they return cited passages, and the calling agent does the reasoning, which is what makes this usable from any MCP host without a second model API key.
+The index is a disposable directory under the cache root: per-document chunks plus, when `MISTRAL_API_KEY` is set, their embeddings as raw `Float32`. Indexes untouched for a week are deleted on the next build. Retrieval is deliberately all that these tools do — they return cited passages, and the calling agent does the reasoning, which is what makes this usable from any MCP host without a second model API key.
 
 Details worth knowing before pointing it at a large file area:
 
 - **Scope** is (project, file area, optional folder subtree, extension filter). It hashes to a stable `indexId`, so re-running `build_file_area_index` with the same arguments reuses what is already on disk instead of re-downloading — you can address an index by scope in `search_file_area` and never handle the id yourself.
 - **Incremental**: a file is re-downloaded only when its `contentHash`/revision changed; files that left the file area have their chunks dropped; files that fail to extract are recorded once and not retried until their revision changes.
 - **Budgeted**: each call indexes at most `maxFiles` (250) files and stops after `timeBudgetSeconds` (120), so a large file area never blows the host's tool timeout. If the result says `complete: false`, call it again with the same arguments to continue where it left off.
-- **Ranking**: cosine similarity over embeddings when `OPENAI_API_KEY` is set, BM25 otherwise. BM25 scores are absolute (`raw / (raw + 3)`), not normalised to the best hit, so the top result of a query nothing matches looks weak instead of scoring a misleading 1.0.
+- **Ranking**: cosine similarity over embeddings when `MISTRAL_API_KEY` is set, BM25 otherwise. BM25 scores are absolute (`raw / (raw + 3)`), not normalised to the best hit, so the top result of a query nothing matches looks weak instead of scoring a misleading 1.0.
 - **Cost**: with a key, indexing embeds every chunk once (`text-embedding-3-small`); a 250-document folder is a few million tokens of embeddings. Without one, indexing makes no API calls at all.
 
 This is the TypeScript counterpart of the corpus-wide RAG agent in the Python package (`python/dalux_build/ai/`), which uses Chroma and LangChain and hosts its own LLM loop. Chunk size and overlap match (1000/150) so passages read the same through either path.
@@ -232,7 +232,7 @@ This is the TypeScript counterpart of the corpus-wide RAG agent in the Python pa
 
 `list_project_tasks` filters with an exact OData `$filter` expression (see `get_skill({ topic: "tasks" })`) — precise, but it needs the model to write correct OData and can only match the literal field it's pointed at. Two tools answer "which tasks are about X" without that:
 
-`search_tasks(projectId, query, typeId?, filter?, includeChanges?, topK?)` is the ad-hoc, no-setup option: it fetches the project's tasks (optionally narrowed with `typeId`/`filter` first), renders each one's subject, type, status, custom fields and (if `includeChanges: true`) change-history text, ranks them against `query` (embeddings if `OPENAI_API_KEY` is set, BM25 otherwise — see `src/search/rank.ts`), and returns the best-matching tasks with a `score`. Good for a one-off question; it re-fetches and re-renders every task on every call.
+`search_tasks(projectId, query, typeId?, filter?, includeChanges?, topK?)` is the ad-hoc, no-setup option: it fetches the project's tasks (optionally narrowed with `typeId`/`filter` first), renders each one's subject, type, status, custom fields and (if `includeChanges: true`) change-history text, ranks them against `query` (embeddings if `MISTRAL_API_KEY` is set, BM25 otherwise — see `src/search/rank.ts`), and returns the best-matching tasks with a `score`. Good for a one-off question; it re-fetches and re-renders every task on every call.
 
 For repeated searches over the same project, build an index instead — the task-side counterpart of `build_file_area_index`/`search_file_area`, combining each task with its change history into one searchable document per task:
 
@@ -254,7 +254,7 @@ search_docs(query, topK?, perDocLimit?, pathContains?) -> [{ path, location, tex
 list_docs_indexes()                                     -> { indexes: [{ docCount, chunkCount, updatedAt, mode, ... }] }
 ```
 
-**Building the index is deliberately not a tool call.** Indexing costs an OpenAI embedding call per chunk and can take minutes for a large corpus — both bad things to let a model trigger mid-conversation. Instead it's a server-side step:
+**Building the index is deliberately not a tool call.** Indexing costs an Mistral embedding call per chunk and can take minutes for a large corpus — both bad things to let a model trigger mid-conversation. Instead it's a server-side step:
 
 ```sh
 cd mcp-server
@@ -365,3 +365,11 @@ npm run typecheck --workspace=mcp-server
 npm test --workspace=mcp-server
 npm run build --workspace=mcp-server
 ```
+
+### Mistral embeddings
+
+Set `MISTRAL_API_KEY` to enable semantic ranking using the official
+`@mistralai/mistralai` SDK and `mistral-embed` (1024 dimensions). Without a key,
+search uses BM25. Indexes made with a different embedding model are searched
+lexically until rebuilt; the next build re-embeds their documents. MCP tools
+return cited passages for the calling agent to reason over.

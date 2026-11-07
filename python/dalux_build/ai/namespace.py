@@ -73,11 +73,10 @@ class AIEndpointProxy(AiMixin):
         file_area_id: str | None = None,
         project_id: str | None = None,
         skill: str | None = None,
-        provider: str = "openrouter",
+        provider: str = "mistral",
         model: str | None = None,
         pick_model: bool = False,
-        free_only: bool = False,
-        embeddings_provider: str = "local",
+        embeddings_provider: str = "mistral",
         recursive: bool = True,
         file_type: str | None = "document",
         open_browser: bool = True,
@@ -92,20 +91,14 @@ class AIEndpointProxy(AiMixin):
             dalux.ai.file_areas.agent(file_area_id="FA123", skill="legal-contract-review")
             dalux.ai.files.agent(folder_id="F456", skill="legal-contract-review")
             dalux.ai.files.agent(path="Files/4_Design/Contracts")
-            dalux.ai.files.agent(path="Files/4_Design/Contracts", pick_model=True, free_only=True)
+            dalux.ai.files.agent(path="Files/4_Design/Contracts", pick_model=True)
             dalux.ai.files.agent(path="Files/4_Design/Contracts", provider="mistral")
 
         Args:
-            provider: Which chat-model provider to use: "openrouter" (default,
-                reads OPENROUTER_API_KEY) or "mistral" (reads MISTRAL_API_KEY).
-            model: An explicit model id for the chosen provider (e.g.
-                "z-ai/glm-5.2:free" for openrouter, "mistral-large-latest" for
-                mistral). Defaults to that provider's default model when omitted.
-            pick_model: If True (and *model* is not given), prints an
-                interactive numbered menu of OpenRouter models — see
-                `dalux_build.ai.agent.pick_openrouter_model` — and uses the
-                chosen model. Only valid with provider="openrouter".
-            free_only: When picking interactively, only list free-tier models.
+            provider: "mistral" (reads MISTRAL_API_KEY).
+            model: Mistral model ID, default "mistral-large-latest".
+            pick_model: Show an interactive menu of Mistral chat models.
+            embeddings_provider: "mistral", using mistral-embed.
             file_type: Restricts indexed PDFs to this ``File.file_type``
                 (default ``"document"``). Drawings (``file_type == "drawing"``)
                 are always excluded regardless of this value. Pass ``None`` to
@@ -120,13 +113,13 @@ class AIEndpointProxy(AiMixin):
             raise RuntimeError("AIEndpointProxy.agent() requires a client reference.")
 
         from .agent.engine import launch_agent
-        from .agent.models import pick_openrouter_model
+        from .agent.models import pick_mistral_model
         from .agent.scope import resolve_scope
 
-        if pick_model and provider != "openrouter":
-            raise ValueError("pick_model=True is only supported with provider='openrouter'.")
+        if pick_model and provider != "mistral":
+            raise ValueError("pick_model=True is only supported with provider='mistral'.")
         if model is None and pick_model:
-            model = pick_openrouter_model(free_only=free_only)
+            model = pick_mistral_model()
 
         scope = resolve_scope(
             self._client,
@@ -234,7 +227,7 @@ class AINamespace:
         """Set the AI provider for all endpoints.
 
         Args:
-            provider: Provider name (anthropic, mistral, openai, openrouter).
+            provider: Provider name (mistral).
             model: Optional model override.
             api_key: Optional API key.
         """

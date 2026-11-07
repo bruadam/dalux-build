@@ -7,7 +7,7 @@
  * of chunks) a linear scan costs a few milliseconds.
  */
 
-import { bm25Scores, cosineSimilarity, embedTexts, embeddingsAvailable, type RankMode } from '../search/rank';
+import { EMBEDDING_MODEL, bm25Scores, cosineSimilarity, embedTexts, embeddingsAvailable, type RankMode } from '../search/rank';
 import { readDocument, readManifest, readVectors, type TaskIndexManifest, type TaskManifestEntry } from './taskStore';
 
 export interface TaskSearchMatch {
@@ -101,9 +101,12 @@ export async function searchTaskIndex(
     return { indexId, mode: 'lexical', query, tasksSearched, chunksSearched: 0, matches: [], warnings };
   }
 
-  const semantic = Boolean(manifest.embedding) && embeddingsAvailable() && !missingVectors;
+  const semantic = manifest.embedding?.model === EMBEDDING_MODEL && embeddingsAvailable() && !missingVectors;
+  if (manifest.embedding && manifest.embedding.model !== EMBEDDING_MODEL) {
+    warnings.push('Embedding model changed — ranking lexically until the index is rebuilt.');
+  }
   if (manifest.embedding && !embeddingsAvailable()) {
-    warnings.push('OPENAI_API_KEY is not set — ranking lexically (BM25) instead of semantically.');
+    warnings.push('MISTRAL_API_KEY is not set — ranking lexically (BM25) instead of semantically.');
   }
   if (missingVectors) {
     warnings.push(

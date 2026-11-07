@@ -10,18 +10,12 @@ class ProviderConfig:
 
     # Map of provider to environment variable names for API keys
     PROVIDER_ENV_KEYS = {
-        ProviderType.ANTHROPIC: "ANTHROPIC_API_KEY",
         ProviderType.MISTRAL: "MISTRAL_API_KEY",
-        ProviderType.OPENAI: "OPENAI_API_KEY",
-        ProviderType.OPENROUTER: "OPENROUTER_API_KEY",
     }
 
     # Default models for each provider
     DEFAULT_MODELS = {
-        ProviderType.ANTHROPIC: "claude-3-5-sonnet-20241022",
         ProviderType.MISTRAL: "mistral-large-latest",
-        ProviderType.OPENAI: "gpt-4-turbo",
-        ProviderType.OPENROUTER: "anthropic/claude-3.5-sonnet",
     }
 
     @classmethod

@@ -52,7 +52,7 @@ guidance without an extra tool round-trip.
 
 `list_project_tasks(projectId, typeId?, filter?, select?, orderby?)` wraps `GET
 /5.2/projects/{projectId}/tasks`, which speaks OData. The tool's parameters are named `filter`/`select`/`orderby`
-**without** the `$` — a literal `$filter` property name fails Anthropic's tool-schema validation and silently
+**without** the `$` — a literal `$filter` property name fails some clients' tool-schema validation and silently
 drops the whole tool — and are translated back to `$filter`/`$select`/`$orderby` before the HTTP call
 (`mcp-server/src/tools/tasks.ts`).
 

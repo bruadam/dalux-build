@@ -1,47 +1,78 @@
 /**
  * Ranking for document search.
  *
- * With `OPENAI_API_KEY` set, chunks are ranked by cosine similarity of
+ * With `MISTRAL_API_KEY` set, chunks are ranked by cosine similarity of
  * embeddings (real semantic search). Without it, ranking falls back to BM25 —
  * still useful for the code-like identifiers that dominate construction
  * documents (drawing numbers, "C30/37", "EN 1992-1-1"), where lexical matching
  * often beats embeddings anyway, and it needs no API key at all.
  */
 
-export const EMBEDDING_MODEL = 'text-embedding-3-small';
-export const EMBEDDING_DIMENSIONS = 1536;
+export const EMBEDDING_MODEL = 'mistral-embed';
+export const EMBEDDING_DIMENSIONS = 1024;
 
-/** Batch size and per-input truncation keeping requests inside the model's limits. */
+/**
+ * Request sizing for mistral-embed (8k-token context per input). Batches are
+ * capped by total characters as well as by count: Mistral rejects a request
+ * whose inputs add up to too many tokens, and 96 full-size chunks would.
+ * Budgets assume ~3 characters per token, a safe figure for the Danish,
+ * Norwegian and German text common in Dalux projects.
+ */
 const EMBED_BATCH = 96;
+const EMBED_BATCH_CHARS = 32_000;
 const MAX_EMBED_CHARS = 8000;
+
+/** The SDK does not retry by default; one rate-limit response would otherwise abort a whole index build. */
+const EMBED_RETRY = {
+  strategy: 'backoff',
+  backoff: { initialInterval: 1000, maxInterval: 30_000, exponent: 2, maxElapsedTime: 120_000 },
+  retryConnectionErrors: true,
+} as const;
 
 export type RankMode = 'embeddings' | 'lexical';
 
 export function embeddingsAvailable(): boolean {
-  return Boolean(process.env.OPENAI_API_KEY);
+  return Boolean(process.env.MISTRAL_API_KEY);
 }
 
 export async function embedTexts(texts: readonly string[]): Promise<number[][]> {
-  const apiKey = process.env.OPENAI_API_KEY;
-  if (!apiKey) throw new Error('OPENAI_API_KEY is not set.');
+  const apiKey = process.env.MISTRAL_API_KEY;
+  if (!apiKey) throw new Error('MISTRAL_API_KEY is not set.');
   if (!texts.length) return [];
 
+  const { Mistral } = await import('@mistralai/mistralai');
+  const client = new Mistral({ apiKey, retryConfig: EMBED_RETRY });
   const vectors: number[][] = [];
-  for (let start = 0; start < texts.length; start += EMBED_BATCH) {
-    const batch = texts.slice(start, start + EMBED_BATCH).map((text) => text.slice(0, MAX_EMBED_CHARS));
-    const response = await fetch('https://api.openai.com/v1/embeddings', {
-      method: 'POST',
-      headers: { Authorization: `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
-      body: JSON.stringify({ model: EMBEDDING_MODEL, input: batch }),
+  for (const batch of embeddingBatches(texts)) {
+    const response = await client.embeddings.create({
+      model: EMBEDDING_MODEL,
+      inputs: batch,
     });
-    if (!response.ok) {
-      const detail = await response.text().catch(() => '');
-      throw new Error(`OpenAI embeddings request failed: HTTP ${response.status} ${detail.slice(0, 200)}`);
+    const items = [...response.data].sort((a, b) => (a.index ?? -1) - (b.index ?? -1));
+    if (items.length !== batch.length || items.some((item, index) =>
+      item.index !== index || !item.embedding?.length || item.embedding.some((value) => !Number.isFinite(value))
+    )) {
+      throw new Error('Mistral returned incomplete or invalid embeddings.');
     }
-    const body = (await response.json()) as { data: { embedding: number[]; index: number }[] };
-    vectors.push(...body.data.sort((a, b) => a.index - b.index).map((item) => item.embedding));
+    vectors.push(...items.map((item) => item.embedding!));
   }
   return vectors;
+}
+
+function* embeddingBatches(texts: readonly string[]): Generator<string[]> {
+  let batch: string[] = [];
+  let chars = 0;
+  for (const text of texts) {
+    const input = text.slice(0, MAX_EMBED_CHARS);
+    if (batch.length && (batch.length === EMBED_BATCH || chars + input.length > EMBED_BATCH_CHARS)) {
+      yield batch;
+      batch = [];
+      chars = 0;
+    }
+    batch.push(input);
+    chars += input.length;
+  }
+  if (batch.length) yield batch;
 }
 
 export function cosineSimilarity(a: readonly number[], b: readonly number[]): number {

@@ -136,12 +136,20 @@ export async function buildIndex(
   // An index built without a key holds no vectors; once a key appears, the
   // documents have to be re-embedded before semantic search can use them.
   let refresh = options.refresh ?? false;
+  if (existing?.embedding && useEmbeddings && existing.embedding.model !== EMBEDDING_MODEL) {
+    for (const id of Object.keys(manifest.files)) {
+      deleteDocument(indexId, id);
+    }
+    manifest.files = {};
+    refresh = true;
+    warnings.push('Embedding model changed — re-embedding the index with Mistral.');
+  }
   if (existing && useEmbeddings && !existing.embedding) {
     refresh = true;
-    warnings.push('OPENAI_API_KEY is now set — re-embedding the index so semantic search can use it.');
+    warnings.push('MISTRAL_API_KEY is now set — re-embedding the index so semantic search can use it.');
   }
   if (existing && !useEmbeddings && existing.embedding) {
-    warnings.push('OPENAI_API_KEY is not set — searches will fall back to BM25 despite the stored embeddings.');
+    warnings.push('MISTRAL_API_KEY is not set — searches will fall back to BM25 despite the stored embeddings.');
   }
   if (useEmbeddings) {
     manifest.embedding = { model: EMBEDDING_MODEL, dimensions: EMBEDDING_DIMENSIONS };
@@ -179,7 +187,7 @@ export async function buildIndex(
   const writtenThisPass = new Set<string>();
   // The vector files are a flat array of floats, so reading them back depends on
   // knowing the width. It is recorded from what the API actually returned rather
-  // than assumed, so pointing OPENAI_BASE_URL at another model cannot silently
+  // than assumed, so pointing the embedding configuration at another model cannot silently
   // produce vectors that are re-read at the wrong stride.
   let observedDimensions: number | null = null;
   let indexedThisPass = 0;

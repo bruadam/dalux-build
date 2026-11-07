@@ -123,12 +123,20 @@ export async function buildDocsIndex(
   };
 
   let refresh = options.refresh ?? false;
+  if (existing?.embedding && useEmbeddings && existing.embedding.model !== EMBEDDING_MODEL) {
+    for (const id of Object.keys(manifest.docs)) {
+      deleteDocument(indexId, id);
+    }
+    manifest.docs = {};
+    refresh = true;
+    warnings.push('Embedding model changed — re-embedding the index with Mistral.');
+  }
   if (existing && useEmbeddings && !existing.embedding) {
     refresh = true;
-    warnings.push('OPENAI_API_KEY is now set — re-embedding the index so semantic search can use it.');
+    warnings.push('MISTRAL_API_KEY is now set — re-embedding the index so semantic search can use it.');
   }
   if (existing && !useEmbeddings && existing.embedding) {
-    warnings.push('OPENAI_API_KEY is not set — searches will fall back to BM25 despite the stored embeddings.');
+    warnings.push('MISTRAL_API_KEY is not set — searches will fall back to BM25 despite the stored embeddings.');
   }
   if (useEmbeddings) manifest.embedding = { model: EMBEDDING_MODEL, dimensions: EMBEDDING_DIMENSIONS };
 

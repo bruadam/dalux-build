@@ -240,7 +240,8 @@ This is the TypeScript counterpart of the corpus-wide RAG agent in the Python pa
 check_document_consistency(projectId, fileAreaId, folderPath?, fileIds?, extensions?, focus?, maxFiles?, timeBudgetSeconds?, useModel?)
     ->  { reportId, complete, filesInScope, filesAnalyzed, skipped, findingsCount, bySeverity, topFindings, warnings }
 list_inconsistencies(reportId, severity?, type?, fileId?, offset?, limit?)  ->  { total, findings }
-export_inconsistency_report(reportId, format: 'xlsx' | 'docx' | 'md')      ->  { reportId, format, fileName, filePath, downloadUrl, findingsCount }
+export_inconsistency_report(reportId, format: 'xlsx' | 'docx' | 'md' | 'annotated-pdf')
+    ->  { reportId, format, fileName, filePath, downloadUrl, findingsCount, annotatedFiles?, unmatchedQuotes? }
 list_consistency_reports() / drop_consistency_report(reportId)
 ```
 
@@ -248,6 +249,7 @@ list_consistency_reports() / drop_consistency_report(reportId)
 - **With `MISTRAL_API_KEY` and `DALUX_MCP_ALLOW_EXTERNAL_MODEL_IO=true`** (and `useModel` not false), Mistral (`DALUX_MCP_ANALYSIS_MODEL`) also extracts facts the patterns miss, then judges every finding: false alarms are dropped, the rest become `verdict: "confirmed"` with an explanation and a precedence note based on the `danish-construction-contracts` skill. The opt-in variable is required because document text leaves the server; if it is missing, the check runs the patterns only and a warning names the variable. Model extraction respects `timeBudgetSeconds` inside a file too: a large file (e.g. a long bill of quantities) is read in batches, the progress is saved, and the next call continues it. Without the model, findings stay `verdict: "candidate"` for the calling agent to review with the `document-consistency-review` skill.
 - **Resumable and incremental**: same arguments give the same `reportId`; while `complete` is false, call again. Facts are cached per file revision, so later calls only re-read changed files. Reports untouched for a week are deleted.
 - **Export**: xlsx (one row per statement, grouped by finding), docx (summary and table) or md, written locally and returned as a download link — never uploaded to Dalux.
+- **Annotated PDFs**: `annotated-pdf` returns a zip with an annotated copy of every PDF that has findings (`<name>.annotated.pdf`) plus the xlsx register. Each quote gets a highlight annotation (red/orange/yellow for high/medium/low) with a comment and popup in the document's language (Danish or English), naming the conflicting value and its location in the other document; `/NM` is the finding id. The PDFs are downloaded again from Dalux and annotated as an incremental update ([`@cantoo/pdf-lib`](https://github.com/cantoo-scribe/pdf-lib), MIT), so the original bytes are kept. Quotes that cannot be found on their page or its neighbours get a note at the top of the page and are counted in `unmatchedQuotes`; encrypted PDFs are skipped. Both are listed on the register's Annotations sheet.
 
 ### Task search
 

@@ -1,5 +1,6 @@
 /**
- * Report export as .xlsx, .docx or .md — written locally with the same
+ * Report export as .xlsx, .docx or .md (the annotated-PDF zip is in
+ * ./annotate.ts) — written locally with the same
  * hand-built OOXML approach the extract tests use (fflate zip, no Office
  * library), and never uploaded to Dalux.
  */
@@ -57,8 +58,7 @@ function zip(files: Record<string, string>): Uint8Array {
 
 const XML_HEAD = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>';
 
-export function toXlsx(findings: readonly Finding[]): Uint8Array {
-  const rows = [COLUMNS, ...statementRows(findings)];
+function sheetXml(rows: string[][], widths: number[]): string {
   const sheetRows = rows
     .map((cells, r) => {
       const rendered = cells
@@ -67,10 +67,27 @@ export function toXlsx(findings: readonly Finding[]): Uint8Array {
       return `<row r="${r + 1}">${rendered}</row>`;
     })
     .join('');
-  const lastCell = `${columnName(COLUMNS.length - 1)}${rows.length}`;
-  const widths = [14, 9, 18, 28, 18, 30, 22, 60, 14, 11, 50, 40]
-    .map((width, i) => `<col min="${i + 1}" max="${i + 1}" width="${width}" customWidth="1"/>`)
-    .join('');
+  const lastCell = `${columnName(rows[0].length - 1)}${rows.length}`;
+  const cols = widths.map((width, i) => `<col min="${i + 1}" max="${i + 1}" width="${width}" customWidth="1"/>`).join('');
+  return (
+    `${XML_HEAD}<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">` +
+    '<sheetViews><sheetView workbookViewId="0"><pane ySplit="1" topLeftCell="A2" activePane="bottomLeft" state="frozen"/></sheetView></sheetViews>' +
+    `<cols>${cols}</cols><sheetData>${sheetRows}</sheetData><autoFilter ref="A1:${lastCell}"/></worksheet>`
+  );
+}
+
+/**
+ * One row per statement; `annotations` (rows of finding id, file, page,
+ * result) adds an "Annotations" sheet for the annotated-PDF export.
+ */
+export function toXlsx(findings: readonly Finding[], annotations?: string[][]): Uint8Array {
+  const sheets = [
+    { name: 'Inconsistencies', xml: sheetXml([COLUMNS, ...statementRows(findings)], [14, 9, 18, 28, 18, 30, 22, 60, 14, 11, 50, 40]) },
+    ...(annotations
+      ? [{ name: 'Annotations', xml: sheetXml([['Finding ID', 'File', 'Page', 'Result'], ...annotations], [14, 40, 8, 60]) }]
+      : []),
+  ];
+  const n = (i: number) => i + 1;
 
   return zip({
     '[Content_Types].xml':
@@ -78,7 +95,7 @@ export function toXlsx(findings: readonly Finding[]): Uint8Array {
       '<Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>' +
       '<Default Extension="xml" ContentType="application/xml"/>' +
       '<Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/>' +
-      '<Override PartName="/xl/worksheets/sheet1.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>' +
+      sheets.map((_, i) => `<Override PartName="/xl/worksheets/sheet${n(i)}.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>`).join('') +
       '<Override PartName="/xl/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.styles+xml"/>' +
       '</Types>',
     '_rels/.rels':
@@ -87,11 +104,11 @@ export function toXlsx(findings: readonly Finding[]): Uint8Array {
       '</Relationships>',
     'xl/workbook.xml':
       `${XML_HEAD}<workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">` +
-      '<sheets><sheet name="Inconsistencies" sheetId="1" r:id="rId1"/></sheets></workbook>',
+      `<sheets>${sheets.map((sheet, i) => `<sheet name="${sheet.name}" sheetId="${n(i)}" r:id="rId${n(i)}"/>`).join('')}</sheets></workbook>`,
     'xl/_rels/workbook.xml.rels':
       `${XML_HEAD}<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">` +
-      '<Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet1.xml"/>' +
-      '<Relationship Id="rId2" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml"/>' +
+      sheets.map((_, i) => `<Relationship Id="rId${n(i)}" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet${n(i)}.xml"/>`).join('') +
+      '<Relationship Id="rIdStyles" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml"/>' +
       '</Relationships>',
     'xl/styles.xml':
       `${XML_HEAD}<styleSheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">` +
@@ -101,10 +118,7 @@ export function toXlsx(findings: readonly Finding[]): Uint8Array {
       '<cellStyleXfs count="1"><xf numFmtId="0" fontId="0" fillId="0" borderId="0"/></cellStyleXfs>' +
       '<cellXfs count="2"><xf numFmtId="0" fontId="0" fillId="0" borderId="0" xfId="0"/><xf numFmtId="0" fontId="1" fillId="0" borderId="0" xfId="0" applyFont="1"/></cellXfs>' +
       '</styleSheet>',
-    'xl/worksheets/sheet1.xml':
-      `${XML_HEAD}<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">` +
-      '<sheetViews><sheetView workbookViewId="0"><pane ySplit="1" topLeftCell="A2" activePane="bottomLeft" state="frozen"/></sheetView></sheetViews>' +
-      `<cols>${widths}</cols><sheetData>${sheetRows}</sheetData><autoFilter ref="A1:${lastCell}"/></worksheet>`,
+    ...Object.fromEntries(sheets.map((sheet, i) => [`xl/worksheets/sheet${n(i)}.xml`, sheet.xml])),
   });
 }
 

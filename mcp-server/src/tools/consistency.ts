@@ -8,6 +8,7 @@
 import { z } from 'zod';
 import type { DaluxClient } from 'dalux-build-api';
 import { FOCUS_AREAS } from '../consistency/compare';
+import { writeAnnotatedExport } from '../consistency/annotate';
 import { writeExport } from '../consistency/export';
 import {
   DEFAULT_CONSISTENCY_EXTENSIONS,
@@ -107,14 +108,32 @@ export async function listInconsistencies(_client: DaluxClient, args: ListIncons
 
 export const exportInconsistencyReportInput = z.object({
   reportId: z.string().describe('As returned by check_document_consistency.'),
-  format: z.enum(['xlsx', 'docx', 'md']).describe('xlsx: one row per statement; docx: summary and table; md: markdown.'),
+  format: z
+    .enum(['xlsx', 'docx', 'md', 'annotated-pdf'])
+    .describe(
+      'xlsx: one row per statement; docx: summary and table; md: markdown; annotated-pdf: zip with a copy of each affected PDF ' +
+        '(quotes highlighted, comment naming the conflicting value) plus the xlsx register.',
+    ),
 });
 export type ExportInconsistencyReportInput = z.infer<typeof exportInconsistencyReportInput>;
 
-export async function exportInconsistencyReport(_client: DaluxClient, args: ExportInconsistencyReportInput) {
+export async function exportInconsistencyReport(client: DaluxClient, args: ExportInconsistencyReportInput) {
   const findings = readFindings(args.reportId);
   const manifest = readReportManifest(args.reportId);
   if (!manifest) throw new Error(`No consistency report "${args.reportId}" on this server.`);
+  if (args.format === 'annotated-pdf') {
+    const { fileName, filePath, annotatedFiles, unmatchedQuotes } = await writeAnnotatedExport(client, manifest, findings);
+    return {
+      reportId: args.reportId,
+      format: args.format,
+      fileName,
+      filePath,
+      downloadUrl: await createDownloadLink(filePath, fileName),
+      findingsCount: findings.length,
+      annotatedFiles,
+      unmatchedQuotes,
+    };
+  }
   const { fileName, filePath } = writeExport(manifest, findings, args.format);
   return {
     reportId: args.reportId,

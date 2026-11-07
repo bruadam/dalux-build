@@ -19,12 +19,15 @@ import type { LoadedModel } from '@ifc-lite/mcp';
 import type { ClashRule } from '@ifc-lite/clash';
 
 import { derivedDirFor } from '../cachePaths';
+import { currentCaller } from '../access/requestScope';
 import { runCrossModelClash } from './clashEngine';
 
 export type ClashStatus = 'running' | 'done' | 'error';
 
 export interface ClashJob {
   id: string;
+  /** Only this caller can see the job (see currentCaller). */
+  owner?: string;
   fileIds: string[];
   ruleNames: string[];
   status: ClashStatus;
@@ -73,6 +76,7 @@ export interface StartClashOptions {
 export function startClashJob(opts: StartClashOptions): ClashJob {
   const job: ClashJob = {
     id: randomUUID(),
+    owner: currentCaller(),
     fileIds: opts.fileIds,
     ruleNames: opts.rules.map((r) => r.name),
     status: 'running',
@@ -125,11 +129,13 @@ export function startClashJob(opts: StartClashOptions): ClashJob {
 }
 
 export function getClashJob(id: string): ClashJob | undefined {
-  return jobs.get(id);
+  const job = jobs.get(id);
+  return job?.owner === currentCaller() ? job : undefined;
 }
 
 export function listClashJobs(): ClashJob[] {
-  return [...jobs.values()].sort((a, z) => z.startedAt - a.startedAt);
+  const caller = currentCaller();
+  return [...jobs.values()].filter((job) => job.owner === caller).sort((a, z) => z.startedAt - a.startedAt);
 }
 
 export function describeJob(job: ClashJob) {

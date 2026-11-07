@@ -7,12 +7,15 @@ FROM node:22-slim AS builder
 WORKDIR /build
 COPY package.json package-lock.json ./
 COPY javascript/package.json javascript/package.json
+COPY platform/db/package.json platform/db/package.json
 COPY mcp-server/package.json mcp-server/package.json
 RUN npm ci
 
 COPY javascript ./javascript
+COPY platform/db ./platform/db
 COPY mcp-server ./mcp-server
 RUN npm run build --workspace=javascript \
+    && npm run build --workspace=@dalux-platform/db \
     && npm run build --workspace=mcp-server
 
 FROM node:22-slim AS runtime
@@ -22,6 +25,7 @@ FROM node:22-slim AS runtime
 WORKDIR /app
 COPY --from=builder /build/node_modules ./node_modules
 COPY --from=builder /build/javascript ./javascript
+COPY --from=builder /build/platform/db ./platform/db
 COPY --from=builder /build/mcp-server ./mcp-server
 RUN chown -R node:node /app
 USER node

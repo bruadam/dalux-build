@@ -19,8 +19,10 @@ import * as ifc from './tools/ifc';
 import { registerIfcViewer, type IfcHostingOptions } from './ui/ifcViewer';
 import { registerTaskTimeline } from './ui/taskTimeline';
 import { registerSkills } from './tools/skills';
-import { checkAccess } from './access/checkAccess';
 import { UNRESTRICTED_CONTEXT, type RequestContext } from './access/context';
+import type { FolderLookup } from './access/folders';
+import { createToolGuard, type ToolCallRecord } from './access/guard';
+import { TOOL_ACCESS } from './access/registry';
 
 interface ToolSpec<Schema extends z.ZodTypeAny> {
   name: string;
@@ -561,6 +563,10 @@ export interface BuildServerOptions {
   hosting?: IfcHostingOptions;
   /** Who is calling and what they may access. Unrestricted in stdio and Dalux-header mode. */
   context?: RequestContext;
+  /** Places files and folders in the folder tree, so folder grants can be checked (platform mode). */
+  folders?: FolderLookup;
+  /** Called once per tool call (platform mode). */
+  audit?: (record: ToolCallRecord) => void;
 }
 
 /**
@@ -584,28 +590,33 @@ export function buildServer(client: DaluxClient, options: BuildServerOptions = {
     },
   );
 
+  const guard = createToolGuard(context, { folders: options.folders, audit: options.audit });
+  const errorResult = (message: string) => ({
+    content: [{ type: 'text' as const, text: `Error: ${message}` }] as ReturnType<typeof toolResultContent>,
+    isError: true,
+  });
+  const hidden = (name: string) =>
+    context.access !== 'unrestricted' && TOOL_ACCESS[name]?.adminOnly && context.account?.role !== 'admin';
+
   for (const spec of TOOLS) {
+    if (hidden(spec.name)) continue;
     server.registerTool(
       spec.name,
       { description: spec.description, inputSchema: spec.inputSchema },
-      async (args: unknown) => {
-        const decision = checkAccess(context, spec.name, args as Record<string, unknown>);
-        if (!decision.allowed) {
-          return { content: [{ type: 'text' as const, text: `Error: ${decision.reason}` }], isError: true };
-        }
-        try {
-          const result = await spec.handler(client, args as never);
-          return { content: [...toolResultContent(result)] };
-        } catch (err) {
-          const message = err instanceof Error ? err.message : String(err);
-          return { content: [{ type: 'text' as const, text: `Error: ${message}` }], isError: true };
-        }
-      },
+      (args: unknown) =>
+        guard(spec.name, args as Record<string, unknown>, errorResult, async () => {
+          try {
+            const result = await spec.handler(client, args as never);
+            return { content: toolResultContent(result), isError: false };
+          } catch (err) {
+            return errorResult(err instanceof Error ? err.message : String(err));
+          }
+        }),
     );
   }
 
-  registerIfcViewer(server, client, options.hosting, context);
-  registerTaskTimeline(server, client, context);
+  registerIfcViewer(server, client, options.hosting, guard);
+  registerTaskTimeline(server, client, guard);
   registerSkills(server);
 
   return server;

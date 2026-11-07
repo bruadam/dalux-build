@@ -125,6 +125,16 @@ PUBLIC_URL=https://dalux-mcp.example.com node dist/cli.js --transport http --hos
 
 This is fully additive: deployments that never set `PUBLIC_URL` behave exactly as before (static-header-only), and even with it set, clients that still send `X-Dalux-Base-Url`/`X-Dalux-Api-Key` headers directly keep working unchanged. Issued access tokens are opaque, server-side-only (never a JWT encoding the API key), and — like the per-credential client cache above — held in memory only: they don't survive a restart, and there's no revoke endpoint yet, so revoking one today means restarting the server.
 
+### Platform mode (self-hosted platform)
+
+When `DATABASE_URL` is set (connecting as the platform's `mcp` database role, see `platform/`), the HTTP transport runs in platform mode instead:
+
+- Clients send a platform API token: `Authorization: Bearer dxm_...`. Revoked or expired tokens and inactive accounts get 401. A token may be limited to one connection and to a subset of the account's capabilities.
+- `/mcp/c/<connection-slug>` serves one Dalux connection. `/mcp` serves the token's connection, else the account's default connection, else the only connection the account can access; otherwise it answers 400 with the slugs to choose from.
+- The Dalux API key comes from the connection (decrypted with `PLATFORM_ENCRYPTION_KEY`).
+- Every tool call is checked against the account's grants (refreshed at least every 60 seconds), listings only return what the caller can see, index build/drop tools are hidden from non-admins, and each call is written to the audit log (no arguments or results).
+- `X-Dalux-*` header requests on `/mcp` work only when an admin has turned header mode on. OAuth (`PUBLIC_URL`) is off in platform mode for now.
+
 ## Tools
 
 **Usage guide**: `get_skill` — this server's own bundled documentation, callable with no arguments; see below

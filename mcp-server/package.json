@@ -21,7 +21,8 @@
     "typecheck": "tsc --noEmit",
     "dev": "tsx src/cli.ts",
     "docs:build": "tsx scripts/build-docs-index.ts",
-    "test": "node scripts/run-jest.mjs --coverage"
+    "test": "node scripts/run-jest.mjs --coverage",
+    "test:platform": "node scripts/run-jest.mjs --runInBand --testPathIgnorePatterns /node_modules/ --testMatch '**/test/platform/**/*.test.ts'"
   },
   "license": "MIT",
   "dependencies": {
@@ -65,6 +66,10 @@
     ],
     "setupFiles": [
       "<rootDir>/test/setupNapiCanvas.ts"
+    ],
+    "testPathIgnorePatterns": [
+      "/node_modules/",
+      "/test/platform/"
     ]
   }
 }

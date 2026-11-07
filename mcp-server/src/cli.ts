@@ -4,6 +4,7 @@ import { createClient } from 'dalux-build-api';
 import { buildServer } from './server';
 import { buildHttpApp } from './http';
 import { UNRESTRICTED_CONTEXT } from './access/context';
+import { initIndexStores } from './store';
 
 interface CliOptions {
   transport: 'stdio' | 'http';
@@ -43,6 +44,15 @@ function parseArgs(argv: string[]): CliOptions {
   return options;
 }
 
+/** Platform mode: DATABASE_URL connects as the `mcp` database role; PLATFORM_ENCRYPTION_KEY decrypts connection keys. */
+async function createPlatform(databaseUrl: string) {
+  const [{ createDb, loadEncryptionKey }, { Platform }] = await Promise.all([
+    import('@dalux-platform/db'),
+    import('./platform/platform'),
+  ]);
+  return new Platform(createDb(databaseUrl), loadEncryptionKey());
+}
+
 async function main(): Promise<void> {
   const options = parseArgs(process.argv.slice(2));
 
@@ -58,7 +68,9 @@ async function main(): Promise<void> {
   // not from server-side env vars — see http.ts.
   const token = options.token ?? process.env.DALUX_MCP_TOKEN;
   const localhostOnly = LOOPBACK_HOSTS.has(options.host);
-  const { start } = buildHttpApp({ token, localhostOnly, publicUrl: options.publicUrl });
+  initIndexStores();
+  const platform = process.env.DATABASE_URL ? await createPlatform(process.env.DATABASE_URL) : undefined;
+  const { start } = buildHttpApp({ token, localhostOnly, publicUrl: options.publicUrl, platform });
   await start(options.port, options.host);
   console.error(`dalux-mcp running on http://${options.host}:${options.port}`);
 }

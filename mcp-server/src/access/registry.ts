@@ -40,6 +40,8 @@ export interface ToolAccess {
    * caller with access to only part of the scope may still call it.
    */
   filtersOutput?: boolean;
+  /** The scopes name files (IFC models live in folders), so files:read is also required on each of them. */
+  readsFiles?: boolean;
   /**
    * Every resource the call touches. An empty list means the arguments name no
    * Dalux resource (e.g. polling a job by id): holding the capability anywhere
@@ -84,6 +86,7 @@ const read = (capability: Capability, extra: Partial<ToolAccess> = {}): ToolAcce
 });
 const listing = (capability: Capability): ToolAccess => read(capability, { filtersOutput: true });
 const none: ToolAccess = { capability: 'none', scopes: noResource };
+const ifcRead = read('models:read', { readsFiles: true });
 
 export const TOOL_ACCESS: Record<string, ToolAccess> = {
   // Files & folders
@@ -155,30 +158,32 @@ export const TOOL_ACCESS: Record<string, ToolAccess> = {
   list_version_sets: read('scheduling:read'),
 
   // IFC models
-  ifc_model_info: read('models:read'),
-  ifc_discover_properties: read('models:read'),
-  ifc_property_values: read('models:read'),
-  ifc_query_elements: read('models:read'),
-  ifc_schedule: read('models:read'),
+  ifc_model_info: ifcRead,
+  ifc_discover_properties: ifcRead,
+  ifc_property_values: ifcRead,
+  ifc_query_elements: ifcRead,
+  ifc_schedule: ifcRead,
   ifc_clash_rules_list: { capability: 'models:read', scopes: noResource },
   ifc_clash_rules_save: { capability: 'models:read', scopes: noResource },
   ifc_clash_rules_delete: { capability: 'models:read', scopes: noResource },
   ifc_clash_start: {
     capability: 'models:read',
+    readsFiles: true,
     scopes: (args) => ifcFiles(args, (args.models as FileRef[] | undefined) ?? []),
   },
   ifc_clash_result: { capability: 'models:read', scopes: noResource },
-  ifc_volumes_start: read('models:read'),
+  ifc_volumes_start: ifcRead,
   ifc_volumes_result: { capability: 'models:read', scopes: noResource },
   ifc_diff: {
     capability: 'models:read',
+    readsFiles: true,
     scopes: (args) => ifcFiles(args, [args.base as FileRef | undefined, args.head as FileRef | undefined]),
   },
-  ifc_edit_start: read('models:read'),
+  ifc_edit_start: ifcRead,
   ifc_edit_apply: { capability: 'models:read', scopes: noResource },
   ifc_edit_review: { capability: 'models:read', scopes: noResource },
   ifc_edit_save: { capability: 'models:read', scopes: noResource },
-  view_model_3d: read('models:read'),
+  view_model_3d: ifcRead,
 
   // Server itself
   get_skill: none,

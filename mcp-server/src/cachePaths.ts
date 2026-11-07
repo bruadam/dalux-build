@@ -1,6 +1,7 @@
 import { mkdirSync, readdirSync, rmSync, statSync } from 'node:fs';
 import { homedir, tmpdir } from 'node:os';
 import path from 'node:path';
+import { currentContext } from './access/requestScope';
 
 /**
  * Root of everything this server writes to disk — all of it disposable.
@@ -36,9 +37,15 @@ export function derivedDirFor(fileId: string): string {
   return dir;
 }
 
+/** Where the current caller's temporary indexes live: separate per file namespace (see RequestContext). */
+function indexBase(): string {
+  const namespace = currentContext().fileNamespace;
+  return namespace ? path.join(mcpCacheRoot(), 'callers', namespace) : mcpCacheRoot();
+}
+
 /** Root under which every temporary file-area index lives (one sub-directory per index). */
 export function ragRoot(): string {
-  const dir = path.join(mcpCacheRoot(), 'rag');
+  const dir = path.join(indexBase(), 'rag');
   mkdirSync(dir, { recursive: true });
   return dir;
 }
@@ -52,7 +59,7 @@ export function ragIndexDir(indexId: string): string {
 
 /** Root under which every temporary task index lives (see store/file/taskStore.ts). */
 export function taskIndexRoot(): string {
-  const dir = path.join(mcpCacheRoot(), 'task-index');
+  const dir = path.join(indexBase(), 'task-index');
   mkdirSync(dir, { recursive: true });
   return dir;
 }
@@ -107,11 +114,11 @@ export function docsIndexDir(indexId: string): string {
  * and projects rather than be re-entered every restart. `DALUX_MCP_CACHE_DIR`
  * is honoured so tests can redirect it alongside the rest of the cache.
  */
-export function clashRulesPath(): string {
+export function clashRulesPath(connectionId?: string): string {
   const configured = process.env.DALUX_MCP_CACHE_DIR;
   const base = configured ? path.resolve(configured) : path.join(homedir(), '.dalux-mcp');
   mkdirSync(base, { recursive: true });
-  return path.join(base, 'clash-rules.json');
+  return path.join(base, connectionId ? `clash-rules.${connectionId}.json` : 'clash-rules.json');
 }
 
 /**

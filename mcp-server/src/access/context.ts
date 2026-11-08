@@ -27,6 +27,8 @@ export interface RequestContext {
   fileNamespace?: string;
   /** The token or OAuth client the call came in on; names the writer of memory entries. */
   client?: string;
+  /** Overrides `agent:<client>` as the writer of memory entries; hosted agents set `hosted_agent:<id>`. */
+  memorySource?: string;
 }
 
 export const UNRESTRICTED_CONTEXT: RequestContext = { access: 'unrestricted' };

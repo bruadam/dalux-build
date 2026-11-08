@@ -23,6 +23,7 @@ const ADMIN_LINKS = [
   { href: '/admin/indexes', label: 'Indexes' },
   { href: '/admin/agents', label: 'Agents' },
   { href: '/admin/dalux-users', label: 'Dalux users' },
+  { href: '/admin/audit', label: 'Audit log' },
   { href: '/admin/settings', label: 'Settings' },
 ];
 

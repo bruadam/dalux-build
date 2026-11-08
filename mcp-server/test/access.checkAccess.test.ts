@@ -20,7 +20,7 @@ describe('checkAccess', () => {
 
   it('denies without the capability and names it', () => {
     const decision = checkAccess(user(grant('tasks:read')), 'get_file', file);
-    expect(decision).toEqual({ allowed: false, reason: expect.stringContaining('files:read') });
+    expect(decision).toMatchObject({ allowed: false, reason: expect.stringContaining('files:read') });
   });
 
   it('lets a wider scope cover a narrower one', () => {

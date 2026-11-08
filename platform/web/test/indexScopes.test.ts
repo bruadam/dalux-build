@@ -1,6 +1,6 @@
 import { randomBytes } from 'node:crypto';
 import { eq, sql } from 'drizzle-orm';
-import { accounts, auditLog, connections, daluxUserLinks, indexScopes, type Db } from '@dalux-platform/db';
+import { accounts, auditLog, connections, daluxUserLinks, indexScopes, withAccount, type Db } from '@dalux-platform/db';
 import { createTestDatabase, type TestDatabase } from '../../db/test/testDatabase';
 import type { Actor } from '../lib/server/actor';
 import { daluxUserLinksFor, linkDaluxUser, requestDaluxUserMatch, unlinkDaluxUser } from '../lib/server/daluxUsers';
@@ -68,7 +68,7 @@ describe('index scopes', () => {
 
     await deleteIndexScope(db, admin, id);
     expect(await listIndexScopes(db)).toEqual([]);
-    const actions = (await db.select({ action: auditLog.action }).from(auditLog).where(eq(auditLog.targetId, id))).map((row) => row.action);
+    const actions = (await withAccount(db, admin.accountId, (tx) => tx.select({ action: auditLog.action }).from(auditLog).where(eq(auditLog.targetId, id)))).map((row) => row.action);
     expect(actions).toEqual(['index_scope.create', 'index_scope.update', 'index_scope.refresh', 'index_scope.delete']);
   });
 });

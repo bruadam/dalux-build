@@ -18,10 +18,11 @@ import { mistralChat } from '../agents/chat';
 import { failInterruptedAgentRuns, type AgentDeps } from '../agents/run';
 import { AGENT_QUEUE, AGENT_QUEUE_OPTIONS, handleAgentJob, tickAgents, type AgentJob } from '../agents/worker';
 import { Platform } from '../platform/platform';
+import { purgeAuditLog } from './auditRetention';
 import { dueConnections, matchConnection, syncConnectionUsers } from './daluxUsers';
 import { dueScopes, failInterruptedRuns, runScope, type RunTrigger, type WorkerDeps } from './indexScopes';
 
-const QUEUES = { tick: 'tick', index: 'index-scope', users: 'dalux-users' } as const;
+const QUEUES = { tick: 'tick', index: 'index-scope', users: 'dalux-users', auditPurge: 'audit-purge' } as const;
 
 export function workerDeps(db: Db, encryptionKey: Buffer, env: NodeJS.ProcessEnv = process.env): WorkerDeps {
   return {
@@ -91,6 +92,7 @@ export async function startWorker(env: NodeJS.ProcessEnv = process.env): Promise
   // The heartbeat fails the running job of a stopped worker within a minute, so it does not block its key.
   await boss.createQueue(QUEUES.index, { policy: 'stately', retryLimit: 0, expireInSeconds: 4 * 3600, heartbeatSeconds: 60 });
   await boss.createQueue(QUEUES.users, { policy: 'stately', retryLimit: 1, expireInSeconds: 3600, heartbeatSeconds: 60 });
+  await boss.createQueue(QUEUES.auditPurge, { policy: 'stately', retryLimit: 0 });
 
   const agents = agentDeps(db, env);
   if (agents) await boss.createQueue(AGENT_QUEUE, AGENT_QUEUE_OPTIONS);
@@ -111,7 +113,12 @@ export async function startWorker(env: NodeJS.ProcessEnv = process.env): Promise
   await boss.work<{ connectionId: string }>(QUEUES.users, async ([job]) => {
     await syncConnectionUsers(db, job.data.connectionId, () => deps.clientFor(job.data.connectionId));
   });
+  await boss.work<Record<string, never>>(QUEUES.auditPurge, async () => {
+    const deleted = await purgeAuditLog(db);
+    if (deleted) console.error(`[worker] purged ${deleted} audit rows past the retention period`);
+  });
   await boss.schedule(QUEUES.tick, '* * * * *');
+  await boss.schedule(QUEUES.auditPurge, '17 * * * *');
   await boss.send(QUEUES.tick, {});
   return boss;
 }

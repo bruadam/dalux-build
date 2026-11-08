@@ -7,6 +7,7 @@
  * sending document text to Mistral, and the caller did not pass useModel: false.
  */
 
+import { currentCallStats } from '../observability/callStats';
 import type { TextChunk } from '../extract';
 import { mistralUnavailableReason } from '../mistral';
 import { markdownSkill } from '../tools/skills';
@@ -68,6 +69,8 @@ async function completeJson<T>(
     ],
     responseFormat: { type: 'json_schema', jsonSchema: { name, schemaDefinition: schema, strict: true } },
   });
+  const stats = currentCallStats();
+  if (stats) stats.mistralTokens += response.usage?.totalTokens ?? 0;
   if (usage) {
     usage.calls += 1;
     usage.promptTokens += response.usage?.promptTokens ?? 0;

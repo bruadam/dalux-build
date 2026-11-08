@@ -11,9 +11,27 @@ export interface EffectiveAccess {
   folderId: string | null;
 }
 
+/** How the call came in, for the audit log and request logs. Platform mode only. */
+export interface RequestMeta {
+  requestId: string;
+  /** Shaped by the `ip_logging` setting before it gets here: full, truncated or absent. */
+  ip?: string;
+  forwardedFor?: string;
+  userAgent?: string;
+  authMethod: 'dxm' | 'dxo' | 'header' | 'agent';
+  /** API token id or OAuth session id (agents: the agent id); never the secret. */
+  credentialId?: string;
+  mcpSessionId?: string;
+  /** Mirrors `settings.log_query_text`. */
+  logQueryText?: boolean;
+  /** Set when the caller is a hosted agent. */
+  agent?: { id: string; name: string };
+}
+
 export interface RequestContext {
   account?: { id: string; role: 'admin' | 'user' };
-  connection?: { id: string };
+  connection?: { id: string; slug?: string };
+  request?: RequestMeta;
   /**
    * 'unrestricted' in stdio and Dalux-header mode, where the Dalux API key is
    * the only limit. Otherwise the union of the account's and its groups' grants.

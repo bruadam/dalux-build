@@ -11,6 +11,7 @@ const USER_LINKS = [
   { href: '/memory', label: 'My memory' },
   { href: '/agents', label: 'My agents' },
   { href: '/tokens', label: 'My tokens' },
+  { href: '/activity', label: 'My activity' },
   { href: '/oauth', label: 'Connected apps' },
 ];
 
@@ -23,7 +24,7 @@ const ADMIN_LINKS = [
   { href: '/admin/indexes', label: 'Indexes' },
   { href: '/admin/agents', label: 'Agents' },
   { href: '/admin/dalux-users', label: 'Dalux users' },
-  { href: '/admin/audit', label: 'Audit log' },
+  { href: '/admin/audit', label: 'Activity' },
   { href: '/admin/settings', label: 'Settings' },
 ];
 

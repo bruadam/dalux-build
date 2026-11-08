@@ -3,6 +3,7 @@ import { createTestDatabase, type TestDatabase } from '../../db/test/testDatabas
 import type { Actor } from '../lib/server/actor';
 import { activityOverview } from '../lib/server/activity';
 import { UserError } from '../lib/server/errors';
+import { listAuthEvents } from '../lib/server/authEventsLog';
 import { getObservabilitySettings, setObservabilitySettings } from '../lib/server/observabilitySettings';
 
 let t: TestDatabase;
@@ -94,5 +95,21 @@ describe('activity overview', () => {
     for (let i = 0; i < 500; i++) await call('ned', { at: new Date(Date.now() - 1000 * (i % 3000)) });
     const flags = (await activityOverview(db, actors.ada)).flags.filter((f) => f.accountName === 'ned');
     expect(flags.map((f) => f.flag)).toContain('call_burst');
+  });
+});
+
+describe('own scope and failed attempts', () => {
+  it('narrows an admin to their own numbers when asked', async () => {
+    expect((await activityOverview(db, actors.ada, { own: true })).totals.calls).toBe(0);
+    expect((await activityOverview(db, actors.ned, { own: true })).totals.calls).toBeGreaterThan(0);
+  });
+
+  it('shows failed attempts to admins, and people only those that name their account', async () => {
+    await insert('auth_events', { source: 'mcp', reason: 'unknown_token', token_prefix: 'dxm_abcd', client_ip: '203.0.113.9' });
+    await insert('auth_events', { source: 'mcp', reason: 'revoked_token', account_id: actors.uma.accountId, token_prefix: 'dxm_uma0' });
+    expect((await listAuthEvents(db, actors.ada)).map((e) => e.reason).sort()).toEqual(['revoked_token', 'unknown_token']);
+    expect((await listAuthEvents(db, actors.uma)).map((e) => e.reason)).toEqual(['revoked_token']);
+    expect(await listAuthEvents(db, actors.ned)).toEqual([]);
+    expect((await listAuthEvents(db, actors.ada, true))).toEqual([]);
   });
 });

@@ -350,8 +350,13 @@ describe('audit retention', () => {
     for (const [action, age] of [['retention.old', 200], ['retention.mid', 100], ['retention.new', 1]] as const) {
       await database.owner.query(`insert into audit_log (at, kind, action) values ($1, 'admin', $2)`, [daysAgo(age), action]);
     }
-    expect(await purgeAuditLog(worker)).toBeGreaterThanOrEqual(1);
+    for (const [reason, age] of [['retention_old', 200], ['retention_new', 1]] as const) {
+      await database.owner.query(`insert into auth_events (at, source, reason) values ($1, 'mcp', $2)`, [daysAgo(age), reason]);
+    }
+    expect(await purgeAuditLog(worker)).toBeGreaterThanOrEqual(2);
     expect(await remaining()).toEqual(['retention.mid', 'retention.new']);
+    const events = async () => (await database.owner.query(`select reason from auth_events where reason like 'retention_%' order by reason`)).rows.map((row) => row.reason);
+    expect(await events()).toEqual(['retention_new']);
 
     await database.owner.query('insert into settings (id, audit_retention_days) values (true, 30) on conflict (id) do update set audit_retention_days = 30');
     await purgeAuditLog(worker);

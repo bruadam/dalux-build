@@ -1,9 +1,10 @@
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import type { DaluxClient } from 'dalux-build-api';
 
-import { resolveModel } from '../src/ifc/session';
+import { runWithContext } from '../src/access/requestScope';
+import { ensureLocalIfc, resolveModel } from '../src/ifc/session';
 
 /**
  * The download cache and the resident-model map are both keyed by fileId alone
@@ -62,5 +63,36 @@ describe('resolveModel authorization', () => {
     const getFile = jest.fn(async () => null);
 
     await expect(resolveModel(clientWith(getFile), REF)).rejects.toThrow(/is not readable/);
+  });
+});
+
+describe('ensureLocalIfc across connections', () => {
+  const FILE_ID = 'S1';
+  const ref = { projectId: 'p1', fileAreaId: 'fa1', fileId: FILE_ID };
+
+  /** Dalux answers with a different model per connection, as two customers can reuse a file id. */
+  function clientFor(content: string): DaluxClient {
+    const getFile = jest.fn(async (_p: string, _a: string, _f: string, options?: { savePath?: string }) => {
+      if (!options?.savePath) return { data: { fileId: FILE_ID } };
+      mkdirSync(options.savePath, { recursive: true });
+      const downloadedFilePath = path.join(options.savePath, 'model.ifc');
+      writeFileSync(downloadedFilePath, content, 'utf-8');
+      return { data: { fileId: FILE_ID }, downloadedFilePath };
+    });
+    return { files: { getFile } } as unknown as DaluxClient;
+  }
+  const as = (connection: string, run: () => Promise<string>) => runWithContext({ access: 'unrestricted', connection: { id: connection } }, run);
+
+  it('serves one connection\'s cached model only to that connection', async () => {
+    const a = await as('conn-a', () => ensureLocalIfc(clientFor('model of A'), ref));
+    const b = await as('conn-b', () => ensureLocalIfc(clientFor('model of B'), ref));
+
+    expect(a).not.toEqual(b);
+    expect(readFileSync(a, 'utf-8')).toBe('model of A');
+    expect(readFileSync(b, 'utf-8')).toBe('model of B');
+    // a second call by A reuses its own copy, after the access check
+    const again = clientFor('model of A, changed');
+    expect(await as('conn-a', () => ensureLocalIfc(again, ref))).toEqual(a);
+    expect(again.files.getFile).toHaveBeenCalledTimes(1);
   });
 });

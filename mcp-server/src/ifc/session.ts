@@ -18,7 +18,7 @@ import path from 'node:path';
 import type { DaluxClient } from 'dalux-build-api';
 import type { LoadedModel, ModelRegistry } from '@ifc-lite/mcp';
 
-import { cacheDirFor } from '../cachePaths';
+import { cacheDirFor, fileCacheScope } from '../cachePaths';
 import { loadIfcLite } from './runtime';
 
 export interface IfcRef {
@@ -37,11 +37,21 @@ interface Entry {
 }
 
 const entries = new Map<string, Entry>();
-let registryPromise: Promise<ModelRegistry> | null = null;
+const registries = new Map<string, Promise<ModelRegistry>>();
+
+/** Models are registered under their file id, which is only unique within one cache scope (connection). */
+function scopeKey(): string {
+  return fileCacheScope() ?? '';
+}
 
 function getRegistry(): Promise<ModelRegistry> {
-  registryPromise ??= loadIfcLite().then((ifc) => new ifc.InMemoryModelRegistry());
-  return registryPromise;
+  const key = scopeKey();
+  let registry = registries.get(key);
+  if (!registry) {
+    registry = loadIfcLite().then((ifc) => new ifc.InMemoryModelRegistry());
+    registries.set(key, registry);
+  }
+  return registry;
 }
 
 /** Find an already-downloaded .ifc in the per-file cache dir, if present. */
@@ -149,7 +159,8 @@ export async function resolveModel(client: DaluxClient, ref: IfcRef): Promise<Re
   await assertReadable(client, ref);
 
   const registry = await getRegistry();
-  const existing = entries.get(ref.fileId);
+  const entryKey = `${scopeKey()}/${ref.fileId}`;
+  const existing = entries.get(entryKey);
   if (existing) {
     existing.lastUsed = Date.now();
     return {
@@ -165,7 +176,7 @@ export async function resolveModel(client: DaluxClient, ref: IfcRef): Promise<Re
   const model = await ifc.loadIfcModel(filePath, { modelId: ref.fileId });
 
   registry.add(model);
-  entries.set(ref.fileId, { model, filePath, lastUsed: Date.now() });
+  entries.set(entryKey, { model, filePath, lastUsed: Date.now() });
   evictIdle();
 
   return { model, registry, filePath, fileName: path.basename(filePath) };

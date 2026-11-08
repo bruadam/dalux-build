@@ -15,11 +15,29 @@ export function mcpCacheRoot(): string {
   return configured ? path.resolve(configured) : path.join(tmpdir(), 'dalux-mcp');
 }
 
-/** Per-file download cache, shared by download_file, search_file_content and the IFC tools. */
-export function cacheDirFor(fileId: string): string {
-  const dir = path.join(mcpCacheRoot(), 'files', fileId);
+/**
+ * Whose files the current request may reuse: its Dalux connection in platform mode, its
+ * credentials in header mode, everyone's in stdio. A file id is only unique within one
+ * Dalux customer, so connections must not share downloads or what is derived from them.
+ * Callers with different grants on one connection do share them: every cache hit is
+ * preceded by the access check (see ifc/session.ts assertReadable and access/guard.ts).
+ */
+export function fileCacheScope(): string | undefined {
+  const { connection, fileNamespace } = currentContext();
+  return connection?.id ?? fileNamespace;
+}
+
+function scopedDir(kind: 'files' | 'derived', fileId: string): string {
+  if (!/^[\w.-]+$/.test(fileId) || fileId === '.' || fileId === '..') throw new Error(`Invalid file id "${fileId}".`);
+  const scope = fileCacheScope();
+  const dir = path.join(mcpCacheRoot(), kind, ...(scope ? [scope] : []), fileId);
   mkdirSync(dir, { recursive: true });
   return dir;
+}
+
+/** Per-file download cache, shared by download_file, search_file_content and the IFC tools. */
+export function cacheDirFor(fileId: string): string {
+  return scopedDir('files', fileId);
 }
 
 /**
@@ -31,9 +49,7 @@ export function cacheDirFor(fileId: string): string {
  * dropping anything else in there could hand them a CSV instead of the IFC.
  */
 export function derivedDirFor(fileId: string): string {
-  const dir = path.join(mcpCacheRoot(), 'derived', fileId);
-  mkdirSync(dir, { recursive: true });
-  return dir;
+  return scopedDir('derived', fileId);
 }
 
 /** Where the current caller's indexes and reports live: separate per file namespace (see RequestContext). */

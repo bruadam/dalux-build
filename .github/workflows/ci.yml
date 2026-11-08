@@ -78,6 +78,7 @@ jobs:
           cache-dependency-path: package-lock.json
       - run: npm ci
       - run: npm run build --workspace=javascript
+      - run: npm run build --workspace=@dalux-platform/db
       - run: npm run typecheck --workspace=mcp-server
       - run: npm test --workspace=mcp-server
       - run: npm run build --workspace=mcp-server

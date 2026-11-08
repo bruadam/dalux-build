@@ -200,6 +200,9 @@ export function registerMemoryTools(server: McpServer, guard: ToolGuard, db: Db)
         enabled: true,
         entries: all.total,
         summary: brief ? { id: brief.id, text: brief.text, updatedAt: brief.updatedAt, source: brief.source } : null,
+        hint: brief
+          ? undefined
+          : 'No summary yet. When you know the project well, save a brief of at most 2,000 characters with memory_write kind "summary"; later ones replace it.',
         note: UNTRUSTED_NOTE,
       });
     },

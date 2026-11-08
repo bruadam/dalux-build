@@ -3,6 +3,11 @@ import { homedir, tmpdir } from 'node:os';
 import path from 'node:path';
 import { currentContext } from './access/requestScope';
 
+function ensureDir(dir: string): void {
+  // 0700: on a shared host, other local users must not read cached downloads and indexes (SECURITY-ANALYSIS #4).
+  mkdirSync(dir, { recursive: true, mode: 0o700 });
+}
+
 /**
  * Root of everything this server writes to disk — all of it disposable.
  *
@@ -31,7 +36,7 @@ function scopedDir(kind: 'files' | 'derived', fileId: string): string {
   if (!/^[\w.-]+$/.test(fileId) || fileId === '.' || fileId === '..') throw new Error(`Invalid file id "${fileId}".`);
   const scope = fileCacheScope();
   const dir = path.join(mcpCacheRoot(), kind, ...(scope ? [scope] : []), fileId);
-  mkdirSync(dir, { recursive: true });
+  ensureDir(dir);
   return dir;
 }
 
@@ -61,42 +66,42 @@ function callerBase(): string {
 /** Root under which every temporary file-area index lives (one sub-directory per index). */
 export function ragRoot(): string {
   const dir = path.join(callerBase(), 'rag');
-  mkdirSync(dir, { recursive: true });
+  ensureDir(dir);
   return dir;
 }
 
 /** Directory holding a single temporary index's manifest and per-document chunks/vectors. */
 export function ragIndexDir(indexId: string): string {
   const dir = path.join(ragRoot(), indexId);
-  mkdirSync(dir, { recursive: true });
+  ensureDir(dir);
   return dir;
 }
 
 /** Root under which every temporary task index lives (see store/file/taskStore.ts). */
 export function taskIndexRoot(): string {
   const dir = path.join(callerBase(), 'task-index');
-  mkdirSync(dir, { recursive: true });
+  ensureDir(dir);
   return dir;
 }
 
 /** Directory holding a single temporary task index's manifest and per-task chunks/vectors. */
 export function taskIndexDir(indexId: string): string {
   const dir = path.join(taskIndexRoot(), indexId);
-  mkdirSync(dir, { recursive: true });
+  ensureDir(dir);
   return dir;
 }
 
 /** Root under which every document-consistency report lives (see consistency/report.ts). */
 export function consistencyRoot(): string {
   const dir = path.join(callerBase(), 'consistency');
-  mkdirSync(dir, { recursive: true });
+  ensureDir(dir);
   return dir;
 }
 
 /** Directory holding one consistency report: manifest, per-file facts, findings and exports. */
 export function consistencyReportDir(reportId: string): string {
   const dir = path.join(consistencyRoot(), reportId);
-  mkdirSync(dir, { recursive: true });
+  ensureDir(dir);
   return dir;
 }
 
@@ -122,14 +127,14 @@ export function docsIndexRoot(): string {
   const configured = process.env.DALUX_MCP_DOCS_DIR ?? process.env.DALUX_MCP_CACHE_DIR;
   const base = configured ? path.resolve(configured) : path.join(homedir(), '.dalux-mcp');
   const dir = path.join(base, 'docs-index');
-  mkdirSync(dir, { recursive: true });
+  ensureDir(dir);
   return dir;
 }
 
 /** Directory holding a single temporary docs-repo index's manifest and per-document chunks/vectors. */
 export function docsIndexDir(indexId: string): string {
   const dir = path.join(docsIndexRoot(), indexId);
-  mkdirSync(dir, { recursive: true });
+  ensureDir(dir);
   return dir;
 }
 
@@ -146,7 +151,7 @@ export function docsIndexDir(indexId: string): string {
 export function clashRulesPath(connectionId?: string): string {
   const configured = process.env.DALUX_MCP_CACHE_DIR;
   const base = configured ? path.resolve(configured) : path.join(homedir(), '.dalux-mcp');
-  mkdirSync(base, { recursive: true });
+  ensureDir(base);
   return path.join(base, connectionId ? `clash-rules.${connectionId}.json` : 'clash-rules.json');
 }
 

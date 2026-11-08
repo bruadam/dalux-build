@@ -22,6 +22,8 @@ const FILES = [
   { fileId: 'x1', fileName: 'granted.ifc', fileAreaId: 'fa1', folderId: 'fB' },
   { fileId: 'x4', fileName: 'notes.md', fileAreaId: 'fa1', folderId: 'fA' },
   { fileId: 'x7', fileName: 'withdrawn.ifc', fileAreaId: 'fa1', folderId: 'fB' },
+  { fileId: 'x8', fileName: 'budget-granted.md', fileAreaId: 'fa1', folderId: 'fB', downloadLink: 'link:x8', contentHash: 'v1' },
+  { fileId: 'x9', fileName: 'budget-other.md', fileAreaId: 'fa1', folderId: 'fC', downloadLink: 'link:x9', contentHash: 'v1' },
 ];
 
 const daluxCalls: string[] = [];
@@ -46,6 +48,11 @@ jest.mock('dalux-build-api', () => ({
         const downloadedFilePath = require('node:path').join(options.savePath, data.fileName);
         fs.writeFileSync(downloadedFilePath, `${'SECRET-CONTENT-OF-GRANTED-FILE'}\n`);
         return { data, downloadedFilePath };
+      },
+      downloadFileFromLink: async (_link: string, name: string, dir: string) => {
+        const target = require('node:path').join(dir, name);
+        require('node:fs').writeFileSync(target, `# ${name}\n\nThe budget figures are in file ${name}.\n`);
+        return target;
       },
     },
   }),
@@ -133,6 +140,7 @@ beforeAll(async () => {
   ids.carol = await personal('carol@example.com');
   ids.erin = await personal('erin@example.com');
   ids.frank = await personal('frank@example.com');
+  ids.root = await personal('root@example.com', { role: 'admin' });
   ids.gina = await personal('gina@example.com');
   ids.team = await insert('groups', { name: 'Team' });
   await insert('group_memberships', { group_id: ids.team, account_id: ids.gina });
@@ -146,12 +154,13 @@ beforeAll(async () => {
   for (const connectionId of [ids.siteA, ids.siteB]) {
     await grant({ account_id: ids.erin }, connectionId, ['projects:read', 'files:read', 'models:read']);
   }
+  await grant({ account_id: ids.root }, ids.siteA, ['projects:read', 'files:read']);
   await grant({ account_id: ids.frank }, ids.siteA, ['projects:read']);
   await grant({ group_id: ids.team }, ids.siteA, ['projects:read']);
   await insert('dalux_user_links', { account_id: ids.alice, connection_id: ids.siteA, dalux_user_id: 'DU-ALICE', source: 'auto' });
   await owner.query('SELECT refresh_effective_access()');
 
-  for (const name of ['alice', 'carol', 'erin', 'frank', 'gina']) tokens[name] = await token(name, name);
+  for (const name of ['alice', 'carol', 'erin', 'frank', 'gina', 'root']) tokens[name] = await token(name, name);
 });
 
 afterAll(async () => {
@@ -260,6 +269,32 @@ describe('shared file cache (SECURITY-ANALYSIS #1, #4)', () => {
     const result = await call(tokens.erin, 'download_file', { ...ref, fileId: '../../outside' });
     expect(result.isError).toBe(true);
     expect(existsSync(path.join(cacheDir, '..', 'outside'))).toBe(false);
+  });
+});
+
+describe('shared index (SECURITY-ANALYSIS #1)', () => {
+  const search = (name: string) => call(tokens[name], 'search_file_area', { ...ref, query: 'budget figures' });
+
+  it('serves each user only the passages of the folders they are granted, and nothing to users without files:read', async () => {
+    const built = await call(tokens.root, 'build_file_area_index', ref);
+    expect(built.isError).toBe(false);
+
+    const alice = await search('alice');
+    expect(alice.text).toContain('budget-granted.md');
+    expect(alice.text).not.toContain('budget-other.md');
+    const carol = await search('carol');
+    expect(carol.text).toContain('budget-other.md');
+    expect(carol.text).not.toContain('budget-granted.md');
+    expect(await search('frank')).toEqual({ isError: true, text: expect.stringContaining('files:read') });
+  });
+
+  it('hides the index of other users from the listing and refuses build and drop to non-admins', async () => {
+    const listing = await call(tokens.alice, 'list_file_area_indexes', {});
+    expect(listing.text).not.toContain('budget-other.md');
+    for (const tool of ['build_file_area_index', 'drop_file_area_index']) {
+      const { body } = await rpc('/mcp/c/site-a', 'tools/call', { name: tool, arguments: ref }, bearer(tokens.alice));
+      expect(JSON.stringify(body)).toMatch(/not found|Unknown tool|disabled|unknown/i);
+    }
   });
 });
 

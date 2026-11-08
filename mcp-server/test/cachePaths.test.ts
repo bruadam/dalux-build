@@ -1,3 +1,5 @@
+import { mkdtempSync, rmSync, statSync } from 'node:fs';
+import { tmpdir } from 'node:os';
 import path from 'node:path';
 
 import { runWithContext } from '../src/access/requestScope';
@@ -47,5 +49,20 @@ describe('file cache scope', () => {
   it.each(['../escape', 'a/b', '..', '', 'x\\y'])('refuses the file id %j, which could leave the cache', (fileId) => {
     expect(() => cacheDirFor(fileId)).toThrow('Invalid file id');
     expect(() => derivedDirFor(fileId)).toThrow('Invalid file id');
+  });
+});
+
+describe('cache directory permissions (SECURITY-ANALYSIS #4)', () => {
+  it('creates cache directories readable by the server user only', () => {
+    const root = mkdtempSync(path.join(tmpdir(), 'dalux-cache-mode-'));
+    process.env.DALUX_MCP_CACHE_DIR = path.join(root, 'cache');
+    try {
+      const dir = cacheDirFor('f1');
+      for (const created of [dir, path.dirname(dir), mcpCacheRoot()]) {
+        expect(statSync(created).mode & 0o077).toBe(0);
+      }
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
   });
 });

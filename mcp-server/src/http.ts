@@ -10,7 +10,7 @@ import {
 import { toNodeHandler, localhostHostValidation, localhostOriginValidation } from '@modelcontextprotocol/node';
 import { createClient } from 'dalux-build-api';
 import { buildServer } from './server';
-import { UNRESTRICTED_CONTEXT, type RequestContext } from './access/context';
+import type { RequestContext } from './access/context';
 import { DEFAULT_TOOLSETS, requestToolsets, type Toolset } from './toolsets';
 import { createOAuthServer, type OAuthServer } from './oauth';
 import { createPlatformOAuthServer } from './oauthPlatform';
@@ -280,10 +280,12 @@ export function buildHttpApp(options: BuildHttpAppOptions = {}): HttpApp {
     let mcpHandler = handlersByCredentials.get(key);
     if (!mcpHandler) {
       const client = createClient({ baseUrl: daluxCredentials.baseUrl, apiKey: daluxCredentials.apiKey });
-      // In platform mode, header callers' temporary indexes are kept apart per credentials (PRD 6.5).
-      const context: RequestContext = options.platform
-        ? { access: 'unrestricted', fileNamespace: createHash('sha256').update(credentialKey).digest('hex').slice(0, 32) }
-        : UNRESTRICTED_CONTEXT;
+      // Callers with different Dalux credentials never share temporary indexes, reports, or cached
+      // downloads (SECURITY-ANALYSIS #1); stdio has one caller and keeps the shared context.
+      const context: RequestContext = {
+        access: 'unrestricted',
+        fileNamespace: createHash('sha256').update(credentialKey).digest('hex').slice(0, 32),
+      };
       mcpHandler = createMcpHandler(() => buildServer(client, { context, toolsets: toolsets.toolsets }));
       // Anyone can send new credentials, so the map must not grow without bound.
       if (handlersByCredentials.size >= MAX_CREDENTIAL_HANDLERS) handlersByCredentials.delete(handlersByCredentials.keys().next().value!);

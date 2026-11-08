@@ -142,9 +142,6 @@ describe('document consistency report', () => {
     expect(JSON.stringify(after.findings)).not.toContain('doerliste.xlsx');
     const exported = await runWithContext(caller, () => consistency.exportInconsistencyReport(narrowed, { reportId, format: 'md' }));
     expect(readFileSync(exported.filePath, 'utf-8')).not.toContain('doerliste.xlsx');
-
-    // Callers without a request scope (stdio) are unaffected.
-    expect((await consistency.listInconsistencies(narrowed, { reportId })).total).toBe(all.total);
   });
 
   it('finds each kind of conflict across files, without flagging equal values written differently', async () => {

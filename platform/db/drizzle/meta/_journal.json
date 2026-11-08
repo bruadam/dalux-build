@@ -64,6 +64,13 @@
       "when": 1794124420477,
       "tag": "0009_memory",
       "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "7",
+      "when": 1794125510020,
+      "tag": "0011_hosted_agents",
+      "breakpoints": true
     }
   ]
 }

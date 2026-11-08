@@ -79,6 +79,11 @@ export default async function GrantsPage() {
               ))}
             </div>
             <p className="text-muted-foreground">File area and folder scopes keep only files:* capabilities.</p>
+            <p className="text-muted-foreground">
+              <code>memory:read</code> and <code>memory:write</code> are never in the preset. They let a person keep private
+              project memory (it works together with read access to the project; memory:write needs memory:read). Admins
+              cannot read anyone's memory.
+            </p>
           </div>
           <Button type="submit">Save grant</Button>
         </ActionForm>

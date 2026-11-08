@@ -15,6 +15,7 @@ import { UserError } from '@/lib/server/errors';
 import { createGrant, deleteGrant } from '@/lib/server/grants';
 import { createIndexScope, deleteIndexScope, requestIndexRefresh, updateIndexScope } from '@/lib/server/indexScopes';
 import { addMember, createGroup, deleteGroup, removeMember } from '@/lib/server/groups';
+import { deleteAllMemory, deleteMemoryEntry, editMemoryEntry, switchMemory } from '@/lib/server/memory';
 import { decideAuthorization, revokeOAuthSession } from '@/lib/server/oauth';
 import { createRobot, reassignRobotOwner } from '@/lib/server/robots';
 import { requireActor } from '@/lib/server/session';
@@ -239,3 +240,19 @@ export const unlinkDaluxUserAction = async (_: FormState, form: FormData) =>
 
 export const matchDaluxUsersAction = async (_: FormState, form: FormData) =>
   run((actor) => requestDaluxUserMatch(db(), actor, text(form, 'connectionId')));
+
+const memoryProject = (form: FormData) => ({ connectionId: text(form, 'connectionId'), projectId: text(form, 'projectId') });
+
+export const switchMemoryAction = async (_: FormState, form: FormData) =>
+  run((actor) => switchMemory(db(), actor, { ...memoryProject(form), enabled: text(form, 'enabled') === 'true' }));
+
+export const editMemoryAction = async (_: FormState, form: FormData) =>
+  run((actor) => editMemoryEntry(db(), actor, { ...memoryProject(form), id: text(form, 'id'), text: text(form, 'text') }));
+
+export const deleteMemoryAction = async (_: FormState, form: FormData) =>
+  run((actor) => deleteMemoryEntry(db(), actor, { ...memoryProject(form), id: text(form, 'id') }));
+
+export const deleteAllMemoryAction = async (_: FormState, form: FormData) =>
+  run(async (actor) => {
+    await deleteAllMemory(db(), actor, memoryProject(form));
+  });

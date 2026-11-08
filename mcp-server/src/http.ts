@@ -62,6 +62,8 @@ export interface BuildHttpAppOptions {
 
 export interface HttpApp {
   start: (port: number, host?: string) => Promise<void>;
+  /** Stops listening and drops open connections. */
+  stop: () => Promise<void>;
   /** The underlying web-standard fetch handler, exposed for testing without binding a real port. */
   handleRequest: (request: Request) => Promise<Response>;
 }
@@ -338,6 +340,11 @@ export function buildHttpApp(options: BuildHttpAppOptions = {}): HttpApp {
     start: (port: number, host = localhostOnly ? '127.0.0.1' : '0.0.0.0') =>
       new Promise((resolve) => {
         server.listen(port, host, () => resolve());
+      }),
+    stop: () =>
+      new Promise((resolve) => {
+        server.close(() => resolve());
+        server.closeAllConnections();
       }),
   };
 }

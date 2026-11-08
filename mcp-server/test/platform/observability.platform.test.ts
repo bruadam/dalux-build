@@ -331,6 +331,7 @@ describe('client IP', () => {
       body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: 'list_projects', arguments: {} } }),
     });
     await response.text();
+    await app.stop();
     const row = await waitForRow('audit_log', 'request_id = $1', [response.headers.get('x-request-id')]);
     expect(['127.0.0.1', '::1']).toContain(row.client_ip);
   });

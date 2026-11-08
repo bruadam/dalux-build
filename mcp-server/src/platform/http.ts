@@ -103,7 +103,10 @@ export function createPlatformHandler(options: PlatformHandlerOptions): (request
 
     const connection = await resolveConnection(platform, caller, route[1]);
     if (connection instanceof Response) return connection;
-    const toolsets = requestToolsets(request, options.toolsets ?? DEFAULT_TOOLSETS);
+    // People who were granted memory get its tools without having to ask for the toolset.
+    const baseToolsets = options.toolsets ?? DEFAULT_TOOLSETS;
+    const holdsMemory = caller.access.some((row) => row.capability.startsWith('memory:'));
+    const toolsets = requestToolsets(request, holdsMemory ? [...new Set([...baseToolsets, 'memory' as const])] : baseToolsets);
     if ('error' in toolsets) return jsonError(400, 'invalid_toolsets', toolsets.error);
 
     const context: RequestContext = {
@@ -111,6 +114,7 @@ export function createPlatformHandler(options: PlatformHandlerOptions): (request
       connection: { id: connection.id },
       access: caller.access.filter((row) => row.connectionId === connection.id),
       fileNamespace: createHash('sha256').update(`${caller.account.id}/${connection.id}`).digest('hex').slice(0, 32),
+      client: caller.token.name,
     };
     const handler = createMcpHandler(() =>
       buildServer(restrictClient(connection.client, context, connection.folders), {
@@ -118,6 +122,7 @@ export function createPlatformHandler(options: PlatformHandlerOptions): (request
         folders: connection.folders,
         audit: (record) => platform.audit(caller, context, record),
         toolsets: toolsets.toolsets,
+        memoryDb: platform.db,
       }),
       { onerror: (error) => console.error(`[platform] MCP request on "${connection.slug}" failed:`, error) },
     );

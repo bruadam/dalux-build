@@ -22,11 +22,14 @@ class PlatformConfig:
     *url* is the platform's base URL (e.g. ``https://dalux.example.com``).
     *connection* is a connection slug; without it the platform picks the
     token's connection, the account's default, or the only one it can reach.
+    *memory* lets the agent also search and write the person's private project
+    memory; the platform still keeps it off until the person turns it on.
     """
 
     url: str
     token: str = field(repr=False)
     connection: str | None = None
+    memory: bool = False
 
     @classmethod
     def from_env(
@@ -35,6 +38,7 @@ class PlatformConfig:
         url: str | None = None,
         token: str | None = None,
         connection: str | None = None,
+        memory: bool | None = None,
     ) -> PlatformConfig | None:
         """Build a config from arguments, falling back to ``DALUX_PLATFORM_*`` variables.
 
@@ -50,7 +54,9 @@ class PlatformConfig:
                 "DALUX_PLATFORM_TOKEN (a dxm_ API token or an OAuth access token)."
             )
         connection = connection or os.environ.get("DALUX_PLATFORM_CONNECTION") or None
-        return cls(url=url.rstrip("/"), token=token, connection=connection)
+        if memory is None:
+            memory = os.environ.get("DALUX_PLATFORM_MEMORY", "").lower() in ("1", "true", "yes")
+        return cls(url=url.rstrip("/"), token=token, connection=connection, memory=memory)
 
     @property
     def mcp_url(self) -> str:
@@ -71,4 +77,6 @@ class PlatformConfig:
         env = {"DALUX_PLATFORM_URL": self.url, "DALUX_PLATFORM_TOKEN": self.token}
         if self.connection:
             env["DALUX_PLATFORM_CONNECTION"] = self.connection
+        if self.memory:
+            env["DALUX_PLATFORM_MEMORY"] = "1"
         return env

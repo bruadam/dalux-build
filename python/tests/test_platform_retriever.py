@@ -94,6 +94,45 @@ def _fake_platform(calls: list[dict[str, object]]) -> FastMCP:
         return json.dumps({"matches": [match]})
 
     @mcp.tool()
+    def memory_search(projectId: str, query: str, topK: int | None = None) -> str:  # noqa: N803
+        calls.append(
+            {"tool": "memory_search", "projectId": projectId, "query": query, "topK": topK}
+        )
+        if projectId == "OFF":
+            return json.dumps({"enabled": False, "message": "Memory is off for this project."})
+        match = {
+            "id": "M1",
+            "kind": "decision",
+            "text": "The client chose EI 90 doors.",
+            "citations": [],
+            "tags": [],
+            "source": "agent:Claude",
+            "score": 1,
+        }
+        return json.dumps({"mode": "lexical", "matches": [match]})
+
+    @mcp.tool()
+    def memory_write(
+        projectId: str,  # noqa: N803
+        kind: str,
+        text: str,
+        citations: list[dict[str, str]] | None = None,
+        tags: list[str] | None = None,
+    ) -> str:
+        calls.append(
+            {
+                "tool": "memory_write",
+                "projectId": projectId,
+                "kind": kind,
+                "text": text,
+                "tags": tags,
+            }
+        )
+        if projectId == "OFF":
+            return json.dumps({"enabled": False, "message": "Memory is off for this project."})
+        return json.dumps({"saved": True, "id": "M2", "kind": kind})
+
+    @mcp.tool()
     def check_document_consistency(projectId: str, fileAreaId: str) -> str:  # noqa: N803
         return json.dumps({"reportId": "R1"})
 
@@ -132,7 +171,12 @@ def platform():
 
 
 def test_config_from_env_and_arguments(monkeypatch):
-    for name in ("DALUX_PLATFORM_URL", "DALUX_PLATFORM_TOKEN", "DALUX_PLATFORM_CONNECTION"):
+    for name in (
+        "DALUX_PLATFORM_URL",
+        "DALUX_PLATFORM_TOKEN",
+        "DALUX_PLATFORM_CONNECTION",
+        "DALUX_PLATFORM_MEMORY",
+    ):
         monkeypatch.delenv(name, raising=False)
     assert PlatformConfig.from_env() is None
 
@@ -150,6 +194,12 @@ def test_config_from_env_and_arguments(monkeypatch):
     assert config is not None
     assert config.mcp_url == "https://dalux.example.com/mcp/c/site%20a"
     assert config.mcp_connection()["headers"] == {"Authorization": "Bearer oauth-access"}
+
+    assert config.memory is False
+    assert PlatformConfig.from_env(memory=True).memory is True  # type: ignore[union-attr]
+    monkeypatch.setenv("DALUX_PLATFORM_MEMORY", "1")
+    assert PlatformConfig.from_env().memory is True  # type: ignore[union-attr]
+    monkeypatch.delenv("DALUX_PLATFORM_MEMORY")
 
     monkeypatch.delenv("DALUX_PLATFORM_URL")
     monkeypatch.delenv("DALUX_PLATFORM_TOKEN")
@@ -297,3 +347,51 @@ def test_live_platform_search():
     assert config is not None
     documents = PlatformRetriever(platform=config, tool="search_docs").invoke("brand")
     assert all(isinstance(d, Document) for d in documents)
+
+
+def test_memory_is_searched_only_when_opted_in(platform):
+    url, calls, _ = platform
+    config = PlatformConfig(url=url, token=TOKEN)
+    arguments = {"projectId": "P1", "fileAreaId": "FA1"}
+
+    without = PlatformRetriever(platform=config, arguments=arguments).invoke("doors")
+    assert [call["tool"] for call in calls] == ["search_file_area"]
+    assert not any(d.metadata.get("memory") for d in without)
+
+    calls.clear()
+    documents = PlatformRetriever(platform=config, arguments=arguments, memory=True).invoke("doors")
+    assert [call["tool"] for call in calls] == ["search_file_area", "memory_search"]
+    assert calls[1] == {"tool": "memory_search", "projectId": "P1", "query": "doors", "topK": 6}
+    remembered = documents[-1]
+    assert remembered.page_content == "The client chose EI 90 doors."
+    assert remembered.metadata["memory"] is True
+    assert remembered.metadata["file_name"] == "Memory (decision)"
+    assert remembered.metadata["written_by"] == "agent:Claude"
+
+
+def test_memory_off_adds_nothing_and_refuses_writes(platform):
+    url, _, _ = platform
+    off = PlatformRetriever(
+        platform=PlatformConfig(url=url, token=TOKEN),
+        arguments={"projectId": "OFF", "fileAreaId": "FA1"},
+        memory=True,
+    )
+    assert [d.metadata["file_id"] for d in off.invoke("doors")] == ["F1", "F2"]
+    assert off.write_memory("must not be saved") is False
+
+
+def test_write_memory_saves_a_note(platform):
+    url, calls, _ = platform
+    retriever = PlatformRetriever(
+        platform=PlatformConfig(url=url, token=TOKEN),
+        arguments={"projectId": "P1"},
+        memory=True,
+    )
+    assert retriever.write_memory("Doors are EI 90.", kind="fact", tags=["fire"]) is True
+    assert calls[-1] == {
+        "tool": "memory_write",
+        "projectId": "P1",
+        "kind": "fact",
+        "text": "Doors are EI 90.",
+        "tags": ["fire"],
+    }

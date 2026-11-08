@@ -66,6 +66,15 @@ export const TOOLSETS = {
     'drop_consistency_report',
   ],
   docs: ['search_docs', 'list_docs_indexes'],
+  memory: [
+    'memory_status',
+    'memory_set_enabled',
+    'memory_search',
+    'memory_list',
+    'memory_write',
+    'memory_update',
+    'memory_forget',
+  ],
   ifc: [
     'ifc_model_info',
     'ifc_discover_properties',
@@ -105,6 +114,7 @@ export const TOOLSET_SUMMARIES: Record<Toolset, string> = {
   search: 'local cross-document and cross-task search indexes',
   consistency: 'contradictions between documents of a file area',
   docs: 'reference-docs corpus search (laws, standards, guidelines)',
+  memory: 'private per-project memory of the signed-in person (self-hosted platform only; needs memory:read/write)',
   ifc: 'IFC model analysis, clash, volumes, diff, property editing, 3D viewer',
   legacy: 'search_pdf_content (old name of search_file_content)',
 };

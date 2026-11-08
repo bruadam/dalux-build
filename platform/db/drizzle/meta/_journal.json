@@ -57,6 +57,13 @@
       "when": 1794087563690,
       "tag": "0008_index_scopes_dalux_users",
       "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "7",
+      "when": 1794124420477,
+      "tag": "0009_memory",
+      "breakpoints": true
     }
   ]
 }

@@ -24,7 +24,9 @@ from langchain_core.retrievers import BaseRetriever
 
 from ..platform_config import PlatformConfig
 
-SearchTool = Literal["search_file_area", "search_task_index", "search_docs"]
+SearchTool = Literal["search_file_area", "search_task_index", "search_docs", "memory_search"]
+
+MemoryKind = Literal["fact", "decision", "preference", "open_question", "summary"]
 
 PLATFORM_SERVER_NAME = "dalux-platform"
 
@@ -74,7 +76,10 @@ def documents_from_matches(tool: SearchTool, matches: list[dict[str, object]]) -
     """
     documents = []
     for match in matches:
-        if tool == "search_task_index":
+        if tool == "memory_search":
+            file_id = str(match["id"])
+            file_name = f"Memory ({match['kind']})"
+        elif tool == "search_task_index":
             number = match.get("number")
             subject = str(match["subject"])
             file_id = str(match["taskId"])
@@ -90,6 +95,9 @@ def documents_from_matches(tool: SearchTool, matches: list[dict[str, object]]) -
             "location": match.get("location"),
             "score": match.get("score"),
         }
+        if tool == "memory_search":
+            metadata["memory"] = True
+            metadata["written_by"] = match.get("source")
         page = match.get("page")
         if isinstance(page, int):
             metadata["page"] = page - 1
@@ -104,20 +112,68 @@ class PlatformRetriever(BaseRetriever):  # type: ignore[explicit-any]  # pydanti
     ``{"projectId": ..., "fileAreaId": ...}`` or ``{"indexId": ...}`` for
     ``search_file_area``; ``{"projectId": ...}`` for ``search_task_index``;
     nothing for ``search_docs``.
+
+    With *memory* on (and a ``projectId`` in *arguments*) every search also
+    returns the person's saved project memory, marked ``memory=True`` in the
+    metadata; a project with memory off adds nothing. :meth:`write_memory`
+    saves a note, which the platform refuses while memory is off.
     """
 
     platform: PlatformConfig
     tool: SearchTool = "search_file_area"
     arguments: dict[str, object] = {}
     top_k: int = 6
+    memory: bool = False
 
     async def asearch(self, query: str, *, top_k: int | None = None) -> list[Document]:
+        k = top_k or self.top_k
         result = await call_platform_tool(
-            self.platform,
-            self.tool,
-            {**self.arguments, "query": query, "topK": top_k or self.top_k},
+            self.platform, self.tool, {**self.arguments, "query": query, "topK": k}
         )
-        return documents_from_matches(self.tool, cast(list[dict[str, object]], result["matches"]))
+        documents = documents_from_matches(
+            self.tool, cast(list[dict[str, object]], result["matches"])
+        )
+        if self.memory and "projectId" in self.arguments:
+            remembered = await call_platform_tool(
+                self.platform,
+                "memory_search",
+                {"projectId": self.arguments["projectId"], "query": query, "topK": min(k, 8)},
+            )
+            documents += documents_from_matches(
+                "memory_search", cast(list[dict[str, object]], remembered.get("matches", []))
+            )
+        return documents
+
+    async def awrite_memory(
+        self,
+        text: str,
+        *,
+        kind: MemoryKind = "fact",
+        citations: list[dict[str, str]] | None = None,
+        tags: list[str] | None = None,
+    ) -> bool:
+        """Save a note to the person's project memory. False when memory is off for the project."""
+        arguments: dict[str, object] = {
+            "projectId": self.arguments["projectId"],
+            "kind": kind,
+            "text": text,
+        }
+        if citations:
+            arguments["citations"] = citations
+        if tags:
+            arguments["tags"] = tags
+        result = await call_platform_tool(self.platform, "memory_write", arguments)
+        return result.get("saved") is True
+
+    def write_memory(
+        self,
+        text: str,
+        *,
+        kind: MemoryKind = "fact",
+        citations: list[dict[str, str]] | None = None,
+        tags: list[str] | None = None,
+    ) -> bool:
+        return asyncio.run(self.awrite_memory(text, kind=kind, citations=citations, tags=tags))
 
     def search(self, query: str, *, top_k: int | None = None) -> list[Document]:
         return asyncio.run(self.asearch(query, top_k=top_k))

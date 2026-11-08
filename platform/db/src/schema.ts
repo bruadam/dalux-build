@@ -552,3 +552,62 @@ export const indexRuns = pgTable(
   },
   (t) => [index('index_runs_scope_idx').on(t.scopeId, t.startedAt)],
 );
+
+export const memoryKind = pgEnum('memory_kind', ['fact', 'decision', 'preference', 'open_question', 'summary']);
+
+/** Whether a person keeps memory for a project. A missing row means off (PRD 6.10). */
+export const memorySettings = pgTable(
+  'memory_settings',
+  {
+    accountId: uuid('account_id')
+      .notNull()
+      .references(() => accounts.id, { onDelete: 'cascade' }),
+    connectionId: uuid('connection_id')
+      .notNull()
+      .references(() => connections.id, { onDelete: 'cascade' }),
+    projectId: text('project_id').notNull(),
+    enabled: boolean('enabled').notNull().default(false),
+    updatedAt: updatedAt(),
+  },
+  (t) => [primaryKey({ columns: [t.accountId, t.connectionId, t.projectId] })],
+);
+
+/**
+ * One person's note about one project (PRD 6.10), private to its owner by RLS. An edit inserts a new row
+ * and points the old one at it with `superseded_by`; deleting the current row deletes its history too.
+ * `source` is `user`, `agent:<token name>` or `hosted_agent:<id>`. No vector index: one person's entries
+ * for one project are capped (1,000), so the embedding column is scanned exactly. At most one current
+ * `summary` per person and project is kept by the code that writes it, under an advisory lock.
+ */
+export const memoryEntries = pgTable(
+  'memory_entries',
+  {
+    id: id(),
+    accountId: uuid('account_id')
+      .notNull()
+      .references(() => accounts.id, { onDelete: 'cascade' }),
+    connectionId: uuid('connection_id')
+      .notNull()
+      .references(() => connections.id, { onDelete: 'cascade' }),
+    projectId: text('project_id').notNull(),
+    kind: memoryKind('kind').notNull(),
+    text: text('text').notNull(),
+    /** `[{ fileId?, fileName?, fileAreaId?, location?, taskId? }]` */
+    citations: jsonb('citations').notNull().default([]),
+    source: text('source').notNull(),
+    tags: text('tags').array().notNull().default(sql`'{}'::text[]`),
+    /** Null when no embedding key was set, or after an edit in the interface (which has no key). */
+    embedding: vector('embedding', { dimensions: EMBEDDING_DIMENSIONS }),
+    tsv: tsvector('tsv')
+      .notNull()
+      .generatedAlwaysAs((): SQL => sql`to_tsvector('simple', "text")`),
+    createdAt: createdAt(),
+    updatedAt: updatedAt(),
+    supersededBy: uuid('superseded_by').references((): AnyPgColumn => memoryEntries.id, { onDelete: 'cascade' }),
+  },
+  (t) => [
+    index('memory_entries_owner_project_idx').on(t.accountId, t.connectionId, t.projectId),
+    check('memory_entries_text_length', sql`char_length(${t.text}) between 1 and 2000`),
+    check('memory_entries_tags_count', sql`cardinality(${t.tags}) <= 8`),
+  ],
+);

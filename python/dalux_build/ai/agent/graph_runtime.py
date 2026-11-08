@@ -16,7 +16,7 @@ from __future__ import annotations
 import asyncio
 import os
 from collections.abc import Callable, Sequence
-from typing import TYPE_CHECKING, Protocol
+from typing import TYPE_CHECKING, Protocol, cast, get_args
 
 from langchain.agents import create_agent
 from langchain_core.documents import Document
@@ -26,7 +26,7 @@ from langchain_mistralai import ChatMistralAI
 
 from ..platform_config import PlatformConfig
 from ..rag.adaptive import build_adaptive_rag, format_documents, spread_across_files
-from ..rag.platform import PlatformRetriever
+from ..rag.platform import MemoryKind, PlatformRetriever
 from ..rag.vectorstore import open_vectorstore
 from ..reference import BYGGERIETSREGLER_CORPUS
 from ..reference.store import open_reference_store, reference_store_exists
@@ -155,13 +155,14 @@ def _platform_retriever(platform: PlatformConfig) -> PlatformRetriever:
     folder_id = os.environ.get("DALUX_AGENT_FOLDER_ID")
     if folder_id:
         arguments["folderId"] = folder_id
-    return PlatformRetriever(platform=platform, arguments=arguments)
+    return PlatformRetriever(platform=platform, arguments=arguments, memory=platform.memory)
 
 
 def _build_retriever_tools() -> list[BaseTool]:
     platform = PlatformConfig.from_env()
     retriever: _Retriever
     similar: Callable[[str, int], list[Document]]
+    platform_retriever: PlatformRetriever | None = None
     if platform is None:
         cache_key = _env("DALUX_AGENT_CACHE_KEY")
         embeddings_provider = os.environ.get("DALUX_AGENT_EMBEDDINGS_PROVIDER", "mistral")
@@ -193,7 +194,27 @@ def _build_retriever_tools() -> list[BaseTool]:
         passages = spread_across_files(candidates, limit=_COMPARE_PASSAGES, per_file=2)
         return format_documents(passages) or "No matching passages in the indexed documents."
 
-    return [search_dalux_documents, compare_dalux_documents]
+    tools = [search_dalux_documents, compare_dalux_documents]
+    if platform_retriever is not None and platform_retriever.memory:
+        tools.append(_remember_tool(platform_retriever))
+    return tools
+
+
+def _remember_tool(retriever: PlatformRetriever) -> BaseTool:
+    @tool
+    def remember_dalux_note(text: str, kind: str = "fact") -> str:
+        """Save one short note (a fact, decision, preference or open_question, at most 2,000
+        characters) to the user's private project memory. Never save secrets or personal data."""
+        if kind not in get_args(MemoryKind):
+            return f"Unknown kind {kind!r}. Use one of: {', '.join(get_args(MemoryKind))}."
+        saved = retriever.write_memory(text, kind=cast(MemoryKind, kind))
+        return (
+            "Saved to project memory."
+            if saved
+            else "Memory is off for this project; nothing saved."
+        )
+
+    return remember_dalux_note
 
 
 def _build_reference_tools() -> list[BaseTool]:

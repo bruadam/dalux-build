@@ -43,7 +43,7 @@ jobs:
           fi
           grep -qE '^javascript/' <<<"$changed" && js=true || js=false
           grep -qE '^(python/|webhook-server/)' <<<"$changed" && py=true || py=false
-          grep -qE '^(mcp-server/|javascript/|package(-lock)?\.json$|\.github/workflows/ci\.yml$)' <<<"$changed" && mcp=true || mcp=false
+          grep -qE '^(mcp-server/|platform/db/|javascript/|package(-lock)?\.json$|\.github/workflows/ci\.yml$)' <<<"$changed" && mcp=true || mcp=false
           grep -qE '^(platform/|mcp-server/|javascript/|package(-lock)?\.json$|\.github/workflows/ci\.yml$)' <<<"$changed" && platform=true || platform=false
           {
             echo "javascript=$js"

@@ -211,7 +211,7 @@ describe('privileges', () => {
     for (const { tablename } of rows) {
       for (const kind of ['INSERT', 'UPDATE', 'DELETE']) {
         const allowed = {
-          INSERT: ['audit_log', 'oauth_clients', 'oauth_sessions', 'oauth_tokens', 'memory_entries', 'memory_settings'],
+          INSERT: ['audit_log', 'auth_events', 'oauth_clients', 'oauth_sessions', 'oauth_tokens', 'memory_entries', 'memory_settings'],
           UPDATE: ['memory_settings'],
           DELETE: ['memory_entries'],
         }[kind]!.includes(tablename);

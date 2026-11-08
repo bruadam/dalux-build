@@ -136,6 +136,7 @@ What to back up:
 | `PLATFORM_ENCRYPTION_KEY` | your `.env` or secret store; **keep a copy apart from the database backup** | Not recoverable: stored Dalux and embedding keys can no longer be read. Add the connection keys and the embedding key again in the interface |
 | `BETTER_AUTH_SECRET` | `.env` | Everyone is signed out; nothing else is lost |
 | Index data (`indexes`, `documents`, `chunks`) | inside the dump | Recoverable: the worker rebuilds it from the index scopes (embedding calls are repeated) |
+| Project memory (`memory_entries`, `memory_settings`) | inside the dump | **Not recoverable by re-indexing**: it is what users saved. Never exclude these tables from the dump |
 
 Back up (the database and the roles, which `pg_dump` does not include):
 
@@ -146,7 +147,7 @@ docker compose exec -T postgres pg_dumpall -U migrator --globals-only > globals-
 ```
 
 To keep the backup small, leave out the index data and let the worker rebuild it after a restore. Add
-`--exclude-table-data=chunks --exclude-table-data=documents --exclude-table-data=indexes` to the `pg_dump` command.
+`--exclude-table-data=chunks --exclude-table-data=documents --exclude-table-data=indexes` to the `pg_dump` command (only these three: memory is user data).
 
 The dump and `globals.sql` hold password hashes and encrypted keys. Store them like the `.env` file.
 
@@ -206,6 +207,9 @@ admin (trusted for configuration, with no implicit access to document data).
   `nosniff`, no `Server` or `X-Powered-By` header.
 - **SSRF.** A connection's base URL must be `https://*.dalux.com` when it is created in the interface, when it is
   loaded by `mcp` or `worker`, and in header mode. The key check on connection creation does not follow redirects.
+- **Memory is private to its owner.** Row-level security on `memory_entries` and `memory_settings` matches the owner's
+  account only; admins, other users, and the `web` and `mcp` roles without that account id see nothing, and `worker` has
+  no access (tested as the roles, including an admin with every capability).
 - **Database.** `web`, `mcp`, `worker` are not superusers, cannot bypass RLS, cannot create objects, and cannot
   switch roles. The only `SECURITY DEFINER` function has a fixed `search_path` and is callable only by `web`
   and `worker`.

@@ -132,6 +132,49 @@ describe('row-level security under search_path tricks (mcp role)', () => {
   });
 });
 
+describe('memory (PRD 6.10): private to its owner, also against admins and the mcp role', () => {
+  const read = (role: 'mcp' | 'web', account: string) =>
+    withAccount(t.as(role), account, (tx) => tx.execute(sql`SELECT text FROM memory_entries ORDER BY text`)).then((result) => result.rows.map((row) => row.text));
+
+  beforeAll(async () => {
+    ids.boss = await insert('accounts', { type: 'personal', email: 'boss@example.com', name: 'boss', role: 'admin' });
+    const everything = ['projects:read', 'files:read', 'memory:read', 'memory:write'];
+    await insert('grants', { account_id: ids.boss, connection_id: ids.conn, capabilities: everything });
+    await insert('grants', { account_id: ids.alice, connection_id: ids.conn, project_id: 'P1', capabilities: ['memory:read', 'memory:write'] });
+    await t.owner.query('SELECT refresh_effective_access()');
+    await t.owner.query(
+      `INSERT INTO memory_entries (account_id, connection_id, project_id, kind, text, source) VALUES ($1, $2, 'P1', 'fact', $3, 'test')`,
+      [ids.alice, ids.conn, "alice's private note"],
+    );
+  });
+
+  it.each(['mcp', 'web'] as const)('shows an entry to its owner only, as %s, even to an admin holding every capability', async (role) => {
+    expect(await read(role, ids.alice)).toEqual(["alice's private note"]);
+    expect(await read(role, ids.boss)).toEqual([]);
+    expect(await read(role, ids.nobody)).toEqual([]);
+  });
+
+  it('shows nothing without an account id, and refuses writes in another account\'s name', async () => {
+    const client = await t.as('mcp').$client.connect();
+    try {
+      expect((await client.query('SELECT count(*)::int AS n FROM memory_entries')).rows[0].n).toBe(0);
+    } finally {
+      client.release(true);
+    }
+    await expect(
+      withAccount(t.as('mcp'), ids.boss, (tx) =>
+        tx.execute(sql`INSERT INTO memory_entries (account_id, connection_id, project_id, kind, text, source) VALUES (${ids.alice}, ${ids.conn}, 'P1', 'fact', 'planted', 'test')`),
+      ),
+    ).rejects.toThrow();
+  });
+
+  it('stops showing entries when the owner loses the capability, after the access refresh', async () => {
+    await t.owner.query(`UPDATE grants SET capabilities = '{projects:read}' WHERE account_id = $1`, [ids.alice]);
+    await t.owner.query('SELECT refresh_effective_access()');
+    expect(await read('mcp', ids.alice)).toEqual([]);
+  });
+});
+
 describe('SECURITY DEFINER functions', () => {
   it('are only refresh_effective_access, with a fixed search_path, callable by web and worker only', async () => {
     const { rows } = await t.owner.query(
@@ -154,16 +197,34 @@ describe('privileges', () => {
     }
   });
 
-  it('mcp only inserts audit rows and OAuth clients, sessions, and tokens, and updates a few columns', async () => {
+  it('mcp only writes audit rows, OAuth clients, sessions and tokens, memory, and a few columns', async () => {
     const { rows } = await t.owner.query(`SELECT tablename FROM pg_tables WHERE schemaname = 'public'`);
     for (const { tablename } of rows) {
       for (const kind of ['INSERT', 'UPDATE', 'DELETE']) {
-        const allowed = kind === 'INSERT' && ['audit_log', 'oauth_clients', 'oauth_sessions', 'oauth_tokens'].includes(tablename);
+        const allowed = {
+          INSERT: ['audit_log', 'oauth_clients', 'oauth_sessions', 'oauth_tokens', 'memory_entries', 'memory_settings'],
+          UPDATE: ['memory_settings'],
+          DELETE: ['memory_entries'],
+        }[kind]!.includes(tablename);
         expect([tablename, kind, await privilege('mcp', tablename, kind)]).toEqual([tablename, kind, allowed]);
       }
     }
     for (const table of ['grants', 'groups', 'group_memberships', 'auth_users', 'auth_sessions', 'auth_accounts', 'account_invites']) {
       expect(await privilege('mcp', table, 'SELECT')).toBe(false);
+    }
+  });
+
+  it('worker has no access to memory, and nobody edits memory text in place', async () => {
+    for (const table of ['memory_entries', 'memory_settings']) {
+      for (const kind of ['SELECT', 'INSERT', 'UPDATE', 'DELETE']) expect(await privilege('worker', table, kind)).toBe(false);
+    }
+    for (const role of ['web', 'mcp']) {
+      expect(await privilege(role, 'memory_entries', 'UPDATE')).toBe(false);
+      const { rows } = await t.owner.query(
+        `SELECT column_name FROM information_schema.column_privileges WHERE grantee = $1 AND table_name = 'memory_entries' AND privilege_type = 'UPDATE'`,
+        [role],
+      );
+      expect(rows).toEqual([{ column_name: 'superseded_by' }]);
     }
   });
 

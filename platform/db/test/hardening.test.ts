@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto';
 import { sql } from 'drizzle-orm';
 import { withAccount } from '../src/db';
 import { createTestDatabase, type TestDatabase } from './testDatabase';
@@ -176,17 +177,25 @@ describe('memory (PRD 6.10): private to its owner, also against admins and the m
 });
 
 describe('SECURITY DEFINER functions', () => {
-  it('are only refresh_effective_access, with a fixed search_path, callable by web and worker only', async () => {
+  it('are only refresh_effective_access and admin_stop_agent, with a fixed search_path and no PUBLIC execute', async () => {
     const { rows } = await t.owner.query(
-      `SELECT p.proname, p.proconfig, has_function_privilege('public', p.oid, 'EXECUTE') AS public_exec
+      `SELECT p.proname, p.proconfig, has_function_privilege('public', p.oid, 'EXECUTE') AS public_exec,
+              has_function_privilege('mcp', p.oid, 'EXECUTE') AS mcp_exec
        FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
-       WHERE n.nspname = 'public' AND p.prosecdef`,
+       WHERE n.nspname = 'public' AND p.prosecdef ORDER BY p.proname`,
     );
-    expect(rows).toHaveLength(1);
-    expect(rows[0].proname).toBe('refresh_effective_access');
-    expect(rows[0].proconfig).toEqual(['search_path=public, pg_temp']);
-    expect(rows[0].public_exec).toBe(false);
+    expect(rows.map((row) => row.proname)).toEqual(['admin_stop_agent', 'refresh_effective_access']);
+    for (const row of rows) {
+      expect(row.proconfig).toEqual(['search_path=public, pg_temp']);
+      expect(row.public_exec).toBe(false);
+      expect(row.mcp_exec).toBe(false);
+    }
     expect(await failure('mcp', 'SELECT refresh_effective_access()')).toMatch(/permission denied/);
+    expect(await failure('mcp', `SELECT admin_stop_agent('${randomUUID()}', true)`)).toMatch(/permission denied/);
+  });
+
+  it('admin_stop_agent refuses an account that is not an admin', async () => {
+    expect(await failure('web', `SELECT admin_stop_agent('${randomUUID()}', true)`)).toMatch(/only admins/);
   });
 });
 
@@ -211,6 +220,12 @@ describe('privileges', () => {
     }
     for (const table of ['grants', 'groups', 'group_memberships', 'auth_users', 'auth_sessions', 'auth_accounts', 'account_invites']) {
       expect(await privilege('mcp', table, 'SELECT')).toBe(false);
+    }
+  });
+
+  it('mcp has no access to hosted agents or their runs', async () => {
+    for (const table of ['hosted_agents', 'agent_runs', 'agent_run_files']) {
+      for (const kind of ['SELECT', 'INSERT', 'UPDATE', 'DELETE']) expect(await privilege('mcp', table, kind)).toBe(false);
     }
   });
 

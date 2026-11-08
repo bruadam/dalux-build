@@ -31,6 +31,8 @@ Environment (all required unless a default is given):
 | `PLATFORM_ENCRYPTION_KEY` | web, mcp, worker | 32 bytes, base64 (`openssl rand -base64 32`); encrypts Dalux and embedding keys. Losing it makes stored keys unreadable |
 | `BETTER_AUTH_SECRET` | web | Signs interface sessions (`openssl rand -base64 32`) |
 | `PUBLIC_URL` | web, mcp | The public origin, e.g. `https://mcp.example.com`; used for invite links, cookies, auth origin checks, and as the OAuth issuer. Must be `https://` |
+| `TRUSTED_PROXY_HOPS` | web, mcp | Reverse proxies in front that set `X-Forwarded-For` (default `1`: Caddy). Only that many hops from the right are trusted for the logged client IP. See [observability.md](observability.md) |
+| `METRICS_PORT` | mcp | Port of `/metrics` (default `9464`). Not routed by Caddy and not published |
 | `PLATFORM_SITE_ADDRESS` | caddy | Host name Caddy serves and gets a certificate for (default `localhost`) |
 | `PLATFORM_HTTP_PORT` / `PLATFORM_HTTPS_PORT` / `PLATFORM_DB_PORT` | caddy, postgres | Host ports (defaults `80`, `443`, `5432`; Postgres binds to 127.0.0.1 only) |
 
@@ -115,16 +117,26 @@ every minute queues what is due:
 Optional: `DOCS_GITHUB_TOKEN` (or `GITHUB_TOKEN`) for private docs repositories.
 The worker assumes it is the only worker: at start it marks runs left *running* as failed.
 
-## Audit log
+## Activity (audit log)
 
-*Audit log* (admins) lists every MCP tool call and every admin change, newest first. A tool call row has
-the time, account, linked Dalux user ID, client (token or OAuth app name), connection, project, tool,
-capability that was checked, result (`ok`, `denied`, `error`), and duration. It never holds tool arguments,
-results, or document text. Filter by time, account, tool or action, connection, status, and kind; *Export CSV*
-downloads the filtered rows (up to 50,000; cells that start with `=`, `+`, `-` or `@` are prefixed with `'`).
+*Activity* (admins) lists every MCP tool call and every admin change, newest first, with an overview (calls
+per day, top tools and accounts, denial and error rates, latency p50 and p95, Dalux rate-limit hits) and flags
+(a new IP address, one credential on many IPs, bursts of denials or calls). A tool call row has the time,
+account, linked Dalux user ID, client (token or OAuth app name), IP address, connection, project, files, tool,
+the capability that was checked, result (`ok`, `denied` with the reason, `error` with a code), size, and
+duration; click the time for the detail panel. It never holds tool results, tokens, keys, or document text.
+Search text is stored only if an admin turns on *Log search text* in Settings. Filter by time, account, caller
+type (person, robot, hosted agent), tool or action, connection, project, status, IP, client, and kind; *Export
+CSV* and *Export JSON* download the filtered rows (up to 50,000; CSV cells that start with `=`, `+`, `-` or
+`@` are prefixed with `'`). Failed and unauthenticated attempts are listed below the table.
 
-**Retention** is set on the same page (default 180 days). The worker deletes older rows every hour. Only the
-`worker` role can delete audit rows; no role can change them.
+Everyone sees their own calls and failed attempts under *My activity*; row-level security keeps other people's
+rows out. **Retention** is set on the same page (default 180 days). The worker deletes older rows and failed
+attempts every hour. IP addresses are cleared earlier (default 90 days, *Settings*). Only the `worker` role
+can delete rows or clear IPs; no role can change them otherwise.
+
+Client IPs, `TRUSTED_PROXY_HOPS`, the *IP logging* setting, GDPR choices, JSON logs for Loki or ELK, and the
+Prometheus `/metrics` endpoint are described in [observability.md](observability.md).
 
 ## Backup and restore
 

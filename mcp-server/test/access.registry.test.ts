@@ -1,5 +1,6 @@
 import { Client, InMemoryTransport } from '@modelcontextprotocol/client';
 import type { DaluxClient } from 'dalux-build-api';
+import type { Db } from '@dalux-platform/db';
 
 import type { RequestContext } from '../src/access/context';
 import { CAPABILITIES, TOOL_ACCESS } from '../src/access/registry';
@@ -11,6 +12,7 @@ async function registeredTools(context?: RequestContext) {
   const server = buildServer({ projects: { getProject } } as unknown as DaluxClient, {
     context,
     toolsets: TOOLSET_NAMES,
+    memoryDb: {} as Db,
   });
   const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
   const client = new Client({ name: 'test-client', version: '1.0.0' });
@@ -30,6 +32,23 @@ describe('tool access registry', () => {
     for (const name of names) {
       expect([...CAPABILITIES, 'none']).toContain(TOOL_ACCESS[name].capability);
     }
+  });
+
+  it('registers the memory tools only when a platform database is given', async () => {
+    const server = buildServer({} as DaluxClient, { toolsets: TOOLSET_NAMES });
+    const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
+    const client = new Client({ name: 'test-client', version: '1.0.0' });
+    await Promise.all([client.connect(clientTransport), server.connect(serverTransport)]);
+    const names = (await client.listTools()).tools.map((tool) => tool.name);
+    expect(names.some((name) => name.startsWith('memory_'))).toBe(false);
+    expect(names).toContain('list_files');
+  });
+
+  it('needs memory:write for every memory tool that changes anything', () => {
+    const memory = Object.entries(TOOL_ACCESS).filter(([name]) => name.startsWith('memory_'));
+    const writers = memory.filter(([, access]) => access.capability === 'memory:write').map(([name]) => name).sort();
+    expect(writers).toEqual(['memory_forget', 'memory_set_enabled', 'memory_update', 'memory_write']);
+    expect(memory.filter(([, access]) => access.capability === 'memory:read')).toHaveLength(3);
   });
 
   it('flags only the index build and drop tools as admin-only', () => {

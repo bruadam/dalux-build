@@ -20,6 +20,8 @@ import * as ifc from './tools/ifc';
 import { registerIfcViewer } from './ui/ifcViewer';
 import { registerTaskTimeline } from './ui/taskTimeline';
 import { registerSkills } from './tools/skills';
+import { registerMemoryTools } from './memory/tools';
+import type { Db } from '@dalux-platform/db';
 import { UNRESTRICTED_CONTEXT, type RequestContext } from './access/context';
 import type { FolderLookup } from './access/folders';
 import { createToolGuard, type ToolCallRecord } from './access/guard';
@@ -627,6 +629,8 @@ export interface BuildServerOptions {
   audit?: (record: ToolCallRecord) => void;
   /** Toolsets to expose (see toolsets.ts); defaults to DEFAULT_TOOLSETS. */
   toolsets?: readonly Toolset[];
+  /** The platform database (role `mcp`); its presence turns on the memory tools, which exist only in platform mode. */
+  memoryDb?: Db;
 }
 
 /**
@@ -674,6 +678,7 @@ export function buildServer(client: DaluxClient, options: BuildServerOptions = {
     );
   }
 
+  if (options.memoryDb) registerMemoryTools(server, guard, options.memoryDb);
   registerIfcViewer(server, client, guard);
   registerTaskTimeline(server, client, guard);
   registerSkills(server, toolsets);

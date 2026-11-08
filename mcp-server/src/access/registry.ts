@@ -13,6 +13,8 @@ export const CAPABILITIES = [
   'scheduling:read',
   'directory:read',
   'models:read',
+  'memory:read',
+  'memory:write',
 ] as const;
 
 export type Capability = (typeof CAPABILITIES)[number];
@@ -196,6 +198,16 @@ export const TOOL_ACCESS: Record<string, ToolAccess> = {
   ifc_viewer_geometry: ifcRead,
   ifc_viewer_element: ifcRead,
   ifc_viewer_selection: ifcRead,
+
+  // Per-person project memory (platform mode only). Stored in the platform database, never in Dalux. The tools
+  // also need read access to the project: projects:read, files:read or tasks:read.
+  memory_status: read('memory:read'),
+  memory_search: read('memory:read'),
+  memory_list: read('memory:read'),
+  memory_set_enabled: read('memory:write'),
+  memory_write: read('memory:write'),
+  memory_update: read('memory:write'),
+  memory_forget: read('memory:write'),
 
   // Server itself
   get_skill: none,

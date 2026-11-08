@@ -25,6 +25,8 @@ export interface RequestContext {
    * the account and connection, or in header mode of the Dalux credentials.
    */
   fileNamespace?: string;
+  /** The token or OAuth client the call came in on; names the writer of memory entries. */
+  client?: string;
 }
 
 export const UNRESTRICTED_CONTEXT: RequestContext = { access: 'unrestricted' };

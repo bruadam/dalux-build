@@ -1,11 +1,13 @@
 import type { DaluxClient } from 'dalux-build-api';
+import type { Db } from '@dalux-platform/db';
 import { Client, InMemoryTransport } from '@modelcontextprotocol/client';
 import { buildServer } from '../src/server';
 import { buildHttpApp } from '../src/http';
 import { DEFAULT_TOOLSETS, parseToolsets, TOOLSET_NAMES, TOOLSETS, type Toolset } from '../src/toolsets';
 
 async function listedTools(toolsets?: readonly Toolset[]): Promise<{ client: Client; names: string[] }> {
-  const server = buildServer({} as DaluxClient, { toolsets });
+  // memory tools exist only in platform mode, which has a database
+  const server = buildServer({} as DaluxClient, { toolsets, memoryDb: {} as Db });
   const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
   const client = new Client({ name: 'test-client', version: '1.0.0' });
   await Promise.all([client.connect(clientTransport), server.connect(serverTransport)]);

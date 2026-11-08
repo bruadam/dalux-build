@@ -4,7 +4,7 @@ on:
   push:
     branches: [main]
   pull_request:
-    branches: [main]
+    branches: [main, feat/self-hosted-platform]
   workflow_dispatch:
 
 concurrency:
@@ -22,6 +22,7 @@ jobs:
       javascript: ${{ steps.detect.outputs.javascript }}
       python: ${{ steps.detect.outputs.python }}
       mcp-server: ${{ steps.detect.outputs.mcp-server }}
+      platform: ${{ steps.detect.outputs.platform }}
     steps:
       - uses: actions/checkout@v7
         with:
@@ -43,10 +44,12 @@ jobs:
           grep -qE '^javascript/' <<<"$changed" && js=true || js=false
           grep -qE '^(python/|webhook-server/)' <<<"$changed" && py=true || py=false
           grep -qE '^(mcp-server/|javascript/|package(-lock)?\.json$|\.github/workflows/ci\.yml$)' <<<"$changed" && mcp=true || mcp=false
+          grep -qE '^(platform/|mcp-server/|javascript/|package(-lock)?\.json$|\.github/workflows/ci\.yml$)' <<<"$changed" && platform=true || platform=false
           {
             echo "javascript=$js"
             echo "python=$py"
             echo "mcp-server=$mcp"
+            echo "platform=$platform"
           } >> "$GITHUB_OUTPUT"
 
   test:
@@ -78,6 +81,50 @@ jobs:
       - run: npm run typecheck --workspace=mcp-server
       - run: npm test --workspace=mcp-server
       - run: npm run build --workspace=mcp-server
+
+  # Platform mode (platform/ and the Postgres paths of mcp-server): row-level security,
+  # roles, the Postgres index store, and the HTTP tests need a real Postgres with pgvector.
+  # The mcp-server and web suites that need a database skip it when TEST_DATABASE_URL is unset.
+  test-platform:
+    name: Test platform
+    needs: changes
+    if: needs.changes.outputs.platform == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    services:
+      postgres:
+        image: pgvector/pgvector:pg17
+        env:
+          POSTGRES_USER: migrator
+          POSTGRES_PASSWORD: migrator
+          POSTGRES_DB: platform_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U migrator -d platform_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      TEST_DATABASE_URL: postgres://migrator:migrator@localhost:5432/platform_test
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: package-lock.json
+      - run: npm ci
+      - run: npm run build --workspace=javascript
+      - run: npm run build --workspace=@dalux-platform/db
+      - run: npm run typecheck --workspace=@dalux-platform/db
+      - run: npm test --workspace=@dalux-platform/db
+      - run: npm run typecheck --workspace=@dalux-platform/web
+      - run: npm test --workspace=@dalux-platform/web
+      - run: npm run typecheck --workspace=mcp-server
+      - run: npm run test:platform --workspace=mcp-server
+      - run: node scripts/run-jest.mjs test/store.postgres.test.ts
+        working-directory: mcp-server
 
   # A changeset is required whenever javascript/ or python/dalux_build (the
   # published code) changes, since both packages release together (see

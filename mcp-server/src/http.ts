@@ -17,6 +17,7 @@ import { createPlatformOAuthServer } from './oauthPlatform';
 import { validateDaluxBaseUrl } from './daluxUrl';
 import type { Platform } from './platform/platform';
 import { createPlatformHandler } from './platform/http';
+import { clientAddress, PEER_HEADER } from './platform/requestInfo';
 
 export interface BuildHttpAppOptions {
   /**
@@ -55,10 +56,14 @@ export interface BuildHttpAppOptions {
   platform?: Platform;
   /** Toolsets for requests without a `?toolsets=` query parameter (see toolsets.ts); defaults to DEFAULT_TOOLSETS. */
   toolsets?: readonly Toolset[];
+  /** Reverse proxies that set X-Forwarded-For in front of this server (platform mode); defaults to TRUSTED_PROXY_HOPS, else 0. */
+  trustedProxyHops?: number;
 }
 
 export interface HttpApp {
   start: (port: number, host?: string) => Promise<void>;
+  /** Stops listening and drops open connections. */
+  stop: () => Promise<void>;
   /** The underlying web-standard fetch handler, exposed for testing without binding a real port. */
   handleRequest: (request: Request) => Promise<Response>;
 }
@@ -224,7 +229,13 @@ export function buildHttpApp(options: BuildHttpAppOptions = {}): HttpApp {
     }
     if (options.platform) {
       // The platform is the authorization server: accounts log in on the web interface (PRD 6.5 mode B).
-      platformOAuth = createPlatformOAuthServer({ issuer: issuerUrl.origin, db: options.platform.db });
+      const { platform } = options;
+      platformOAuth = createPlatformOAuthServer({
+        issuer: issuerUrl.origin,
+        db: platform.db,
+        onFailure: (reason, request) =>
+          platform.authEvent({ source: 'oauth', reason, address: clientAddress(request, options.trustedProxyHops), userAgent: request.headers.get('user-agent') }),
+      });
     } else {
       const resourceUrl = new URL('/mcp', issuerUrl);
       oauthServer = createOAuthServer({ issuer: issuerUrl.origin, resourceUrl });
@@ -296,7 +307,7 @@ export function buildHttpApp(options: BuildHttpAppOptions = {}): HttpApp {
 
   const platform = options.platform;
   const serve = platform
-    ? createPlatformHandler({ platform, serveWithHeaders, publicUrl: options.publicUrl, toolsets: options.toolsets })
+    ? createPlatformHandler({ platform, serveWithHeaders, publicUrl: options.publicUrl, toolsets: options.toolsets, trustedProxyHops: options.trustedProxyHops })
     : serveWithHeaders;
 
   const guardedHandler = {
@@ -320,6 +331,7 @@ export function buildHttpApp(options: BuildHttpAppOptions = {}): HttpApp {
   const server = createNodeServer((req, res) => {
     if (validateHost && !validateHost(req, res)) return;
     if (validateOrigin && !validateOrigin(req, res)) return;
+    req.headers[PEER_HEADER] = req.socket.remoteAddress;
     void nodeHandler(req, res);
   });
 
@@ -328,6 +340,11 @@ export function buildHttpApp(options: BuildHttpAppOptions = {}): HttpApp {
     start: (port: number, host = localhostOnly ? '127.0.0.1' : '0.0.0.0') =>
       new Promise((resolve) => {
         server.listen(port, host, () => resolve());
+      }),
+    stop: () =>
+      new Promise((resolve) => {
+        server.close(() => resolve());
+        server.closeAllConnections();
       }),
   };
 }

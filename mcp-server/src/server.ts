@@ -24,7 +24,8 @@ import { registerMemoryTools } from './memory/tools';
 import type { Db } from '@dalux-platform/db';
 import { UNRESTRICTED_CONTEXT, type RequestContext } from './access/context';
 import type { FolderLookup } from './access/folders';
-import { createToolGuard, type ToolCallRecord } from './access/guard';
+import { createToolGuard, requestIdNote, type ToolCallRecord } from './access/guard';
+import { currentCallStats, errorCodeOf } from './observability/callStats';
 import { TOOL_ACCESS } from './access/registry';
 import { DEFAULT_TOOLSETS, toolsInToolsets, type Toolset } from './toolsets';
 
@@ -618,6 +619,16 @@ function configureToolRegistration(server: McpServer, enabledTools: ReadonlySet<
   }) as typeof server.registerTool;
 }
 
+/** Item count and truncation of a list result, for the audit log (the content itself is never recorded). */
+function summarizeResult(result: unknown): void {
+  const stats = currentCallStats();
+  if (!stats || typeof result !== 'object' || result === null) return;
+  const { items, truncated } = result as { items?: unknown; truncated?: unknown };
+  if (Array.isArray(items)) stats.resultItems = items.length;
+  else if (Array.isArray(result)) stats.resultItems = result.length;
+  if (typeof truncated === 'boolean') stats.resultTruncated = truncated;
+}
+
 export interface BuildServerOptions {
   name?: string;
   version?: string;
@@ -670,9 +681,12 @@ export function buildServer(client: DaluxClient, options: BuildServerOptions = {
         guard(spec.name, args as Record<string, unknown>, errorResult, async () => {
           try {
             const result = await spec.handler(client, args as never);
+            summarizeResult(result);
             return { content: toolResultContent(result), isError: false };
           } catch (err) {
-            return errorResult(err instanceof Error ? err.message : String(err));
+            const stats = currentCallStats();
+            if (stats) stats.errorCode = errorCodeOf(err);
+            return errorResult(`${err instanceof Error ? err.message : String(err)}${requestIdNote(context)}`);
           }
         }),
     );

@@ -208,6 +208,8 @@ describe('what an agent may reach', () => {
     expect(rows).toHaveLength(1);
     expect(rows[0]).toMatchObject({ account_id: ids.alice, action: 'list_project_tasks', status: 'ok', capability: 'tasks:read', project_id: 'p1' });
     expect(rows[0].client).toBe(`hosted agent: Weekly (${agent})`);
+    expect(rows[0]).toMatchObject({ auth_method: 'agent', agent_id: agent, agent_name: 'Weekly', client_ip: null });
+    expect(rows[0].request_id).toEqual(expect.any(String));
   });
 
   it('refuses a project outside the agent, a capability outside its subset, and a tool outside its list', async () => {

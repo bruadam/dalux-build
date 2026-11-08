@@ -1,7 +1,9 @@
 import type { EffectiveAccess, RequestContext } from './context';
 import { TOOL_ACCESS, type Capability, type ResourceScope } from './registry';
 
-export type AccessDecision = { allowed: true } | { allowed: false; reason: string };
+export type DenialCode = 'missing_capability' | 'no_folder_access' | 'admin_only' | 'no_access_rule';
+
+export type AccessDecision = { allowed: true } | { allowed: false; reason: string; code: DenialCode };
 
 /** Folder and file-area scopes only apply to files:*; other areas stop at the project. */
 function effectiveScope(capability: Capability, scope: ResourceScope): ResourceScope {
@@ -63,19 +65,26 @@ export function checkAccess(
   if (context.access === 'unrestricted') return { allowed: true };
 
   const tool = TOOL_ACCESS[toolName];
-  if (!tool) return { allowed: false, reason: `Tool ${toolName} has no access rule.` };
+  if (!tool) return { allowed: false, reason: `Tool ${toolName} has no access rule.`, code: 'no_access_rule' };
   if (tool.adminOnly && context.account?.role !== 'admin') {
-    return { allowed: false, reason: `${toolName} is only available to admins.` };
+    return { allowed: false, reason: `${toolName} is only available to admins.`, code: 'admin_only' };
   }
   const { capability } = tool;
   if (capability === 'none') return { allowed: true };
 
   const resolved = scopes ?? tool.scopes(args);
+  /** The caller holds the capability, but not for this file area, folder or file. */
+  const denialCode = (missing: Capability): DenialCode =>
+    missing.startsWith('files:') &&
+    grantsFor(context, missing).length > 0 &&
+    resolved.some((scope) => scope.fileAreaId || scope.folderId || scope.fileId)
+      ? 'no_folder_access'
+      : 'missing_capability';
   if (!coversAll(grantsFor(context, capability), capability, resolved, tool.filtersOutput ?? false)) {
-    return { allowed: false, reason: `Missing capability ${capability} for this resource.` };
+    return { allowed: false, reason: `Missing capability ${capability} for this resource.`, code: denialCode(capability) };
   }
   if (tool.readsFiles && !coversAll(grantsFor(context, 'files:read'), 'files:read', resolved, false)) {
-    return { allowed: false, reason: 'Missing capability files:read for this file.' };
+    return { allowed: false, reason: 'Missing capability files:read for this file.', code: denialCode('files:read') };
   }
   return { allowed: true };
 }

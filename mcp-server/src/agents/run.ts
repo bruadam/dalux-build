@@ -4,7 +4,8 @@
  * uses (capability checks, row-level security and the audit log apply unchanged). Hard limits on model
  * tokens, tool calls and wall time end a run; tool results are data, never instructions.
  */
-import { createHash } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
+import { logJson } from '../observability/log';
 import { readFileSync, statSync } from 'node:fs';
 import path from 'node:path';
 import { and, desc, eq } from 'drizzle-orm';
@@ -145,9 +146,17 @@ async function execute(deps: AgentDeps, agent: HostedAgent, state: RunState): Pr
     throw new Skip(`The owner has none of the capabilities chosen for this agent on project ${agent.projectId} (any more), so the agent does not run.`);
   }
   // A plain user context even for an admin owner: agents never get the admin-only index tools.
+  const logging = await platform.loggingSettings();
   const context: RequestContext = {
     account: { id: owner.id, role: 'user' },
-    connection: { id: connection.id },
+    connection: { id: connection.id, slug: connection.slug },
+    request: {
+      requestId: randomUUID(),
+      authMethod: 'agent',
+      credentialId: agent.id,
+      logQueryText: logging.logQueryText,
+      agent: { id: agent.id, name: agent.name },
+    },
     access,
     fileNamespace: createHash('sha256').update(`agent/${agent.id}`).digest('hex').slice(0, 32),
     client: `hosted agent: ${agent.name} (${agent.id})`,
@@ -269,6 +278,21 @@ export async function runAgent(deps: AgentDeps, agentId: string, trigger: AgentR
     })
     .where(eq(agentRuns.id, run.id));
 
+  logJson(
+    {
+      event: 'agent_run',
+      request_id: run.id,
+      account_id: agent.ownerId,
+      auth_method: 'agent',
+      agent_id: agent.id,
+      agent_name: agent.name,
+      status,
+      duration_ms: finishedAt.getTime() - run.startedAt.getTime(),
+      tool_calls: state.toolCalls,
+      model_tokens: state.tokens,
+    },
+    status === 'failed' ? 'error' : 'info',
+  );
   const failed = status === 'failed' || status === 'limit';
   const failures = status === 'ok' ? 0 : failed ? agent.consecutiveFailures + 1 : agent.consecutiveFailures;
   const paused = failed && failures >= AGENT_MAX_FAILURES;

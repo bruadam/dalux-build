@@ -5,6 +5,8 @@ import { buildServer } from './server';
 import { buildHttpApp } from './http';
 import { UNRESTRICTED_CONTEXT } from './access/context';
 import { initIndexStores } from './store';
+import { setLogSink } from './observability/log';
+import { startMetricsServer } from './observability/metrics';
 import { parseToolsets, type Toolset } from './toolsets';
 
 interface CliOptions {
@@ -60,6 +62,7 @@ async function createPlatform(databaseUrl: string) {
 
 /** `dalux-mcp worker`: the platform's background jobs (index scopes, Dalux user matching). */
 async function runWorker(): Promise<void> {
+  setLogSink('stdout');
   const { startWorker } = await import('./worker/main');
   const boss = await startWorker();
   console.error('dalux-mcp worker running');
@@ -88,6 +91,10 @@ async function main(): Promise<void> {
   const localhostOnly = LOOPBACK_HOSTS.has(options.host);
   initIndexStores();
   const platform = process.env.DATABASE_URL ? await createPlatform(process.env.DATABASE_URL) : undefined;
+  if (platform) {
+    setLogSink('stdout');
+    await startMetricsServer(Number(process.env.METRICS_PORT ?? 9464));
+  }
   const { start } = buildHttpApp({ token, localhostOnly, publicUrl: options.publicUrl, platform, toolsets: options.toolsets });
   await start(options.port, options.host);
   console.error(`dalux-mcp running on http://${options.host}:${options.port}`);

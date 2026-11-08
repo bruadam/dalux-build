@@ -27,6 +27,9 @@ function invalidGrant(description: string): Response {
   return jsonResponse(400, { error: OAuthErrorCode.InvalidGrant, error_description: description });
 }
 
+/** Called with a reason code for every refused registration, token request or refresh; feeds `auth_events`. */
+type OnFailure = (reason: string, request: Request) => void;
+
 /**
  * The platform's OAuth 2.1 authorization server (PRD 6.5 mode B). The web
  * interface serves `/authorize` (login, consent, connection picker) and writes
@@ -35,7 +38,7 @@ function invalidGrant(description: string): Response {
  * revocation. Codes and tokens are stored as sha256 hashes. One consent is one
  * `oauth_sessions` row; revoking it revokes every token issued under it.
  */
-export function createPlatformOAuthServer(options: { issuer: string; db: Db }) {
+export function createPlatformOAuthServer(options: { issuer: string; db: Db; onFailure?: OnFailure }) {
   const { db } = options;
   const issuer = new URL(options.issuer).origin;
   // These endpoints take no credentials from the caller, so they are limited per client address.
@@ -78,10 +81,14 @@ export function createPlatformOAuthServer(options: { issuer: string; db: Db }) {
     try {
       body = (await request.json()) as typeof body;
     } catch {
+      options.onFailure?.('oauth_invalid_registration', request);
       return jsonResponse(400, { error: 'invalid_client_metadata', error_description: 'Body must be JSON' });
     }
     const redirectUris = validateRedirectUris(body.redirect_uris);
-    if (redirectUris instanceof Response) return redirectUris;
+    if (redirectUris instanceof Response) {
+      options.onFailure?.('oauth_invalid_registration', request);
+      return redirectUris;
+    }
     const name = typeof body.client_name === 'string' ? body.client_name.slice(0, 200) : null;
 
     const clientId = randomId(16);
@@ -96,7 +103,7 @@ export function createPlatformOAuthServer(options: { issuer: string; db: Db }) {
     });
   }
 
-  function exchangeCode(params: URLSearchParams): Promise<Response> {
+  function exchangeCode(params: URLSearchParams, refuse: (reason: string, description: string) => Response): Promise<Response> {
     return db.transaction(async (tx) => {
       // Single use: the code is marked used whatever the outcome.
       const [code] = await tx
@@ -104,14 +111,14 @@ export function createPlatformOAuthServer(options: { issuer: string; db: Db }) {
         .set({ usedAt: new Date() })
         .where(and(eq(oauthCodes.codeHash, hashApiToken(params.get('code') ?? '')), isNull(oauthCodes.usedAt)))
         .returning();
-      if (!code || code.expiresAt <= new Date()) return invalidGrant('Authorization code is invalid or expired');
+      if (!code || code.expiresAt <= new Date()) return refuse('oauth_code_invalid', 'Authorization code is invalid or expired');
       if (code.clientId !== params.get('client_id') || code.redirectUri !== params.get('redirect_uri')) {
-        return invalidGrant('client_id or redirect_uri mismatch');
+        return refuse('oauth_client_mismatch', 'client_id or redirect_uri mismatch');
       }
       const challenge = createHash('sha256').update(params.get('code_verifier') ?? '').digest('base64url');
-      if (challenge !== code.codeChallenge) return invalidGrant('code_verifier does not match code_challenge');
+      if (challenge !== code.codeChallenge) return refuse('oauth_pkce_mismatch', 'code_verifier does not match code_challenge');
       const [account] = await tx.select({ status: accounts.status }).from(accounts).where(eq(accounts.id, code.accountId));
-      if (account?.status !== 'active') return invalidGrant('The account is not active');
+      if (account?.status !== 'active') return refuse('oauth_account_disabled', 'The account is not active');
 
       const [session] = await tx
         .insert(oauthSessions)
@@ -122,7 +129,7 @@ export function createPlatformOAuthServer(options: { issuer: string; db: Db }) {
   }
 
   /** Refresh tokens rotate on use; presenting a used one revokes the whole session (reuse detection). */
-  function refresh(params: URLSearchParams): Promise<Response> {
+  function refresh(params: URLSearchParams, refuse: (reason: string, description: string) => Response): Promise<Response> {
     return db.transaction(async (tx) => {
       const tokenHash = hashApiToken(params.get('refresh_token') ?? '');
       const [row] = await tx
@@ -130,9 +137,9 @@ export function createPlatformOAuthServer(options: { issuer: string; db: Db }) {
         .from(oauthTokens)
         .innerJoin(oauthSessions, eq(oauthSessions.id, oauthTokens.sessionId))
         .where(and(eq(oauthTokens.tokenHash, tokenHash), eq(oauthTokens.kind, 'refresh')));
-      if (!row || row.session.clientId !== params.get('client_id')) return invalidGrant('Refresh token is invalid');
-      if (row.session.revokedAt) return invalidGrant('Refresh token is revoked');
-      if (row.token.expiresAt <= new Date()) return invalidGrant('Refresh token is expired');
+      if (!row || row.session.clientId !== params.get('client_id')) return refuse('oauth_refresh_invalid', 'Refresh token is invalid');
+      if (row.session.revokedAt) return refuse('oauth_refresh_revoked', 'Refresh token is revoked');
+      if (row.token.expiresAt <= new Date()) return refuse('oauth_refresh_expired', 'Refresh token is expired');
 
       const [rotated] = await tx
         .update(oauthTokens)
@@ -141,7 +148,7 @@ export function createPlatformOAuthServer(options: { issuer: string; db: Db }) {
         .returning({ tokenHash: oauthTokens.tokenHash });
       if (!rotated) {
         await tx.update(oauthSessions).set({ revokedAt: new Date() }).where(eq(oauthSessions.id, row.session.id));
-        return invalidGrant('Refresh token was already used; the session is revoked');
+        return refuse('oauth_refresh_reuse', 'Refresh token was already used; the session is revoked');
       }
       return issueTokens(tx, row.session.id);
     });
@@ -150,8 +157,13 @@ export function createPlatformOAuthServer(options: { issuer: string; db: Db }) {
   async function handleToken(request: Request): Promise<Response> {
     const params = await readParams(request);
     const grantType = params.get('grant_type');
-    if (grantType === 'authorization_code') return exchangeCode(params);
-    if (grantType === 'refresh_token') return refresh(params);
+    const refuse = (reason: string, description: string) => {
+      options.onFailure?.(reason, request);
+      return invalidGrant(description);
+    };
+    if (grantType === 'authorization_code') return exchangeCode(params, refuse);
+    if (grantType === 'refresh_token') return refresh(params, refuse);
+    options.onFailure?.('oauth_unsupported_grant', request);
     return jsonResponse(400, { error: OAuthErrorCode.UnsupportedGrantType });
   }
 

@@ -1,6 +1,7 @@
 import { sql } from 'drizzle-orm';
 import { encryptSecret, loadEncryptionKey, settings, type Db } from '@dalux-platform/db';
 import { assertAdmin, audit, type Actor } from './actor';
+import { UserError } from './errors';
 
 export async function getSettings(db: Db): Promise<{ embeddingKeySet: boolean; headerModeEnabled: boolean }> {
   const [row] = await db
@@ -30,4 +31,15 @@ export function setHeaderMode(db: Db, actor: Actor, enabled: boolean): Promise<v
   return upsertSettings(db, actor, enabled ? 'settings.header_mode.on' : 'settings.header_mode.off', {
     headerModeEnabled: enabled,
   });
+}
+
+export async function getAuditRetentionDays(db: Db): Promise<number> {
+  const [row] = await db.select({ days: settings.auditRetentionDays }).from(settings);
+  return row?.days ?? 180;
+}
+
+/** The worker deletes audit rows older than this many days (checked hourly). */
+export async function setAuditRetentionDays(db: Db, actor: Actor, days: number): Promise<void> {
+  if (!Number.isInteger(days) || days < 1 || days > 3650) throw new UserError('Enter a whole number of days from 1 to 3650');
+  await upsertSettings(db, actor, 'settings.audit_retention.set', { auditRetentionDays: days });
 }

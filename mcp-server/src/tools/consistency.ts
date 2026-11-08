@@ -6,6 +6,7 @@
  */
 
 import { z } from 'zod';
+import { currentContext } from '../access/requestScope';
 import type { DaluxClient } from 'dalux-build-api';
 import { FOCUS_AREAS } from '../consistency/compare';
 import { writeAnnotatedExport } from '../consistency/annotate';
@@ -20,7 +21,7 @@ import {
   reportIdFor,
 } from '../consistency/report';
 import { createDownloadLink } from '../downloadLinks';
-import { resolveScope } from '../rag/scope';
+import { listIndexableFiles, resolveScope } from '../rag/scope';
 
 // ---------- check_document_consistency ----------
 
@@ -91,8 +92,26 @@ export const listInconsistenciesInput = z.object({
 });
 export type ListInconsistenciesInput = z.infer<typeof listInconsistenciesInput>;
 
-export async function listInconsistencies(_client: DaluxClient, args: ListInconsistenciesInput) {
-  const findings = readFindings(args.reportId).filter(
+/**
+ * A stored report as the current caller may see it. Reports are kept per caller, but the caller's
+ * grants can shrink after the check ran, so for restricted callers the files are listed again
+ * (through the restricted client) and findings that quote a file no longer visible are dropped.
+ */
+async function readVisibleReport(client: DaluxClient, reportId: string) {
+  const findings = readFindings(reportId);
+  const manifest = readReportManifest(reportId);
+  if (!manifest) throw new Error(`No consistency report "${reportId}" on this server.`);
+  if (currentContext().access === 'unrestricted') return { manifest, findings };
+
+  const visible = new Set((await listIndexableFiles(client, manifest.scope)).files.map((file) => file.fileId));
+  return {
+    manifest: { ...manifest, files: Object.fromEntries(Object.entries(manifest.files).filter(([fileId]) => visible.has(fileId))) },
+    findings: findings.filter((finding) => finding.statements.every((statement) => visible.has(statement.fileId))),
+  };
+}
+
+export async function listInconsistencies(client: DaluxClient, args: ListInconsistenciesInput) {
+  const findings = (await readVisibleReport(client, args.reportId)).findings.filter(
     (finding) =>
       (!args.severity || finding.severity === args.severity) &&
       (!args.type || finding.type === args.type) &&
@@ -112,9 +131,7 @@ export const exportInconsistencyReportInput = z.object({
 export type ExportInconsistencyReportInput = z.infer<typeof exportInconsistencyReportInput>;
 
 export async function exportInconsistencyReport(client: DaluxClient, args: ExportInconsistencyReportInput) {
-  const findings = readFindings(args.reportId);
-  const manifest = readReportManifest(args.reportId);
-  if (!manifest) throw new Error(`No consistency report "${args.reportId}" on this server.`);
+  const { manifest, findings } = await readVisibleReport(client, args.reportId);
   if (args.format === 'annotated-pdf') {
     const { fileName, filePath, annotatedFiles, unmatchedQuotes } = await writeAnnotatedExport(client, manifest, findings);
     return {

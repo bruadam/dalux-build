@@ -66,6 +66,7 @@ import { postgresIndexStores } from '../../src/store/postgres';
 import { setIndexStores } from '../../src/store';
 import { matchConnection, planLinks, syncConnectionUsers } from '../../src/worker/daluxUsers';
 import { dueScopes, runScope, type WorkerDeps } from '../../src/worker/indexScopes';
+import { purgeAuditLog } from '../../src/worker/auditRetention';
 import { tick } from '../../src/worker/main';
 
 jest.setTimeout(120_000);
@@ -337,5 +338,23 @@ describe('worker process', () => {
       child.kill('SIGTERM');
       await new Promise((resolve) => child.once('exit', resolve));
     }
+  });
+});
+
+describe('audit retention', () => {
+  const daysAgo = (days: number) => new Date(Date.now() - days * 24 * 60 * 60 * 1000);
+  const remaining = async () =>
+    (await database.owner.query(`select action from audit_log where action like 'retention.%' order by action`)).rows.map((row) => row.action);
+
+  it('deletes audit rows older than the retention setting, 180 days by default, as the worker role', async () => {
+    for (const [action, age] of [['retention.old', 200], ['retention.mid', 100], ['retention.new', 1]] as const) {
+      await database.owner.query(`insert into audit_log (at, kind, action) values ($1, 'admin', $2)`, [daysAgo(age), action]);
+    }
+    expect(await purgeAuditLog(worker)).toBeGreaterThanOrEqual(1);
+    expect(await remaining()).toEqual(['retention.mid', 'retention.new']);
+
+    await database.owner.query('insert into settings (id, audit_retention_days) values (true, 30) on conflict (id) do update set audit_retention_days = 30');
+    await purgeAuditLog(worker);
+    expect(await remaining()).toEqual(['retention.new']);
   });
 });

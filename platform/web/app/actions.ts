@@ -20,7 +20,7 @@ import { deleteAllMemory, deleteMemoryEntry, editMemoryEntry, switchMemory } fro
 import { decideAuthorization, revokeOAuthSession } from '@/lib/server/oauth';
 import { createRobot, reassignRobotOwner } from '@/lib/server/robots';
 import { requireActor } from '@/lib/server/session';
-import { setEmbeddingKey, setHeaderMode } from '@/lib/server/settings';
+import { setAuditRetentionDays, setEmbeddingKey, setHeaderMode } from '@/lib/server/settings';
 import { signUp } from '@/lib/server/signup';
 import { createApiToken, revokeApiToken } from '@/lib/server/tokens';
 
@@ -188,6 +188,9 @@ export const deleteGrantAction = async (_: FormState, form: FormData) =>
 
 export const setEmbeddingKeyAction = async (_: FormState, form: FormData) =>
   run((actor) => setEmbeddingKey(db(), actor, text(form, 'clear') ? null : text(form, 'apiKey')));
+
+export const setAuditRetentionAction = async (_: FormState, form: FormData) =>
+  run((actor) => setAuditRetentionDays(db(), actor, Number(text(form, 'days'))));
 
 export const setHeaderModeAction = async (_: FormState, form: FormData) =>
   run((actor) => setHeaderMode(db(), actor, text(form, 'enabled') === 'on'));

@@ -48,7 +48,7 @@ Environment (all required unless a default is given):
   characters shown, rotation), grants (account or group; connection, project,
   file area, or folder scope by ID; the *Reader* preset = every `*:read`
   capability from `mcp-server/src/access/registry.ts`), effective access per
-  account, and settings (embedding key, Dalux header mode).
+  account, settings (embedding key, Dalux header mode), and the audit log.
 - Every account sees its own access and manages its own `dxm_` API tokens. A
   token is shown once; the database stores `hashApiToken(token)` (sha256 hex of
   the full token) and a 12-character display prefix.
@@ -115,6 +115,120 @@ every minute queues what is due:
 Optional: `DOCS_GITHUB_TOKEN` (or `GITHUB_TOKEN`) for private docs repositories.
 The worker assumes it is the only worker: at start it marks runs left *running* as failed.
 
+## Audit log
+
+*Audit log* (admins) lists every MCP tool call and every admin change, newest first. A tool call row has
+the time, account, linked Dalux user ID, client (token or OAuth app name), connection, project, tool,
+capability that was checked, result (`ok`, `denied`, `error`), and duration. It never holds tool arguments,
+results, or document text. Filter by time, account, tool or action, connection, status, and kind; *Export CSV*
+downloads the filtered rows (up to 50,000; cells that start with `=`, `+`, `-` or `@` are prefixed with `'`).
+
+**Retention** is set on the same page (default 180 days). The worker deletes older rows every hour. Only the
+`worker` role can delete audit rows; no role can change them.
+
+## Backup and restore
+
+What to back up:
+
+| What | Where | If lost |
+| --- | --- | --- |
+| Postgres database `platform` | `pg_dump` (below) | Accounts, grants, tokens, connections, settings and index scopes are gone |
+| `PLATFORM_ENCRYPTION_KEY` | your `.env` or secret store; **keep a copy apart from the database backup** | Not recoverable: stored Dalux and embedding keys can no longer be read. Add the connection keys and the embedding key again in the interface |
+| `BETTER_AUTH_SECRET` | `.env` | Everyone is signed out; nothing else is lost |
+| Index data (`indexes`, `documents`, `chunks`) | inside the dump | Recoverable: the worker rebuilds it from the index scopes (embedding calls are repeated) |
+| Project memory (`memory_entries`, `memory_settings`) | inside the dump | **Not recoverable by re-indexing**: it is what users saved. Never exclude these tables from the dump |
+
+Back up (the database and the roles, which `pg_dump` does not include):
+
+```bash
+cd platform
+docker compose exec -T postgres pg_dump -U migrator -Fc platform > platform-$(date +%F).dump
+docker compose exec -T postgres pg_dumpall -U migrator --globals-only > globals-$(date +%F).sql
+```
+
+To keep the backup small, leave out the index data and let the worker rebuild it after a restore. Add
+`--exclude-table-data=chunks --exclude-table-data=documents --exclude-table-data=indexes` to the `pg_dump` command (only these three: memory is user data).
+
+The dump and `globals.sql` hold password hashes and encrypted keys. Store them like the `.env` file.
+
+Restore into an empty Postgres (a new volume), with the same `.env`:
+
+```bash
+cd platform
+docker compose up -d postgres
+docker compose exec -T postgres psql -U migrator -d postgres < globals-2026-11-08.sql   # "role already exists" for migrator is fine
+docker compose exec -T postgres pg_restore -U migrator -d platform --exit-on-error < platform-2026-11-08.dump
+docker compose up -d      # migrate applies pending migrations and sets the role passwords again
+```
+
+Check afterwards: sign in, open *Connections* (a connection with a wrong `PLATFORM_ENCRYPTION_KEY` shows an
+error on first use), and run *Refresh now* on an index scope if the index data was left out. This procedure was
+run end to end (backup, new volume, restore, `mcp` role reads rows under RLS, stored key decrypts) for the
+full dump and for the dump without index data.
+
+## Upgrade notes
+
+- **Header mode is off by default.** MCP clients that send `X-Dalux-Base-Url` and `X-Dalux-Api-Key` without a
+  token get 401 until an admin turns it on under *Settings*, or the client moves to a `dxm_` token or OAuth.
+  Header-mode callers have no account: their temporary indexes live on disk per credentials, and everything
+  they can do is limited only by their Dalux key.
+- **`PUBLIC_URL` must be `https://`.** The MCP server refuses to start OAuth with another scheme, session
+  cookies are only marked `Secure` under https, and Caddy sends HSTS.
+- **Audit retention** starts at 180 days with migration `0010`: rows older than that are deleted within the hour
+  after the worker starts. Raise it under *Audit log* before upgrading if you need to keep them.
+- **Cached downloads are kept per connection** (`<cache>/files/<connection id>/<file id>`). The old
+  `<cache>/files/<file id>` folders are no longer read; delete them.
+- **Behind a proxy other than the bundled Caddy**, the MCP server needs `X-Forwarded-For` set by the proxy
+  (replacing any client-sent value): the rate limits on `/register` (20 per hour) and `/token` (60 per minute)
+  are per client address.
+- **Bootstrap:** the first sign-up on an empty install becomes admin. Create it right after the first start,
+  or keep the site private until then.
+
+## Security
+
+Threat model, in short. Assets: Dalux API keys (full read access to a customer's Dalux data), indexed
+document text, accounts and grants. Actors: an authenticated user with narrow grants, a holder of a leaked or
+revoked token, an unauthenticated visitor, a Dalux customer with a valid key of their own (header mode), and an
+admin (trusted for configuration, with no implicit access to document data).
+
+- **Trust boundaries.** Caddy is the only public entry point; `web`, `mcp`, `worker` and Postgres are not
+  published (Postgres binds to `127.0.0.1`). `mcp` and `worker` hold the decrypted Dalux keys; the browser never
+  receives a secret.
+- **Authorization is checked at three layers.** The tool guard checks the capability and, for files, the folder
+  before each call; the restricted Dalux client filters listings; Postgres row-level security filters index rows
+  by `effective_access` even if a query is wrong. Every cached download, IFC model and report is used only after
+  these checks and a Dalux lookup with the caller's connection (see `mcp-server/SECURITY-ANALYSIS.md`).
+- **Tokens.** `dxm_`, `dxo_`, `dxr_` tokens and invite links are stored as sha256 hashes. Lookup is by hash in an
+  indexed column, so the compared value is not attacker-chosen and a constant-time compare adds nothing.
+  Tokens and Dalux keys are never written to the audit log, logs, or error text (tested).
+- **Web interface.** Argon2id passwords; sign-in limited to 5 per minute and address (sign-up needs an invite after the first admin); `HttpOnly`,
+  `SameSite=Lax` cookies, `Secure` under https; Next.js checks `Origin` against `Host` on server actions, and
+  Better Auth checks origins on its own routes; CSP (`default-src 'self'`, `frame-ancestors 'none'`), HSTS,
+  `nosniff`, no `Server` or `X-Powered-By` header.
+- **SSRF.** A connection's base URL must be `https://*.dalux.com` when it is created in the interface, when it is
+  loaded by `mcp` or `worker`, and in header mode. The key check on connection creation does not follow redirects.
+- **Memory is private to its owner.** Row-level security on `memory_entries` and `memory_settings` matches the owner's
+  account only; admins, other users, and the `web` and `mcp` roles without that account id see nothing, and `worker` has
+  no access (tested as the roles, including an admin with every capability).
+- **Database.** `web`, `mcp`, `worker` are not superusers, cannot bypass RLS, cannot create objects, and cannot
+  switch roles. The only `SECURITY DEFINER` function has a fixed `search_path` and is callable only by `web`
+  and `worker`.
+
+Accepted risks:
+
+- A compromised `mcp` process can set `app.account_id` to any account, so RLS protects against bugs in queries,
+  not against code execution in `mcp`. Run `mcp` as the unprivileged user it ships with.
+- Sign-in is limited per address, not per account; a distributed guessing attack is not stopped. Use long passwords
+  or put the interface behind SSO/VPN.
+- Rate limits are in memory per process (they reset on restart; one `mcp` replica is assumed).
+- Admins can create a grant for themselves, so they can give themselves data access. Every change is in the audit log.
+- Document text is sent to Mistral only when an admin sets an embedding key.
+- Prompt injection from document text cannot be ruled out; `report_feedback` is the only outbound-write tool and
+  stays off unless `DALUX_MCP_FEEDBACK_GITHUB_TOKEN` is set.
+- Full-disk encryption of the Postgres volume is the operator's job (index text is stored unencrypted in Postgres).
+- Download links from `download_file` point at `127.0.0.1` inside the container and cannot be opened by a remote
+  client; `filePath` in results names a path inside the container.
+
 ## Postgres (alone)
 
 ```bash
@@ -170,7 +284,11 @@ cd platform
 docker compose -f compose.test.yaml up -d --wait
 npm test --workspace=@dalux-platform/db
 npm test --workspace=@dalux-platform/web
+npm run build --workspace=dalux-build-api && npm run build --workspace=@dalux-platform/db
+npm run test:platform --workspace=mcp-server
 ```
+
+CI runs the same commands in the `Test platform` job against a pgvector service container.
 
 `PLATFORM_TEST_DB_PORT` changes the host port (default 54329); set
 `TEST_DATABASE_URL` to match.

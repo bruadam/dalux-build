@@ -85,6 +85,7 @@ class AIEndpointProxy(AiMixin):
         platform_url: str | None = None,
         platform_token: str | None = None,
         platform_connection: str | None = None,
+        platform_memory: bool | None = None,
     ) -> "AgentHandle":
         """Launch a local RAG chat agent over the PDFs in this resource's scope.
 
@@ -116,6 +117,9 @@ class AIEndpointProxy(AiMixin):
             platform_connection: Connection slug on the platform (default
                 ``DALUX_PLATFORM_CONNECTION``; omit to use the token's or the
                 account's default connection).
+            platform_memory: Also search, and write to, your private project
+                memory on the platform (default ``DALUX_PLATFORM_MEMORY``).
+                Needs memory turned on for the project on the platform.
         """
         if self._resource_name not in _AGENT_CAPABLE_RESOURCES:
             raise NotImplementedError(
@@ -154,7 +158,10 @@ class AIEndpointProxy(AiMixin):
             open_browser=open_browser,
             verbose=verbose,
             platform=PlatformConfig.from_env(
-                url=platform_url, token=platform_token, connection=platform_connection
+                url=platform_url,
+                token=platform_token,
+                connection=platform_connection,
+                memory=platform_memory,
             ),
         )
 

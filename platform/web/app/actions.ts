@@ -1,5 +1,6 @@
 'use server';
 
+import type { IpLogging } from '@dalux-platform/db';
 import { revalidatePath } from 'next/cache';
 import { headers } from 'next/headers';
 import { redirect } from 'next/navigation';
@@ -20,6 +21,7 @@ import { deleteAllMemory, deleteMemoryEntry, editMemoryEntry, switchMemory } fro
 import { decideAuthorization, revokeOAuthSession } from '@/lib/server/oauth';
 import { createRobot, reassignRobotOwner } from '@/lib/server/robots';
 import { requireActor } from '@/lib/server/session';
+import { setObservabilitySettings } from '@/lib/server/observabilitySettings';
 import { setAuditRetentionDays, setEmbeddingKey, setHeaderMode } from '@/lib/server/settings';
 import { signUp } from '@/lib/server/signup';
 import { createApiToken, revokeApiToken } from '@/lib/server/tokens';
@@ -191,6 +193,15 @@ export const setEmbeddingKeyAction = async (_: FormState, form: FormData) =>
 
 export const setAuditRetentionAction = async (_: FormState, form: FormData) =>
   run((actor) => setAuditRetentionDays(db(), actor, Number(text(form, 'days'))));
+
+export const setObservabilityAction = async (_: FormState, form: FormData) =>
+  run((actor) =>
+    setObservabilitySettings(db(), actor, {
+      logQueryText: text(form, 'logQueryText') === 'on',
+      ipLogging: text(form, 'ipLogging') as IpLogging,
+      ipRetentionDays: Number(text(form, 'ipRetentionDays')),
+    }),
+  );
 
 export const setHeaderModeAction = async (_: FormState, form: FormData) =>
   run((actor) => setHeaderMode(db(), actor, text(form, 'enabled') === 'on'));

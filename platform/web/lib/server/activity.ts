@@ -76,12 +76,15 @@ export async function accountFlags(tx: Executor): Promise<AccountFlag[]> {
   const { manyIps, denialBurst, callBurst } = FLAG_RULES;
   const query = sql`
     select account_id, name, flag, detail from (
-      select a.account_id, c.name, 'new_ip' as flag, 'first call from ' || a.client_ip || ' in 24 h' as detail
-      from audit_log a join accounts c on c.id = a.account_id
-      where a.kind = 'tool' and a.at >= now() - interval '24 hours' and a.client_ip is not null
-        and exists (select 1 from audit_log o where o.account_id = a.account_id and o.kind = 'tool' and o.at < now() - interval '24 hours')
-        and not exists (select 1 from audit_log o where o.account_id = a.account_id and o.client_ip = a.client_ip and o.at < now() - interval '24 hours')
-      group by a.account_id, c.name, a.client_ip
+      select n.account_id, c.name, 'new_ip' as flag, 'first call from ' || string_agg(n.client_ip, ', ' order by n.client_ip) || ' in 24 h' as detail
+      from (
+        select distinct a.account_id, a.client_ip
+        from audit_log a
+        where a.kind = 'tool' and a.at >= now() - interval '24 hours' and a.client_ip is not null
+          and exists (select 1 from audit_log o where o.account_id = a.account_id and o.kind = 'tool' and o.at < now() - interval '24 hours')
+          and not exists (select 1 from audit_log o where o.account_id = a.account_id and o.client_ip = a.client_ip and o.at < now() - interval '24 hours')
+      ) n join accounts c on c.id = n.account_id
+      group by n.account_id, c.name
       union all
       select a.account_id, c.name, 'many_ips', count(distinct a.client_ip) || ' IP addresses on one credential in ${sql.raw(String(manyIps.hours))} h'
       from audit_log a join accounts c on c.id = a.account_id

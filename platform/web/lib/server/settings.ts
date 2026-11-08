@@ -10,7 +10,7 @@ export async function getSettings(db: Db): Promise<{ embeddingKeySet: boolean; h
   return row ?? { embeddingKeySet: false, headerModeEnabled: false };
 }
 
-async function upsertSettings(db: Db, actor: Actor, action: string, values: Partial<typeof settings.$inferInsert>): Promise<void> {
+export async function upsertSettings(db: Db, actor: Actor, action: string, values: Partial<typeof settings.$inferInsert>): Promise<void> {
   assertAdmin(actor);
   await db.transaction(async (tx) => {
     const set = { ...values, updatedAt: new Date() };

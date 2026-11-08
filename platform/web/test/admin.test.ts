@@ -12,6 +12,7 @@ import {
   hashApiToken,
   loadEncryptionKey,
   settings,
+  withAccount,
   type Db,
 } from '@dalux-platform/db';
 import { createTestDatabase, type TestDatabase } from '../../db/test/testDatabase';
@@ -156,7 +157,7 @@ describe('grants', () => {
     expect(await accessOf(user.accountId)).toEqual(['tasks:read@P1']);
     await deleteGrant(db, admin, grantId);
     expect(await accessOf(user.accountId)).toEqual([]);
-    const actions = (await db.select().from(auditLog).where(eq(auditLog.targetId, grantId))).map((row) => row.action);
+    const actions = (await withAccount(db, admin.accountId, (tx) => tx.select().from(auditLog).where(eq(auditLog.targetId, grantId)))).map((row) => row.action);
     expect(actions).toEqual(['grant.create', 'grant.delete']);
   });
 

@@ -2,7 +2,7 @@ import { randomBytes } from 'node:crypto';
 import type { Db } from '@dalux-platform/db';
 import { createTestDatabase, type TestDatabase } from '../../db/test/testDatabase';
 import type { Actor } from '../lib/server/actor';
-import { auditCsv, listAudit, parseAuditFilter } from '../lib/server/auditLog';
+import { auditCsv, auditJson, listAudit, listOwnActivity, ownActivityExport, parseAuditFilter } from '../lib/server/auditLog';
 import { getAuditRetentionDays, setAuditRetentionDays } from '../lib/server/settings';
 
 process.env.PLATFORM_ENCRYPTION_KEY = randomBytes(32).toString('base64');
@@ -59,7 +59,7 @@ describe('audit log filter', () => {
 
   it('treats % and _ in the tool filter literally and ignores malformed parameters', async () => {
     expect(await actions({ action: '%' })).toEqual([]);
-    expect(parseAuditFilter({ account: 'x; drop table', from: 'yesterday', kind: 'other' })).toEqual({
+    expect(parseAuditFilter({ account: 'x; drop table', from: 'yesterday', kind: 'other', type: 'ghost' })).toEqual({
       from: undefined, to: undefined, accountId: undefined, connectionId: undefined, action: undefined, status: undefined, kind: undefined,
     });
   });
@@ -76,11 +76,70 @@ describe('audit log filter', () => {
   });
 });
 
+describe('activity filters on the new columns', () => {
+  let robotId: string;
+  beforeAll(async () => {
+    robotId = await insert('accounts', { type: 'robot', name: 'Bot', owner_account_id: ids.user });
+    const call = (extra: Record<string, unknown>) =>
+      insert('audit_log', { at: '2026-02-01T10:00:00Z', kind: 'tool', action: 'list_files', status: 'ok', project_id: 'p7', ...extra });
+    await call({ account_id: ids.user, client_ip: '203.0.113.5', client: 'Claude Desktop', auth_method: 'dxm', request_id: 'req-1', denial_reason: null });
+    await call({ account_id: ids.user, client_ip: '198.51.100.9', client: 'OAuth: ChatGPT', auth_method: 'dxo', status: 'denied', denial_reason: 'missing_capability' });
+    await call({ account_id: robotId, client_ip: '203.0.113.77', client: 'ci', auth_method: 'dxm' });
+    await call({ account_id: ids.user, client: 'hosted agent: Weekly', auth_method: 'agent', agent_id: ids.main, agent_name: 'Weekly' });
+  });
+
+  const found = async (filter: Parameters<typeof listAudit>[2]) =>
+    (await listAudit(db, admin, { projectId: 'p7', ...filter })).items.map((row) => row.client).sort();
+
+  it('filters by project, IP prefix, client and caller type', async () => {
+    expect(await found({})).toHaveLength(4);
+    expect(await found({ ip: '203.0.113.' })).toEqual(['Claude Desktop', 'ci']);
+    expect(await found({ client: 'chatgpt' })).toEqual(['OAuth: ChatGPT']);
+    expect(await found({ accountType: 'robot' })).toEqual(['ci']);
+    expect(await found({ accountType: 'agent' })).toEqual(['hosted agent: Weekly']);
+    expect(await found({ accountType: 'personal' })).toEqual(['Claude Desktop', 'OAuth: ChatGPT']);
+    expect(await found({ status: 'denied' })).toEqual(['OAuth: ChatGPT']);
+  });
+
+  it('shows the new columns and exports them as CSV and JSON', async () => {
+    const [denied] = (await listAudit(db, admin, { projectId: 'p7', status: 'denied' })).items;
+    expect(denied).toMatchObject({ clientIp: '198.51.100.9', authMethod: 'dxo', denialReason: 'missing_capability' });
+    expect(await auditCsv(db, admin, { projectId: 'p7', status: 'denied' })).toContain('198.51.100.9,dxo,,missing_capability');
+    const json = JSON.parse(await auditJson(db, admin, { projectId: 'p7', accountType: 'agent' }));
+    expect(json).toHaveLength(1);
+    expect(json[0]).toMatchObject({ agentName: 'Weekly', authMethod: 'agent' });
+  });
+});
+
+describe('my activity', () => {
+  it('shows people their own calls and nobody else\'s, in the list and in the export', async () => {
+    const own = await listOwnActivity(db, user, {});
+    expect(own.items.length).toBeGreaterThan(0);
+    expect(own.items.every((row) => row.accountEmail === 'uma@example.com')).toBe(true);
+    const csv = await ownActivityExport(db, user, {}, 'csv');
+    expect(csv).not.toContain('admin@example.com');
+    expect(JSON.parse(await ownActivityExport(db, user, {}, 'json')).every((row: { accountEmail: string }) => row.accountEmail === 'uma@example.com')).toBe(true);
+  });
+
+  it('does not let a person filter their way to someone else\'s rows', async () => {
+    const { items } = await listOwnActivity(db, user, { accountId: ids.admin });
+    expect(items.every((row) => row.accountEmail === 'uma@example.com')).toBe(true);
+  });
+
+  it('narrows an admin to their own rows too', async () => {
+    const { items } = await listOwnActivity(db, admin, {});
+    expect(items.length).toBeGreaterThan(0);
+    expect(items.every((row) => row.accountEmail === 'admin@example.com')).toBe(true);
+  });
+});
+
 describe('audit log CSV export', () => {
   it('exports the filtered rows with a header, and stops spreadsheet formulas', async () => {
     const csv = await auditCsv(db, admin, { connectionId: ids.other });
     const [header, ...lines] = csv.trim().split('\n');
-    expect(header).toBe('time,kind,account,dalux_user_id,client,connection,project_id,action,target,capability,status,duration_ms');
+    expect(header).toBe(
+      'time,kind,account,dalux_user_id,client,connection,project_id,action,target,capability,status,duration_ms,client_ip,auth_method,agent,denial_reason,error_code,result_items,result_bytes,request_id',
+    );
     expect(lines).toHaveLength(2);
     expect(lines[1]).toContain('2026-01-12T10:00:00.000Z,tool,admin@example.com,DU1,laptop,Other,p1,search_file_area');
     expect(csv).toContain(`"'=HYPERLINK(""http://evil.example"")"`);

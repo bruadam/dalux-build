@@ -108,6 +108,10 @@ every minute queues what is due:
   minute, so new accounts are linked quickly. No match or several: not linked, link by
   hand. Robots are only linked by hand. Manual links are never changed.
 
+- **Hosted agents** (*My agents*, admin *Agents*): scheduled model runs that act for their
+  owner with at most the owner's access. See [agents.md](agents.md). They need `DATABASE_URL`
+  (the `mcp` role) in the worker's environment, and the Mistral key in *Settings*.
+
 Optional: `DOCS_GITHUB_TOKEN` (or `GITHUB_TOKEN`) for private docs repositories.
 The worker assumes it is the only worker: at start it marks runs left *running* as failed.
 

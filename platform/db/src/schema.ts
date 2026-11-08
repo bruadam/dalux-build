@@ -24,6 +24,10 @@ const tsvector = customType<{ data: string }>({
   dataType: () => 'tsvector',
 });
 
+const bytea = customType<{ data: Buffer }>({
+  dataType: () => 'bytea',
+});
+
 const id = () => uuid('id').primaryKey().defaultRandom();
 const createdAt = () => timestamp('created_at', { withTimezone: true }).notNull().defaultNow();
 const updatedAt = () => timestamp('updated_at', { withTimezone: true }).notNull().defaultNow();
@@ -611,3 +615,87 @@ export const memoryEntries = pgTable(
     check('memory_entries_tags_count', sql`cardinality(${t.tags}) <= 8`),
   ],
 );
+
+export const agentRunStatus = pgEnum('agent_run_status', ['running', 'ok', 'failed', 'limit', 'skipped', 'stopped']);
+
+/**
+ * A hosted agent (PRD 6.11): runs on a schedule on behalf of its owner, with at most the owner's access
+ * limited to `capabilities`. `enabled` is the one on/off switch: pausing, three failures in a row
+ * (`paused_reason`) and an admin stop (`stopped_by`, which only an admin can clear) all turn it off.
+ * The last_run_* columns copy the latest run's status and counts, so admins can list every agent without
+ * being able to read any run output (agent_runs is visible to the owner only).
+ */
+export const hostedAgents = pgTable(
+  'hosted_agents',
+  {
+    id: id(),
+    ownerId: uuid('owner_id')
+      .notNull()
+      .references(() => accounts.id, { onDelete: 'cascade' }),
+    connectionId: uuid('connection_id')
+      .notNull()
+      .references(() => connections.id, { onDelete: 'cascade' }),
+    projectId: text('project_id').notNull(),
+    name: text('name').notNull(),
+    template: text('template'),
+    instructions: text('instructions').notNull(),
+    /** Five-field cron in UTC; null means manual runs only. */
+    schedule: text('schedule'),
+    capabilities: text('capabilities').array().notNull(),
+    tools: text('tools').array().notNull(),
+    maxTokens: integer('max_tokens').notNull().default(200_000),
+    maxToolCalls: integer('max_tool_calls').notNull().default(40),
+    maxDurationSeconds: integer('max_duration_seconds').notNull().default(600),
+    enabled: boolean('enabled').notNull().default(true),
+    consecutiveFailures: integer('consecutive_failures').notNull().default(0),
+    pausedReason: text('paused_reason'),
+    stoppedBy: uuid('stopped_by').references(() => accounts.id, { onDelete: 'set null' }),
+    /** "Run now" in the interface; the worker starts a run when this is set, then clears it. */
+    runRequestedAt: timestamp('run_requested_at', { withTimezone: true }),
+    lastRunAt: timestamp('last_run_at', { withTimezone: true }),
+    lastRunStatus: agentRunStatus('last_run_status'),
+    lastRunTokens: integer('last_run_tokens'),
+    lastRunToolCalls: integer('last_run_tool_calls'),
+    createdAt: createdAt(),
+    updatedAt: updatedAt(),
+  },
+  (t) => [
+    uniqueIndex('hosted_agents_owner_name_idx').on(t.ownerId, t.name),
+    check('hosted_agents_limits', sql`${t.maxTokens} between 1000 and 2000000 and ${t.maxToolCalls} between 1 and 200 and ${t.maxDurationSeconds} between 30 and 3600`),
+  ],
+);
+
+/** One run of a hosted agent. Only the owner can read it: the output can quote private memory. */
+export const agentRuns = pgTable(
+  'agent_runs',
+  {
+    id: id(),
+    agentId: uuid('agent_id')
+      .notNull()
+      .references(() => hostedAgents.id, { onDelete: 'cascade' }),
+    trigger: text('trigger').notNull(),
+    status: agentRunStatus('status').notNull().default('running'),
+    startedAt: timestamp('started_at', { withTimezone: true }).notNull().defaultNow(),
+    finishedAt: timestamp('finished_at', { withTimezone: true }),
+    durationMs: integer('duration_ms'),
+    modelTokens: integer('model_tokens').notNull().default(0),
+    toolCalls: integer('tool_calls').notNull().default(0),
+    outputMarkdown: text('output_markdown'),
+    error: text('error'),
+    /** `[{ id, name, contentType, size }]`; the bytes are in agent_run_files. */
+    files: jsonb('files').notNull().default([]),
+  },
+  (t) => [index('agent_runs_agent_idx').on(t.agentId, t.startedAt)],
+);
+
+/** A file a run produced (e.g. an exported consistency report), kept with the run. */
+export const agentRunFiles = pgTable('agent_run_files', {
+  id: id(),
+  runId: uuid('run_id')
+    .notNull()
+    .references(() => agentRuns.id, { onDelete: 'cascade' }),
+  name: text('name').notNull(),
+  contentType: text('content_type').notNull(),
+  size: integer('size').notNull(),
+  content: bytea('content').notNull(),
+});

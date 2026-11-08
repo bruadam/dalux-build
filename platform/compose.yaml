@@ -62,8 +62,10 @@ services:
       migrate:
         condition: service_completed_successfully
 
-  # Index scopes and Dalux user matching (pg-boss jobs in Postgres). The embedding
-  # key comes from the settings in the interface; set DOCS_GITHUB_TOKEN for private docs repos.
+  # Index scopes, Dalux user matching and hosted agents (pg-boss jobs in Postgres). The embedding
+  # key comes from the settings in the interface (agents use it for Mistral chat too); set
+  # DOCS_GITHUB_TOKEN for private docs repos. Agents call the tools as the `mcp` role under the owner's
+  # account, so row-level security applies to them: DATABASE_URL below is for that (without it agents are off).
   worker:
     build:
       context: ..
@@ -73,6 +75,7 @@ services:
     healthcheck:
       disable: true
     environment:
+      DATABASE_URL: postgres://mcp:${PLATFORM_DB_MCP_PASSWORD}@postgres:5432/platform
       DATABASE_URL_WORKER: postgres://worker:${PLATFORM_DB_WORKER_PASSWORD}@postgres:5432/platform
       PLATFORM_ENCRYPTION_KEY: ${PLATFORM_ENCRYPTION_KEY}
       DOCS_GITHUB_TOKEN: ${DOCS_GITHUB_TOKEN:-}

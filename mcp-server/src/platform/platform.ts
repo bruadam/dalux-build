@@ -161,6 +161,16 @@ export class Platform {
     });
   }
 
+  async connectionById(id: string): Promise<Connection | undefined> {
+    const [row] = await this.db.select().from(connections).where(eq(connections.id, id));
+    return row ? this.connection(row) : undefined;
+  }
+
+  /** The account's effective access right now, not the copy cached for requests. */
+  currentAccess(accountId: string): Promise<EffectiveAccess[]> {
+    return this.loadAccess(accountId);
+  }
+
   /** All connections as id and slug, for picking a default and for error messages. */
   listConnections(): Promise<{ id: string; slug: string }[]> {
     return this.connectionList('all', () =>

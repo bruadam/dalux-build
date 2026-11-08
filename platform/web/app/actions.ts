@@ -8,6 +8,7 @@ import type { Preset } from '@/lib/capabilities';
 import type { FormState } from '@/lib/form-state';
 import { inviteAccount, reissueInvite, setAccountRole, setAccountStatus } from '@/lib/server/accounts';
 import type { Actor } from '@/lib/server/actor';
+import { agentInputFrom, createOwnAgent, deleteOwnAgent, runAgentNow, stopAnyAgent, switchAgent, updateOwnAgent } from '@/lib/server/agents';
 import { addConnection, rotateConnectionKey } from '@/lib/server/connections';
 import { db } from '@/lib/server/db';
 import { linkDaluxUser, requestDaluxUserMatch, unlinkDaluxUser } from '@/lib/server/daluxUsers';
@@ -256,3 +257,21 @@ export const deleteAllMemoryAction = async (_: FormState, form: FormData) =>
   run(async (actor) => {
     await deleteAllMemory(db(), actor, memoryProject(form));
   });
+
+export const createAgentAction = async (_: FormState, form: FormData) =>
+  run(async (actor) => {
+    await createOwnAgent(db(), actor, agentInputFrom(form));
+  });
+
+export const updateAgentAction = async (_: FormState, form: FormData) =>
+  run((actor) => updateOwnAgent(db(), actor, text(form, 'agentId'), agentInputFrom(form)));
+
+export const switchAgentAction = async (_: FormState, form: FormData) =>
+  run((actor) => switchAgent(db(), actor, text(form, 'agentId'), text(form, 'enabled') === 'true'));
+
+export const runAgentNowAction = async (_: FormState, form: FormData) => run((actor) => runAgentNow(db(), actor, text(form, 'agentId')));
+
+export const deleteAgentAction = async (_: FormState, form: FormData) => run((actor) => deleteOwnAgent(db(), actor, text(form, 'agentId')));
+
+export const stopAgentAction = async (_: FormState, form: FormData) =>
+  run((actor) => stopAnyAgent(db(), actor, text(form, 'agentId'), text(form, 'stop') === 'true'));

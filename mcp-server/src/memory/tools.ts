@@ -124,11 +124,11 @@ async function embed(value: string): Promise<{ embedding: number[] | null; warni
 
 /** The tools only run for a person: memory belongs to a personal account. */
 function owner(projectIdValue: string): { scope: MemoryScope; source: string } | string {
-  const { account, connection, client } = currentContext();
+  const { account, connection, client, memorySource } = currentContext();
   if (!account || !connection) return 'Memory needs a platform account.';
   return {
     scope: { accountId: account.id, connectionId: connection.id, projectId: projectIdValue },
-    source: `agent:${client ?? 'unknown'}`,
+    source: memorySource ?? `agent:${client ?? 'unknown'}`,
   };
 }
 

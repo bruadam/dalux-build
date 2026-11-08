@@ -10,6 +10,7 @@
 
 import { AsyncLocalStorage } from 'node:async_hooks';
 
+import { currentCallStats } from '../observability/callStats';
 import { mistralAllowed, mistralUnavailableReason, semanticRankingWarning } from '../mistral';
 
 export const EMBEDDING_MODEL = 'mistral-embed';
@@ -104,11 +105,14 @@ export async function embedTexts(texts: readonly string[]): Promise<number[][]> 
       model: EMBEDDING_MODEL,
       inputs: batch,
     });
+    const tokens = response.usage?.promptTokens;
+    const used = tokens ?? Math.ceil(batch.reduce((total, input) => total + input.length, 0) / 3);
+    const stats = currentCallStats();
+    if (stats) stats.mistralTokens += used;
     if (usage) {
       usage.calls += 1;
-      const tokens = response.usage?.promptTokens;
       if (tokens === undefined) usage.estimated = true;
-      usage.tokens += tokens ?? Math.ceil(batch.reduce((total, input) => total + input.length, 0) / 3);
+      usage.tokens += used;
     }
     const items = [...response.data].sort((a, b) => (a.index ?? -1) - (b.index ?? -1));
     if (items.length !== batch.length || items.some((item, index) =>

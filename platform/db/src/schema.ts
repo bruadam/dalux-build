@@ -291,9 +291,20 @@ export const settings = pgTable(
     headerModeEnabled: boolean('header_mode_enabled').notNull().default(false),
     /** The worker deletes audit rows older than this (PRD 6.4). */
     auditRetentionDays: integer('audit_retention_days').notNull().default(180),
+    /** Record search and filter text in the audit log. Off by default: queries can name people and projects. */
+    logQueryText: boolean('log_query_text').notNull().default(false),
+    /** How client IPs are logged: `full`, `truncated` (IPv4 /24, IPv6 /48) or `off`. */
+    ipLogging: text('ip_logging').notNull().default('full'),
+    /** The worker clears the IP columns of audit rows and auth events older than this. */
+    ipRetentionDays: integer('ip_retention_days').notNull().default(90),
     updatedAt: updatedAt(),
   },
-  (t) => [check('settings_single_row', sql`${t.id}`), check('settings_audit_retention', sql`${t.auditRetentionDays} >= 1`)],
+  (t) => [
+    check('settings_single_row', sql`${t.id}`),
+    check('settings_audit_retention', sql`${t.auditRetentionDays} >= 1`),
+    check('settings_ip_logging', sql`${t.ipLogging} in ('full', 'truncated', 'off')`),
+    check('settings_ip_retention', sql`${t.ipRetentionDays} >= 1`),
+  ],
 );
 
 /** Holds no arguments, results, or document content (PRD 6.4). */
@@ -314,8 +325,66 @@ export const auditLog = pgTable(
     capability: text('capability'),
     status: text('status'),
     durationMs: integer('duration_ms'),
+    requestId: text('request_id'),
+    /** The client address as `ip_logging` allows; cleared by the IP retention job. */
+    clientIp: text('client_ip'),
+    /** The raw X-Forwarded-For chain (only with ip_logging `full`); cleared with `client_ip`. */
+    forwardedFor: text('forwarded_for'),
+    userAgent: text('user_agent'),
+    /** `dxm` (API token), `dxo` (OAuth), `header` (Dalux headers) or `agent` (hosted agent). */
+    authMethod: text('auth_method'),
+    /** The API token id or OAuth session id; never the secret. */
+    credentialId: text('credential_id'),
+    mcpSessionId: text('mcp_session_id'),
+    fileAreaId: text('file_area_id'),
+    folderId: text('folder_id'),
+    /** At most 20 ids; `file_count` has the real number. */
+    fileIds: text('file_ids').array(),
+    fileCount: integer('file_count'),
+    resultItems: integer('result_items'),
+    resultBytes: integer('result_bytes'),
+    resultTruncated: boolean('result_truncated'),
+    /** `missing_capability`, `no_folder_access`, `admin_only` or `no_access_rule`. */
+    denialReason: text('denial_reason'),
+    /** `not_found`, `rate_limited`, `dalux_auth`, `dalux_error` or `tool_error`. */
+    errorCode: text('error_code'),
+    daluxCalls: integer('dalux_calls'),
+    daluxErrors: integer('dalux_errors'),
+    daluxRateLimited: integer('dalux_rate_limited'),
+    mistralTokens: integer('mistral_tokens'),
+    agentId: uuid('agent_id'),
+    agentName: text('agent_name'),
+    /** Search text; recorded only while `settings.log_query_text` is on. */
+    queryText: text('query_text'),
   },
-  (t) => [index('audit_log_at_idx').on(t.at), index('audit_log_account_idx').on(t.accountId, t.at)],
+  (t) => [
+    index('audit_log_at_idx').on(t.at),
+    index('audit_log_account_idx').on(t.accountId, t.at),
+    index('audit_log_request_idx').on(t.requestId),
+  ],
+);
+
+/**
+ * Failed and unauthenticated attempts (invalid, expired or revoked token, wrong connection, disabled
+ * account, rate limit, OAuth and sign-in errors). Holds the display prefix of a token, never the token.
+ */
+export const authEvents = pgTable(
+  'auth_events',
+  {
+    id: bigint('id', { mode: 'number' }).primaryKey().generatedAlwaysAsIdentity(),
+    at: timestamp('at', { withTimezone: true }).notNull().defaultNow(),
+    /** `mcp`, `oauth` or `login`. */
+    source: text('source').notNull(),
+    reason: text('reason').notNull(),
+    accountId: uuid('account_id').references(() => accounts.id, { onDelete: 'set null' }),
+    tokenPrefix: text('token_prefix'),
+    connectionSlug: text('connection_slug'),
+    requestId: text('request_id'),
+    clientIp: text('client_ip'),
+    forwardedFor: text('forwarded_for'),
+    userAgent: text('user_agent'),
+  },
+  (t) => [index('auth_events_at_idx').on(t.at), index('auth_events_reason_idx').on(t.reason, t.at)],
 );
 
 /**

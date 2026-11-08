@@ -42,6 +42,7 @@ services:
     environment:
       DATABASE_URL: postgres://web:${PLATFORM_DB_WEB_PASSWORD}@postgres:5432/platform
       PLATFORM_ENCRYPTION_KEY: ${PLATFORM_ENCRYPTION_KEY:?set PLATFORM_ENCRYPTION_KEY}
+      TRUSTED_PROXY_HOPS: ${TRUSTED_PROXY_HOPS:-1}
       BETTER_AUTH_SECRET: ${BETTER_AUTH_SECRET:?set BETTER_AUTH_SECRET}
       PUBLIC_URL: ${PUBLIC_URL:?set PUBLIC_URL}
     depends_on:
@@ -58,6 +59,8 @@ services:
       DATABASE_URL_WORKER: postgres://worker:${PLATFORM_DB_WORKER_PASSWORD}@postgres:5432/platform
       PLATFORM_ENCRYPTION_KEY: ${PLATFORM_ENCRYPTION_KEY}
       PUBLIC_URL: ${PUBLIC_URL}
+      # Caddy is the one proxy in front; it overwrites X-Forwarded-For. /metrics is on METRICS_PORT (9464), not published.
+      TRUSTED_PROXY_HOPS: ${TRUSTED_PROXY_HOPS:-1}
     depends_on:
       migrate:
         condition: service_completed_successfully

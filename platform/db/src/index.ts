@@ -13,5 +13,8 @@ export {
   findOAuthClient,
   generateOAuthSecret,
 } from './oauth';
+export * from './clientIp';
+export * from './authEvents';
+export { clearExpiredIps } from './retention';
 export * from './memory';
 export * from './agents';

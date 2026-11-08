@@ -8,6 +8,9 @@ import {
   connections,
   daluxUserLinks,
   decryptSecret,
+  recordAuthEvent,
+  type AuthEventInput,
+  type IpLogging,
   OAUTH_ACCESS_TOKEN_PREFIX,
   oauthClients,
   oauthSessions,
@@ -22,8 +25,18 @@ import { createFolderLookup, type FolderLookup } from '../access/folders';
 import type { ToolCallRecord } from '../access/guard';
 import type { Capability } from '../access/registry';
 import { validateDaluxBaseUrl } from '../daluxUrl';
+import { countDaluxCalls } from '../observability/callStats';
+import { logJson } from '../observability/log';
+import { recordAuditWriteFailure, recordAuthFailure } from '../observability/metrics';
 
 export const API_TOKEN_PREFIX = 'dxm_';
+
+function auditWriteFailed(what: string) {
+  return (error: unknown) => {
+    recordAuditWriteFailure();
+    console.error(`[audit] failed to record ${what}:`, error);
+  };
+}
 
 /** Grant, token, and connection changes reach the MCP server within this time (PRD 7.2, 7.4). */
 const CACHE_MS = 60_000;
@@ -50,7 +63,10 @@ export interface Caller {
   access: EffectiveAccess[];
 }
 
-export type AuthResult = { caller: Caller } | { error: string };
+/** Why a credential was refused; recorded in `auth_events` and counted in the metrics. */
+export type AuthFailure = 'unknown_token' | 'revoked_token' | 'expired_token' | 'account_disabled';
+
+export type AuthResult = { caller: Caller } | { error: string; code: AuthFailure; accountId?: string };
 
 function cache<T>() {
   const entries = new Map<string, { value: Promise<T>; at: number }>();
@@ -70,7 +86,7 @@ export class Platform {
   private readonly accessByAccount = cache<EffectiveAccess[]>();
   private readonly connectionsBySlug = cache<Connection | undefined>();
   private readonly connectionList = cache<{ id: string; slug: string }[]>();
-  private readonly settingsRow = cache<{ headerModeEnabled: boolean; embeddingKey: string | null }>();
+  private readonly settingsRow = cache<{ headerModeEnabled: boolean; embeddingKey: string | null; logQueryText: boolean; ipLogging: IpLogging }>();
   private readonly daluxUsers = cache<string | undefined>();
   private readonly clients = new Map<string, { key: string; connection: Connection }>();
 
@@ -84,7 +100,7 @@ export class Platform {
     const load = token.startsWith(OAUTH_ACCESS_TOKEN_PREFIX) ? this.loadOAuthToken : this.loadToken;
     const result = await this.tokens(tokenHash, () => load.call(this, tokenHash));
     if ('caller' in result && result.caller.token.expiresAt && result.caller.token.expiresAt <= new Date()) {
-      return { error: 'The API token has expired.' };
+      return { error: 'The API token has expired.', code: 'expired_token', accountId: result.caller.account.id };
     }
     return result;
   }
@@ -95,10 +111,12 @@ export class Platform {
       .from(apiTokens)
       .innerJoin(accounts, eq(accounts.id, apiTokens.accountId))
       .where(eq(apiTokens.tokenHash, tokenHash));
-    if (!row) return { error: 'Unknown API token.' };
+    if (!row) return { error: 'Unknown API token.', code: 'unknown_token' };
     const { token, account } = row;
-    if (token.revokedAt) return { error: 'The API token has been revoked.' };
-    if (account.status !== 'active') return { error: 'The account behind this API token is not active.' };
+    if (token.revokedAt) return { error: 'The API token has been revoked.', code: 'revoked_token', accountId: account.id };
+    if (account.status !== 'active') {
+      return { error: 'The account behind this API token is not active.', code: 'account_disabled', accountId: account.id };
+    }
 
     await this.db.update(apiTokens).set({ lastUsedAt: new Date() }).where(eq(apiTokens.id, token.id));
     const access = await this.accessByAccount(account.id, () => this.loadAccess(account.id));
@@ -122,10 +140,12 @@ export class Platform {
       .innerJoin(oauthClients, eq(oauthClients.id, oauthSessions.clientId))
       .innerJoin(accounts, eq(accounts.id, oauthSessions.accountId))
       .where(and(eq(oauthTokens.tokenHash, tokenHash), eq(oauthTokens.kind, 'access')));
-    if (!row) return { error: 'Unknown access token.' };
+    if (!row) return { error: 'Unknown access token.', code: 'unknown_token' };
     const { token, session, account } = row;
-    if (token.revokedAt || session.revokedAt) return { error: 'The access token has been revoked.' };
-    if (account.status !== 'active') return { error: 'The account behind this access token is not active.' };
+    if (token.revokedAt || session.revokedAt) return { error: 'The access token has been revoked.', code: 'revoked_token', accountId: account.id };
+    if (account.status !== 'active') {
+      return { error: 'The account behind this access token is not active.', code: 'account_disabled', accountId: account.id };
+    }
 
     await this.db.update(oauthSessions).set({ lastUsedAt: new Date() }).where(eq(oauthSessions.id, session.id));
     const access = await this.accessByAccount(account.id, () => this.loadAccess(account.id));
@@ -192,7 +212,7 @@ export class Platform {
     } catch {
       throw new Error('its API key cannot be decrypted with PLATFORM_ENCRYPTION_KEY');
     }
-    const client = createClient({ baseUrl: validated.baseUrl, apiKey });
+    const client = countDaluxCalls(createClient({ baseUrl: validated.baseUrl, apiKey }));
     const connection = {
       id: row.id,
       slug: row.slug,
@@ -208,9 +228,16 @@ export class Platform {
   private settingsValues() {
     return this.settingsRow('settings', async () => {
       const [found] = await this.db
-        .select({ headerModeEnabled: settings.headerModeEnabled, embeddingKey: settings.embeddingKeyEncrypted })
+        .select({
+          headerModeEnabled: settings.headerModeEnabled,
+          embeddingKey: settings.embeddingKeyEncrypted,
+          logQueryText: settings.logQueryText,
+          ipLogging: settings.ipLogging,
+        })
         .from(settings);
       return {
+        logQueryText: found?.logQueryText ?? false,
+        ipLogging: (found?.ipLogging as IpLogging | undefined) ?? 'full',
         headerModeEnabled: found?.headerModeEnabled ?? false,
         embeddingKey: found?.embeddingKey ? decryptSecret(found.embeddingKey, this.encryptionKey) : null,
       };
@@ -226,9 +253,28 @@ export class Platform {
     return (await this.settingsValues()).embeddingKey;
   }
 
-  /** Writes one audit row per tool call; failures are logged, never shown to the caller. */
+  /** The logging settings every request applies (cached for a minute like the other settings). */
+  async loggingSettings(): Promise<{ ipLogging: IpLogging; logQueryText: boolean }> {
+    const { ipLogging, logQueryText } = await this.settingsValues();
+    return { ipLogging, logQueryText };
+  }
+
+  /** Records a failed or unauthenticated attempt. Never throws and never waits for the caller. */
+  authEvent(event: AuthEventInput): void {
+    recordAuthFailure(event.reason);
+    this.loggingSettings()
+      .then(({ ipLogging }) => recordAuthEvent(this.db, event, ipLogging))
+      .catch(auditWriteFailed('auth event'));
+    logJson({ request_id: event.requestId, event: 'auth_failure', source: event.source, reason: event.reason, account_id: event.accountId, connection: event.connectionSlug }, 'warn');
+  }
+
+  /**
+   * Writes one audit row per tool call. The caller never waits for it and never sees its failure: a
+   * failed insert goes to stderr and the `dalux_mcp_audit_write_failures_total` metric.
+   */
   audit(caller: Caller, context: RequestContext, record: ToolCallRecord): void {
     const connectionId = context.connection!.id;
+    const request = context.request;
     this.daluxUsers(`${caller.account.id}/${connectionId}`, async () => {
       const [link] = await this.db
         .select({ daluxUserId: daluxUserLinks.daluxUserId })
@@ -248,8 +294,31 @@ export class Platform {
           capability: record.capability === 'none' ? null : record.capability,
           status: record.status,
           durationMs: record.durationMs,
+          requestId: request?.requestId,
+          clientIp: request?.ip,
+          forwardedFor: request?.forwardedFor,
+          userAgent: request?.userAgent,
+          authMethod: request?.authMethod,
+          credentialId: request?.credentialId ?? caller.token.id,
+          mcpSessionId: request?.mcpSessionId,
+          fileAreaId: record.fileAreaId,
+          folderId: record.folderId,
+          fileIds: record.fileIds,
+          fileCount: record.fileCount,
+          resultItems: record.resultItems,
+          resultBytes: record.resultBytes,
+          resultTruncated: record.resultTruncated,
+          denialReason: record.denialReason,
+          errorCode: record.errorCode,
+          daluxCalls: record.daluxCalls,
+          daluxErrors: record.daluxErrors,
+          daluxRateLimited: record.daluxRateLimited,
+          mistralTokens: record.mistralTokens || null,
+          agentId: request?.agent?.id,
+          agentName: request?.agent?.name,
+          queryText: record.queryText,
         }),
       )
-      .catch((error: unknown) => console.error('[audit] failed to record tool call:', error));
+      .catch(auditWriteFailed('tool call'));
   }
 }

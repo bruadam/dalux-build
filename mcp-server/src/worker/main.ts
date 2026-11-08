@@ -10,8 +10,9 @@
 import { eq } from 'drizzle-orm';
 import type { PgBoss } from 'pg-boss';
 import { createClient } from 'dalux-build-api';
-import { connections, createDb, decryptSecret, loadEncryptionKey, settings, type Db } from '@dalux-platform/db';
+import { clearExpiredIps, connections, createDb, decryptSecret, loadEncryptionKey, settings, type Db } from '@dalux-platform/db';
 import { validateDaluxBaseUrl } from '../daluxUrl';
+import { logJson } from '../observability/log';
 import { postgresIndexStores } from '../store/postgres';
 import { setAccountIndexStores, setIndexStores } from '../store';
 import { mistralChat } from '../agents/chat';
@@ -22,7 +23,7 @@ import { purgeAuditLog } from './auditRetention';
 import { dueConnections, matchConnection, syncConnectionUsers } from './daluxUsers';
 import { dueScopes, failInterruptedRuns, runScope, type RunTrigger, type WorkerDeps } from './indexScopes';
 
-const QUEUES = { tick: 'tick', index: 'index-scope', users: 'dalux-users', auditPurge: 'audit-purge' } as const;
+const QUEUES = { tick: 'tick', index: 'index-scope', users: 'dalux-users', ipRetention: 'ip-retention', auditPurge: 'audit-purge' } as const;
 
 export function workerDeps(db: Db, encryptionKey: Buffer, env: NodeJS.ProcessEnv = process.env): WorkerDeps {
   return {
@@ -97,6 +98,13 @@ export async function startWorker(env: NodeJS.ProcessEnv = process.env): Promise
   const agents = agentDeps(db, env);
   if (agents) await boss.createQueue(AGENT_QUEUE, AGENT_QUEUE_OPTIONS);
   else console.error('[worker] DATABASE_URL (the mcp database role) is not set: hosted agents are off.');
+
+  await boss.createQueue(QUEUES.ipRetention, { policy: 'stately', retryLimit: 0 });
+  await boss.work<Record<string, never>>(QUEUES.ipRetention, async () => {
+    const cleared = await clearExpiredIps(db);
+    if (cleared) logJson({ event: 'ip_retention', cleared_rows: cleared });
+  });
+  await boss.schedule(QUEUES.ipRetention, '23 * * * *');
 
   await boss.work<Record<string, never>>(QUEUES.tick, async () => {
     await tick(boss, db);

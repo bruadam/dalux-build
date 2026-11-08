@@ -88,7 +88,8 @@ function systemPrompt(agent: HostedAgent, ownerName: string): string {
   ].join('\n');
 }
 
-function exportedFile(toolName: string, outcome: ToolOutcome): ProducedFile | undefined {
+/** The file an export tool call produced, when it lies under the cache directory and is small enough to keep. */
+export function exportedFile(toolName: string, outcome: ToolOutcome): ProducedFile | undefined {
   if (toolName !== 'export_inconsistency_report' || outcome.isError) return undefined;
   try {
     const { filePath, fileName } = JSON.parse(outcome.text) as { filePath?: string; fileName?: string };

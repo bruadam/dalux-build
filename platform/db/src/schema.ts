@@ -289,9 +289,11 @@ export const settings = pgTable(
     id: boolean('id').primaryKey().default(true),
     embeddingKeyEncrypted: text('embedding_key_encrypted'),
     headerModeEnabled: boolean('header_mode_enabled').notNull().default(false),
+    /** The worker deletes audit rows older than this (PRD 6.4). */
+    auditRetentionDays: integer('audit_retention_days').notNull().default(180),
     updatedAt: updatedAt(),
   },
-  (t) => [check('settings_single_row', sql`${t.id}`)],
+  (t) => [check('settings_single_row', sql`${t.id}`), check('settings_audit_retention', sql`${t.auditRetentionDays} >= 1`)],
 );
 
 /** Holds no arguments, results, or document content (PRD 6.4). */

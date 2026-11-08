@@ -71,6 +71,13 @@
       "when": 1794125510020,
       "tag": "0011_hosted_agents",
       "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "7",
+      "when": 1794133237469,
+      "tag": "0010_audit_retention",
+      "breakpoints": true
     }
   ]
 }

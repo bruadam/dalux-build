@@ -9,6 +9,7 @@ export const dynamic = 'force-dynamic';
 const USER_LINKS = [
   { href: '/', label: 'My access' },
   { href: '/memory', label: 'My memory' },
+  { href: '/agents', label: 'My agents' },
   { href: '/tokens', label: 'My tokens' },
   { href: '/oauth', label: 'Connected apps' },
 ];
@@ -20,6 +21,7 @@ const ADMIN_LINKS = [
   { href: '/admin/connections', label: 'Connections' },
   { href: '/admin/grants', label: 'Grants' },
   { href: '/admin/indexes', label: 'Indexes' },
+  { href: '/admin/agents', label: 'Agents' },
   { href: '/admin/dalux-users', label: 'Dalux users' },
   { href: '/admin/settings', label: 'Settings' },
 ];

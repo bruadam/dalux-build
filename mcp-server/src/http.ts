@@ -163,6 +163,8 @@ function logDiscovery(peek: JsonRpcPeek, request: Request, response: Response): 
     });
 }
 
+const MAX_CREDENTIAL_HANDLERS = 200;
+
 function invalidToolsets(message: string): Response {
   return new Response(JSON.stringify({ error: 'invalid_toolsets', message }), {
     status: 400,
@@ -283,6 +285,8 @@ export function buildHttpApp(options: BuildHttpAppOptions = {}): HttpApp {
         ? { access: 'unrestricted', fileNamespace: createHash('sha256').update(credentialKey).digest('hex').slice(0, 32) }
         : UNRESTRICTED_CONTEXT;
       mcpHandler = createMcpHandler(() => buildServer(client, { context, toolsets: toolsets.toolsets }));
+      // Anyone can send new credentials, so the map must not grow without bound.
+      if (handlersByCredentials.size >= MAX_CREDENTIAL_HANDLERS) handlersByCredentials.delete(handlersByCredentials.keys().next().value!);
       handlersByCredentials.set(key, mcpHandler);
     }
     return mcpHandler.fetch(request);

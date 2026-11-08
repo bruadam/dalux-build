@@ -4,6 +4,7 @@ import path from 'node:path';
 import { unzipSync, strFromU8 } from 'fflate';
 import type { DaluxClient } from 'dalux-build-api';
 
+import { runWithContext } from '../src/access/requestScope';
 import * as consistency from '../src/tools/consistency';
 import { _resetDownloadLinksForTests } from '../src/downloadLinks';
 import type { Finding } from '../src/consistency/compare';
@@ -125,6 +126,25 @@ describe('document consistency report', () => {
     if (saved.key !== undefined) process.env.MISTRAL_API_KEY = saved.key;
     rmSync(fixtures, { recursive: true, force: true });
     rmSync(cache, { recursive: true, force: true });
+  });
+
+  it('stops showing findings that quote a file the caller can no longer see (restricted callers)', async () => {
+    const caller = { account: { id: 'a1', role: 'user' as const }, connection: { id: 'c1' }, access: [], fileNamespace: 'restricted-caller' };
+    const { client } = fakeClient(files);
+    const { reportId } = await runWithContext(caller, () => consistency.checkDocumentConsistency(client, args));
+    const all = await runWithContext(caller, () => consistency.listInconsistencies(client, { reportId }));
+    expect(all.total).toBeGreaterThan(0);
+
+    // The grant shrank: Dalux (through the restricted client) now lists everything but f1.
+    const narrowed = fakeClient(files.filter((file) => file.fileId !== 'f1')).client;
+    const after = await runWithContext(caller, () => consistency.listInconsistencies(narrowed, { reportId }));
+    expect(after.total).toBeLessThan(all.total);
+    expect(JSON.stringify(after.findings)).not.toContain('doerliste.xlsx');
+    const exported = await runWithContext(caller, () => consistency.exportInconsistencyReport(narrowed, { reportId, format: 'md' }));
+    expect(readFileSync(exported.filePath, 'utf-8')).not.toContain('doerliste.xlsx');
+
+    // Callers without a request scope (stdio) are unaffected.
+    expect((await consistency.listInconsistencies(narrowed, { reportId })).total).toBe(all.total);
   });
 
   it('finds each kind of conflict across files, without flagging equal values written differently', async () => {

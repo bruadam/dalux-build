@@ -17,6 +17,7 @@ import {
   type Tx,
 } from '@dalux-platform/db';
 import { corsPreflightResponse, jsonResponse, randomId, readParams, validateRedirectUris } from './oauth';
+import { clientAddress, createRateLimiter } from './rateLimit';
 
 /** MCP endpoints a protected-resource metadata document can describe (RFC 9728, path-aware). */
 const RESOURCE_PATH = /^\/mcp(?:\/c\/[a-z0-9][a-z0-9-]*)?$/;
@@ -37,6 +38,11 @@ function invalidGrant(description: string): Response {
 export function createPlatformOAuthServer(options: { issuer: string; db: Db }) {
   const { db } = options;
   const issuer = new URL(options.issuer).origin;
+  // These endpoints take no credentials from the caller, so they are limited per client address.
+  const limiter = createRateLimiter({
+    register: { max: 20, windowMs: 60 * 60 * 1000 },
+    token: { max: 60, windowMs: 60 * 1000 },
+  });
 
   const metadata: OAuthMetadata = {
     issuer,
@@ -185,6 +191,9 @@ export function createPlatformOAuthServer(options: { issuer: string; db: Db }) {
     if (!['/register', '/token', '/revoke'].includes(pathname)) return undefined;
     if (request.method === 'OPTIONS') return corsPreflightResponse();
     if (request.method !== 'POST') return jsonResponse(405, { error: 'method_not_allowed' });
+    if (!limiter.allow(pathname === '/register' ? 'register' : 'token', clientAddress(request))) {
+      return jsonResponse(429, { error: 'too_many_requests', error_description: 'Too many requests; try again later.' });
+    }
     if (pathname === '/register') return handleRegister(request);
     if (pathname === '/token') return handleToken(request);
     return handleRevoke(request);

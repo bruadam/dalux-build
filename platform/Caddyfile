@@ -2,11 +2,20 @@
 # token and revocation endpoints, and the web interface for everything else
 # (including the OAuth /authorize consent page).
 {$PLATFORM_SITE_ADDRESS:localhost} {
+	header {
+		Strict-Transport-Security "max-age=31536000"
+		X-Content-Type-Options nosniff
+		Referrer-Policy strict-origin-when-cross-origin
+		-Server
+	}
+
 	@mcp path /mcp /mcp/* /.well-known/* /token /register /revoke
 	handle @mcp {
 		reverse_proxy mcp:8080
 	}
 	handle {
+		# Next.js needs inline scripts and styles; nothing is loaded from other origins.
+		header Content-Security-Policy "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self' data:; connect-src 'self'; object-src 'none'; base-uri 'self'; frame-ancestors 'none'"
 		reverse_proxy web:3000
 	}
 }

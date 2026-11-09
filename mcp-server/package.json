@@ -29,7 +29,7 @@
     "@cantoo/pdf-lib": "^2.11.1",
     "@ifc-lite/clash": "^2.4.4",
     "@ifc-lite/geometry": "^7.1.0",
-    "@ifc-lite/mcp": "^0.23.0",
+    "@ifc-lite/mcp": "^0.29.0",
     "@ifc-lite/parser": "^9.8.0",
     "@ifc-lite/query": "^2.4.0",
     "@ifc-lite/sdk": "^9.6.0",

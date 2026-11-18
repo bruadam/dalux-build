@@ -58,7 +58,7 @@ export async function downloadFile(client: DaluxClient, args: DownloadFileInput)
  * local path) and additionally gets the content to the chat two ways:
  *  - a real, single-use, time-limited `downloadUrl` (downloadLinks.ts) the
  *    user can click to fetch the file directly — works for any format and
- *    size, but only from the same machine this server runs on;
+ *    size; public https:// when PUBLIC_URL is set, else loopback-only;
  *  - inline content when that's cheap/useful for the model itself: an image
  *    renders as an actual image (the same mechanism render_pdf_page already
  *    uses, since a vision model tokenizes a picture cheaply regardless of

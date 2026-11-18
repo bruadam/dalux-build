@@ -2,7 +2,12 @@ import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 
-import { _resetDownloadLinksForTests, createDownloadLink } from '../src/downloadLinks';
+import {
+  _resetDownloadLinksForTests,
+  configurePublicDownloadBase,
+  createDownloadLink,
+  handleDownloadRequest,
+} from '../src/downloadLinks';
 
 describe('downloadLinks', () => {
   let dir: string;
@@ -59,5 +64,43 @@ describe('downloadLinks', () => {
     const response = await fetch(url);
 
     expect(response.headers.get('content-type')).toBe('image/vnd.dwg');
+  });
+});
+
+describe('downloadLinks (public mode)', () => {
+  let dir: string;
+
+  beforeEach(() => {
+    dir = mkdtempSync(path.join(tmpdir(), 'dalux-links-pub-'));
+  });
+
+  afterEach(async () => {
+    rmSync(dir, { recursive: true, force: true });
+    await _resetDownloadLinksForTests();
+  });
+
+  it('emits PUBLIC_URL links served by handleDownloadRequest, single-use, HEAD not consuming', async () => {
+    const filePath = path.join(dir, 'LLYN B250.pdf');
+    writeFileSync(filePath, 'pdf bytes');
+    configurePublicDownloadBase('https://mcp.example.com/');
+
+    const url = await createDownloadLink(filePath, 'LLYN B250.pdf');
+    expect(url).toMatch(/^https:\/\/mcp\.example\.com\/download\/[a-f0-9]{48}\/LLYN%20B250\.pdf$/);
+
+    const head = await handleDownloadRequest(new Request(url, { method: 'HEAD' }));
+    expect(head?.status).toBe(200);
+
+    const first = await handleDownloadRequest(new Request(url));
+    expect(first?.status).toBe(200);
+    expect(first?.headers.get('content-type')).toBe('application/pdf');
+    expect(first?.headers.get('content-disposition')).toContain('LLYN%20B250.pdf');
+    expect(await first?.text()).toBe('pdf bytes');
+
+    const second = await handleDownloadRequest(new Request(url));
+    expect(second?.status).toBe(404);
+  });
+
+  it('passes through non-download paths', async () => {
+    expect(await handleDownloadRequest(new Request('https://mcp.example.com/mcp'))).toBeUndefined();
   });
 });

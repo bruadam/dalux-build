@@ -13,6 +13,7 @@ import { buildServer } from './server';
 import { parseToolsets, type Toolset } from './toolsets';
 import { createOAuthServer, type OAuthServer } from './oauth';
 import { validateDaluxBaseUrl } from './daluxUrl';
+import { configurePublicDownloadBase, handleDownloadRequest, DOWNLOAD_ROUTE_PREFIX } from './downloadLinks';
 
 export interface BuildHttpAppOptions {
   /**
@@ -205,10 +206,18 @@ export function buildHttpApp(options: BuildHttpAppOptions = {}): HttpApp {
     const resourceUrl = new URL('/mcp', issuerUrl);
     oauthServer = createOAuthServer({ issuer: issuerUrl.origin, resourceUrl });
     resourceMetadataUrl = getOAuthProtectedResourceMetadataUrl(resourceUrl);
+    // download_file / download_task_attachment links become
+    // <PUBLIC_URL>/download/<token>/<name> instead of loopback-only.
+    configurePublicDownloadBase(options.publicUrl);
   }
 
   const guardedHandler = {
     fetch: async (request: Request): Promise<Response> => {
+      if (options.publicUrl) {
+        const downloadResponse = await handleDownloadRequest(request);
+        if (downloadResponse) return downloadResponse;
+      }
+
       if (oauthServer) {
         const oauthResponse = await oauthServer.handleRequest(request);
         if (oauthResponse) return oauthResponse;
@@ -287,8 +296,14 @@ export function buildHttpApp(options: BuildHttpAppOptions = {}): HttpApp {
   const validateOrigin = localhostOnly ? localhostOriginValidation() : null;
 
   const server = createNodeServer((req, res) => {
-    if (validateHost && !validateHost(req, res)) return;
-    if (validateOrigin && !validateOrigin(req, res)) return;
+    // /download/ links in public mode are opened by the user's browser straight
+    // from the chat and authenticated by the single-use URL token, so the
+    // localhost Host/Origin checks don't apply to them.
+    const isDownloadRoute = Boolean(options.publicUrl) && (req.url?.startsWith(DOWNLOAD_ROUTE_PREFIX) ?? false);
+    if (!isDownloadRoute) {
+      if (validateHost && !validateHost(req, res)) return;
+      if (validateOrigin && !validateOrigin(req, res)) return;
+    }
     void nodeHandler(req, res);
   });
 
